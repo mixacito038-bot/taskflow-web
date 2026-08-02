@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#4D7CFE">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TaskFlow">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>TaskFlow AI — 网页版原型</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-skin="glass" data-theme="light">
+<!-- 顶栏 -->
+<header class="topbar">
+  <div class="brand">TaskFlow AI <span class="tag-prototype">网页原型</span></div>
+  <div class="top-actions">
+    <button class="btn skin-btn" data-skin="glass">A 玻璃</button>
+    <button class="btn skin-btn" data-skin="colorful">B 多彩</button>
+    <button class="btn skin-btn" data-skin="minimal">C 极简</button>
+    <button class="btn" id="themeBtn">🌙 深色</button>
+    <button class="btn" id="aiBtn">✨ AI 设置</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- 侧栏 -->
+  <aside class="sidebar">
+    <div class="side-item active" data-view="list">📋 任务列表</div>
+    <div class="side-item" data-view="board">📊 看板</div>
+    <div class="side-item" data-view="calendar">🗓 日历</div>
+    <div class="side-item" data-view="stats">📈 统计</div>
+    <div class="side-item" data-view="matrix">🧭 四象限</div>
+    <div class="side-group">专注</div>
+    <div class="side-item" data-view="habits">🔥 习惯打卡</div>
+    <div class="side-item" data-view="pomodoro">🍅 番茄钟</div>
+    <div class="side-group">智能列表</div>
+    <div class="side-item side-filter" data-filter="today">⏰ 今天</div>
+    <div class="side-item side-filter" data-filter="overdue">⚠️ 已逾期</div>
+    <div class="side-item side-filter" data-filter="high">⭐ 高优先级</div>
+    <div class="side-group">数据</div>
+    <div class="side-item" id="exportBtn">📤 导出 JSON</div>
+    <div class="side-item" id="importBtn">📥 导入 JSON</div>
+    <input type="file" id="importFile" accept=".json" hidden>
+    <div class="side-group">关于</div>
+    <div class="side-item" id="aboutBtn">ℹ️ 使用说明</div>
+  </aside>
+
+  <!-- 主区 -->
+  <main class="main">
+    <!-- 搜索与过滤 -->
+    <div class="toolbar-row">
+      <input type="text" id="searchInput" class="search" placeholder="搜索任务…">
+      <select id="priorityFilter" class="select">
+        <option value="">全部优先级</option>
+        <option value="high">高</option>
+        <option value="medium">中</option>
+        <option value="low">低</option>
+      </select>
+      <select id="statusFilter" class="select">
+        <option value="">全部状态</option>
+        <option value="active">未完成</option>
+        <option value="done">已完成</option>
+      </select>
+      <button class="btn" id="templateBtn">📋 模板</button>
+      <button class="btn" id="notifyBtn">🔔 提醒</button>
+      <button class="btn" id="icsBtn">📅 导出 ICS</button>
+      <button class="btn primary" id="addBtn">＋ 新建任务</button>
+    </div>
+
+    <!-- 视图容器 -->
+    <div id="viewContainer" class="view-container"></div>
+  </main>
+</div>
+
+<!-- Quick Add 面板 -->
+<div class="overlay hidden" id="quickAddOverlay">
+  <div class="panel" id="quickAddPanel">
+    <div class="panel-head">
+      <span>快速添加</span>
+      <button class="btn ghost" id="qaClose">✕</button>
+    </div>
+    <textarea id="qaInput" rows="2" placeholder='试试：「明天下午3点 高优先级 买牛奶 #生活」或「每周三晚上8点 健身」'></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <button class="btn" id="voiceBtn">🎤 语音输入</button>
+      <span class="hint-text" id="voiceStatus"></span>
+    </div>
+    <div class="parsed-row" id="qaParsed"></div>
+    <div class="panel-actions">
+      <button class="btn ghost" id="qaClear">清空</button>
+      <button class="btn primary" id="qaCreate">确认创建</button>
+    </div>
+    <div class="hint-text">支持：明天/后天/N天后/下周X/每周X/月底、下午3点/晚上8点、高优先级、#标签、!清单、提醒提前N分钟</div>
+  </div>
+</div>
+
+<!-- 任务详情面板 -->
+<div class="overlay hidden" id="detailOverlay">
+  <div class="panel" id="detailPanel">
+    <div class="panel-head">
+      <span>任务详情</span>
+      <button class="btn ghost" id="detailClose">✕</button>
+    </div>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<!-- AI 设置面板 -->
+<div class="overlay hidden" id="aiOverlay">
+  <div class="panel" id="aiPanel">
+    <div class="panel-head"><span>✨ AI 配置</span><button class="btn ghost" id="aiClose">✕</button></div>
+    <div class="form-row"><label>接口地址 Base URL</label><input type="text" id="aiBaseURL" placeholder="https://openrouter.ai/api/v1"></div>
+    <div class="form-row"><label>API Key</label><input type="password" id="aiKey" placeholder="sk-..."></div>
+    <div class="form-row"><label>模型名</label><input type="text" id="aiModel" placeholder="openai/gpt-4o-mini"></div>
+    <div class="form-row"><label>系统提示词</label><textarea id="aiPrompt" rows="3">你是 TaskFlow AI 助手。回答简洁、结构化。涉及任务数据时只提供建议。</textarea></div>
+    <div class="panel-actions">
+      <button class="btn ghost" id="aiTest">测试连接</button>
+      <button class="btn primary" id="aiSave">保存配置</button>
+    </div>
+    <div class="hint-text" id="aiHint">⚠️ 浏览器直连需 CORS 兼容端点（如 OpenRouter）；OpenAI 官方端点需本地代理（python3 -m http.server 不行，见使用说明）。Key 仅存本浏览器 localStorage，请勿用于生产。</div>
+    <div class="hint-text" id="aiStatus"></div>
+  </div>
+</div>
+
+<!-- 使用说明 -->
+<div class="overlay hidden" id="aboutOverlay">
+  <div class="panel" id="aboutPanel">
+    <div class="panel-head"><span>使用说明</span><button class="btn ghost" id="aboutClose">✕</button></div>
+    <div class="about-body" id="aboutBody"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

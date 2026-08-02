@@ -1,0 +1,22 @@
+{
+  "name": "TaskFlow AI",
+  "short_name": "TaskFlow",
+  "description": "可插拔 AI 的任务管理（网页原型）",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EAF0FA",
+  "theme_color": "#4D7CFE",
+  "icons": [
+    {
+      "src": "./apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
