@@ -482,7 +482,7 @@ function computeWeekRate() {
   const due = tasks.filter(t => t.due && inWeek(t.due)).length;
   if (!due) return { rate: 0, completed: 0, due: 0 };
   const completed = tasks.filter(t => t.done && (t.completedAt || t.createdAt) && inWeek(t.completedAt || t.createdAt)).length;
-  return { rate: Math.round(completed / due * 100), completed, due };
+  return { rate: Math.floor(completed / due * 100), completed, due };   // Math.floor 对齐原生 Int() 截断（review warn）
 }
 
 function renderStats() {
