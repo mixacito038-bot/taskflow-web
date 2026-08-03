@@ -1,5 +1,8 @@
 /* TaskFlow AI 网页原型 — 数据层(localStorage) + NLP 解析 + 视图渲染 + 交互 + AI 设置 + 导出导入 */
 
+// completedAt ISO 校验：前缀 + 可解析（防 "2026-08-03T垃圾" 混入；Invalid Date 静默漏计，review nit 加固）
+const isValidISO = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(new Date(v).getTime());
+
 // ============ 数据层 ============
 const Store = {
   KEY: "taskflow.web.tasks",
@@ -25,7 +28,7 @@ const Store = {
           id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(t.id)) ? t.id : crypto.randomUUID(),
           title: t.title,
           done: t.done === true,
-          completedAt: typeof t.completedAt === "string" && /^\d{4}-\d{2}-\d{2}T/.test(t.completedAt) ? t.completedAt : null,   // ISO 格式校验（脏数据归 null → createdAt 兜底）
+          completedAt: isValidISO(t.completedAt) ? t.completedAt : null,   // ISO 校验（脏数据归 null → createdAt 兜底）
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
           due: typeof t.due === "string" ? t.due : null,
@@ -924,7 +927,7 @@ function importJSON(file) {
         // 字段规范化（防脏数据）
         const norm = {
           id: t.id, title: t.title, done: t.done === true,
-          completedAt: typeof t.completedAt === "string" && /^\d{4}-\d{2}-\d{2}T/.test(t.completedAt) ? t.completedAt : null,   // ISO 格式校验（security_review informational 加固）
+          completedAt: isValidISO(t.completedAt) ? t.completedAt : null,   // ISO 校验（security_review informational 加固）
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
           due: typeof t.due === "string" ? t.due : null,
