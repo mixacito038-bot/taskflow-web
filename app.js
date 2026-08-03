@@ -575,13 +575,13 @@ function exportStatsText() {
   tasks.forEach(t => { if (["high","medium","low","none"].includes(t.priority)) pri[t.priority]++; });
   const tagCount = Object.create(null);
   tasks.forEach(t => t.tags.forEach(tag => tagCount[tag] = (tagCount[tag] || 0) + 1));
-  const topTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n, c]) => `${n}(${c})`).join("、") || "无";
+  const topTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([n, c]) => `${n}(${c})`).join("、") || "无";
   return [
     `TaskFlow 统计快照 ${new Date().toLocaleString("zh-CN")}`,
     `任务总数：${total}（完成 ${done}，完成率 ${rate}%）`,
     `本周完成率：${wk.rate}%（本周完成 ${wk.completed} / 本周到期 ${wk.due}）`,
     `逾期未完成：${overdue}`,
-    `近7天完成趋势：${trend7}`,
+    `近7天完成趋势：${trend7}`,   // 固定 7d（页面可切 4w，导出保持简版）
     `优先级分布：高 ${pri.high} / 中 ${pri.medium} / 低 ${pri.low} / 无 ${pri.none}`,
     `标签 Top5：${topTags}`,
   ].join("\n");
@@ -593,8 +593,10 @@ function downloadStats() {
   const a = document.createElement("a");
   a.href = url;
   a.download = `taskflow-stats-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);   // 部分浏览器要求锚点在 DOM 中才触发下载（review nit）
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);   // 延迟 revoke 防下载竞态（review nit）
 }
 
 function renderStats() {
