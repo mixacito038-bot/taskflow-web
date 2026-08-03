@@ -564,6 +564,39 @@ function computeWeekRate() {
   return { rate: Math.floor(completed / due * 100), completed, due };   // Math.floor 对齐原生 Int() 截断（review warn）
 }
 
+// 统计快照导出（文本格式，可存档/分享；对齐 renderStats 口径）
+function exportStatsText() {
+  const total = tasks.length, done = tasks.filter(t => t.done).length;
+  const rate = total ? Math.round(done / total * 100) : 0;
+  const wk = computeWeekRate();
+  const overdue = tasks.filter(isOverdue).length;
+  const trend7 = computeTrend("7d").map(x => `${x.label}:${x.n}`).join(" ");
+  const pri = Object.assign(Object.create(null), { high: 0, medium: 0, low: 0, none: 0 });
+  tasks.forEach(t => { if (["high","medium","low","none"].includes(t.priority)) pri[t.priority]++; });
+  const tagCount = Object.create(null);
+  tasks.forEach(t => t.tags.forEach(tag => tagCount[tag] = (tagCount[tag] || 0) + 1));
+  const topTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n, c]) => `${n}(${c})`).join("、") || "无";
+  return [
+    `TaskFlow 统计快照 ${new Date().toLocaleString("zh-CN")}`,
+    `任务总数：${total}（完成 ${done}，完成率 ${rate}%）`,
+    `本周完成率：${wk.rate}%（本周完成 ${wk.completed} / 本周到期 ${wk.due}）`,
+    `逾期未完成：${overdue}`,
+    `近7天完成趋势：${trend7}`,
+    `优先级分布：高 ${pri.high} / 中 ${pri.medium} / 低 ${pri.low} / 无 ${pri.none}`,
+    `标签 Top5：${topTags}`,
+  ].join("\n");
+}
+function downloadStats() {
+  const text = exportStatsText();
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `taskflow-stats-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function renderStats() {
   const total = tasks.length, done = tasks.filter(t => t.done).length;
   const rate = total ? Math.round(done / total * 100) : 0;
@@ -583,6 +616,7 @@ function renderStats() {
   const wk = computeWeekRate();   // 本周完成率（对齐原生 completionRate 口径）
   containerHTML(`<div class="stats">
     ${total === 0 ? `<div class="hint-text" style="margin-bottom:8px">还没有任务——创建后这里会展示完成率、趋势与分布（按 n 快速添加）</div>` : ""}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button class="btn" data-action="exportStats" style="font-size:11px;padding:4px 10px">📋 导出统计</button></div>
     <div class="stat-card"><h4>完成率</h4><div class="stat-big">${rate}%</div><div style="font-size:12px;color:var(--ink3)">${done}/${total} 任务 · 逾期 ${overdueCount} 项</div></div>
     <div class="stat-card"><h4>本周完成率</h4><div class="stat-big">${wk.rate}%</div><div style="font-size:12px;color:var(--ink3)">本周完成 ${wk.completed} / 本周到期 ${wk.due}</div></div>
     <div class="stat-card"><h4>完成趋势</h4><div style="display:flex;gap:4px;margin-bottom:6px">${trendToggle}</div><div class="trend">${trendData.map(x => `<div class="bar" style="height:${Math.max(4, x.n / trendMax * 100)}%" title="${x.label}: ${x.n}"></div>`).join("")}</div><div style="font-size:10px;color:var(--ink3)">${trendData.map(x => x.label).join(" ")}</div></div>
@@ -1250,6 +1284,7 @@ document.addEventListener("click", (e) => {
     case "delChecklist": delChecklist(id, parseInt(el.dataset.ci)); break;
     case "boardGroup": settings.boardGroup = el.dataset.g; Store.saveSettings(settings); render(); break;
     case "trendMode": settings.trendMode = el.dataset.g; Store.saveSettings(settings); render(); break;
+    case "exportStats": downloadStats(); break;
     case "toggleSubtask": toggleSubtask(id, parseInt(el.dataset.si)); break;
     case "addSubtask": addSubtask(id); break;
     case "delSubtask": delSubtask(id, parseInt(el.dataset.si)); break;
