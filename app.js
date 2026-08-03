@@ -230,7 +230,7 @@ function nextOccurrenceText(t) {
 }
 const isOverdue = (t) => t.due && !t.done && new Date(t.due) < new Date();
 const isToday = (t) => t.due && new Date(t.due).toDateString() === new Date().toDateString();
-// 今日待办计数（今天到期且未完成；对齐智能列表 today 口径）
+// 今日待办计数（今天到期且未完成——"待办"口径，today 智能列表含已完成项；review nit 注释澄清）
 function todayCount(items) {
   return items.filter(t => !t.done && isToday(t)).length;
 }
@@ -359,8 +359,25 @@ function goTodayFilter() {
   render();
 }
 
+// 清除已完成任务（确认式；原地修改保持引用稳定；无 done 时按钮隐藏）
+function clearCompleted() {
+  const doneCount = tasks.filter(t => t.done).length;
+  if (!doneCount) return;
+  if (!confirm(`确定清除 ${doneCount} 个已完成任务？此操作不可撤销`)) return;
+  tasks.splice(0, tasks.length, ...tasks.filter(t => !t.done));
+  Store.save(tasks);
+  render();
+}
+function updateClearBtn() {
+  const n = tasks.filter(t => t.done).length;
+  const btn = $id("clearDoneBtn");
+  btn.hidden = n === 0;
+  if (n) btn.textContent = `🧹 清除已完成 (${n})`;
+}
+
 function render() {
   updateTodayBadge();   // 徽标随任何渲染刷新（任务增删/完成/视图切换）
+  updateClearBtn();     // 清除按钮随渲染刷新（done 数量/可见性）
   const container = $id("viewContainer");
   const list = filteredTasks();
 
@@ -1200,6 +1217,7 @@ $id("themeBtn").addEventListener("click", () => {
   $id("themeBtn").textContent = body.dataset.theme === "light" ? "🌙 深色" : "☀️ 浅色";
 });
 $id("todayBadge").addEventListener("click", goTodayFilter);
+$id("clearDoneBtn").addEventListener("click", clearCompleted);
 document.querySelectorAll(".skin-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.body.dataset.skin = btn.dataset.skin;
