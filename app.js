@@ -301,6 +301,7 @@ function wireListSort() {
       if (currentView !== "list") return;
       e.preventDefault();
       container.querySelectorAll(".drop-target").forEach(c => c.classList.remove("drop-target"));
+      container.querySelectorAll(".dragging").forEach(c => c.classList.remove("dragging"));   // 兜底清理（review minor：drop 后不依赖 dragend 保证）
       const id = e.dataTransfer.getData("text/plain");
       if (!id) return;
       const beforeEl = e.target.closest(".task-card");
