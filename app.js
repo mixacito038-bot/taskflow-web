@@ -25,7 +25,7 @@ const Store = {
           id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(t.id)) ? t.id : crypto.randomUUID(),
           title: t.title,
           done: t.done === true,
-          completedAt: typeof t.completedAt === "string" ? t.completedAt : null,   // 对齐原生 StatsAggregator 完成日落桶
+          completedAt: typeof t.completedAt === "string" && /^\d{4}-\d{2}-\d{2}T/.test(t.completedAt) ? t.completedAt : null,   // ISO 格式校验（脏数据归 null → createdAt 兜底）
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
           due: typeof t.due === "string" ? t.due : null,
@@ -701,6 +701,17 @@ const Habits = {
   },
   save(h) { localStorage.setItem(this.KEY, JSON.stringify(h)); }
 };
+// 习惯连续打卡天数（从今天往前数；今天未打卡即 0——与"到今天为止连续"语义一致）
+function habitStreak(dates) {
+  const set = new Set(dates || []);
+  let n = 0;
+  for (let d = new Date(); ; d.setDate(d.getDate() - 1)) {
+    if (set.has(d.toDateString())) n++;
+    else break;
+  }
+  return n;
+}
+
 function renderHabits() {
   const habits = Habits.load();
   const today = new Date().toDateString();
@@ -712,7 +723,7 @@ function renderHabits() {
     </div>
     ${habits.length ? habits.map((h, i) => {
       const doneToday = (h.dates || []).includes(today);
-      const streak = (() => { let n = 0; for (let d = new Date(); ; d.setDate(d.getDate() - 1)) { if ((h.dates || []).includes(d.toDateString())) n++; else break; } return n; })();
+      const streak = habitStreak(h.dates);
       return `<div class="detail-check"><input type="checkbox" ${doneToday ? "checked" : ""} data-action="toggleHabit" data-hi="${i}"><span style="${doneToday ? "color:var(--ink3)" : ""}">${esc(h.name)}</span><span style="margin-left:auto;font-size:11px;color:var(--ink3)">🔥 ${streak} 天</span><button class="btn ghost" style="font-size:10px" data-action="delHabit" data-hi="${i}">✕</button></div>`;
     }).join("") : '<span class="hint-text">还没有习惯，添加一个开始打卡吧</span>'}
   </div></div>`);
@@ -913,7 +924,7 @@ function importJSON(file) {
         // 字段规范化（防脏数据）
         const norm = {
           id: t.id, title: t.title, done: t.done === true,
-          completedAt: typeof t.completedAt === "string" ? t.completedAt : null,
+          completedAt: typeof t.completedAt === "string" && /^\d{4}-\d{2}-\d{2}T/.test(t.completedAt) ? t.completedAt : null,   // ISO 格式校验（security_review informational 加固）
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
           due: typeof t.due === "string" ? t.due : null,
