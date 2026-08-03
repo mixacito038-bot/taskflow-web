@@ -230,6 +230,10 @@ function nextOccurrenceText(t) {
 }
 const isOverdue = (t) => t.due && !t.done && new Date(t.due) < new Date();
 const isToday = (t) => t.due && new Date(t.due).toDateString() === new Date().toDateString();
+// 今日待办计数（今天到期且未完成；对齐智能列表 today 口径）
+function todayCount(items) {
+  return items.filter(t => !t.done && isToday(t)).length;
+}
 
 // ============ 过滤 ============
 function filteredTasks() {
@@ -339,7 +343,24 @@ function emptyHint(emoji, title, tip) {
   return `<div class="empty-state"><div class="big">${emoji}</div>${esc(title)}<br><span class="hint-text">${esc(tip)}</span></div>`;
 }
 
+// 顶栏今日待办徽标（render 时刷新；点击切到 today 智能列表）
+function updateTodayBadge() {
+  const n = todayCount(tasks);
+  $id("todayBadge").textContent = `⏰ 今天 ${n}`;
+  $id("todayBadge").title = n ? `今天还有 ${n} 项待办（点击查看）` : "今天没有到期任务（点击查看今天）";
+}
+function goTodayFilter() {
+  currentView = "list";
+  currentFilter = "today";
+  document.querySelectorAll(".side-item[data-view]").forEach(x => x.classList.remove("active"));
+  document.querySelector(".side-item[data-view='list']")?.classList.add("active");
+  document.querySelectorAll(".side-filter").forEach(x => x.classList.remove("active"));
+  document.querySelector(".side-filter[data-filter='today']")?.classList.add("active");
+  render();
+}
+
 function render() {
+  updateTodayBadge();   // 徽标随任何渲染刷新（任务增删/完成/视图切换）
   const container = $id("viewContainer");
   const list = filteredTasks();
 
@@ -1178,6 +1199,7 @@ $id("themeBtn").addEventListener("click", () => {
   body.dataset.theme = body.dataset.theme === "light" ? "dark" : "light";
   $id("themeBtn").textContent = body.dataset.theme === "light" ? "🌙 深色" : "☀️ 浅色";
 });
+$id("todayBadge").addEventListener("click", goTodayFilter);
 document.querySelectorAll(".skin-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.body.dataset.skin = btn.dataset.skin;
