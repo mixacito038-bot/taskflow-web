@@ -369,7 +369,7 @@ function renderCalendar() {
     const date = new Date(year, month, d);
     const isToday = date.toDateString() === new Date().toDateString();
     const dayTasks = tasks.filter(t => t.due && new Date(t.due).toDateString() === date.toDateString());
-    cells += `<div class="day ${isToday ? "today" : ""}" data-iso="${date.toISOString()}">${d}${dayTasks.length ? '<span class="evt"></span>' : ""}</div>`;
+    cells += `<div class="day ${isToday ? "today" : ""}" data-iso="${esc(date.toISOString())}">${d}${dayTasks.length ? '<span class="evt"></span>' : ""}</div>`;
   }
   containerHTML(`<div class="calendar">
     <div class="cal-head"><button class="btn ghost" data-action="calShift" data-d="-1">‹</button>${year} 年 ${month + 1} 月<button class="btn ghost" data-action="calShift" data-d="1">›</button></div>
@@ -382,7 +382,7 @@ function showDayTasks(iso) {
   const date = new Date(iso);
   const dayTasks = tasks.filter(t => t.due && new Date(t.due).toDateString() === date.toDateString());
   $id("dayTasks").innerHTML =
-    `<div class="day-tasks-head"><b>${date.toDateString()}</b><button class="btn ghost" data-action="quickAddDay" data-iso="${iso}">＋ 该天添加</button></div>` +
+    `<div class="day-tasks-head"><b>${esc(date.toDateString())}</b><button class="btn ghost" data-action="quickAddDay" data-iso="${esc(iso)}">＋ 该天添加</button></div>` +
     (dayTasks.length
       ? dayTasks.map(t => taskCardHTML(t)).join("")
       : `<div class="hint-text">无任务</div>`);
@@ -989,7 +989,7 @@ $id("notifyBtn").addEventListener("click", requestNotifyPermission);
 $id("qaClose").addEventListener("click", () => { quickAddDue = null; $id("quickAddOverlay").classList.add("hidden"); });
 $id("qaInput").addEventListener("input", qaParsePreview);
 $id("qaCreate").addEventListener("click", qaCreate);
-$id("qaClear").addEventListener("click", () => { $id("qaInput").value = ""; $id("qaParsed").innerHTML = ""; });
+$id("qaClear").addEventListener("click", () => { $id("qaInput").value = ""; $id("qaParsed").innerHTML = ""; /* 刻意保留 quickAddDue：清空=重输（保留上下文），qaClose=取消（清空预置） */ });
 $id("detailClose").addEventListener("click", () => { $id("detailOverlay").classList.add("hidden"); editingId = null; });
 $id("aiBtn").addEventListener("click", openAI);
 $id("aiClose").addEventListener("click", () => $id("aiOverlay").classList.add("hidden"));
