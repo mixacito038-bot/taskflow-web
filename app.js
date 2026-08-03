@@ -369,7 +369,7 @@ function render() {
       container.innerHTML = emptyHint("🧭", "四象限还没有任务", "创建任务后按「紧急（今天到期/逾期）× 重要（高/中优先级）」自动归类");
       return;
     }
-    renderMatrix();
+    renderMatrix(list);
   } else if (currentView === "habits") {
     renderHabits();
   } else if (currentView === "pomodoro") {
@@ -845,15 +845,15 @@ function applyTemplate(idx) {
 }
 
 // ============ P2 艾森豪威尔矩阵 ============
-function renderMatrix() {
+function renderMatrix(list) {   // 参数化：使用过滤后的 list（review should-fix：此前内部用全局 tasks，与空态判断口径分裂）
   // 定义：紧急=今天到期或逾期；重要=高/中优先级
   const urgent = (t) => !!t.due && (isOverdue(t) || isToday(t));
   const important = (t) => t.priority === "high" || t.priority === "medium";
   const q = {
-    qi: tasks.filter(t => !t.done && urgent(t) && important(t)),
-    q2: tasks.filter(t => !t.done && !urgent(t) && important(t)),
-    q3: tasks.filter(t => !t.done && urgent(t) && !important(t)),
-    q4: tasks.filter(t => !t.done && !urgent(t) && !important(t))
+    qi: list.filter(t => !t.done && urgent(t) && important(t)),
+    q2: list.filter(t => !t.done && !urgent(t) && important(t)),
+    q3: list.filter(t => !t.done && urgent(t) && !important(t)),
+    q4: list.filter(t => !t.done && !urgent(t) && !important(t))
   };
   const card = (items, color) => items.map(t => `<div class="board-card" style="border-left:3px solid ${color}" data-id="${esc(t.id)}" data-action="detail">${esc(t.title)}</div>`).join("");
   containerHTML(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
