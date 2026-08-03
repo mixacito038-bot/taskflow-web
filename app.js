@@ -241,7 +241,7 @@ function filteredTasks() {
     if (status === "active" && t.done) return false;
     if (q && !(t.title + " " + t.tags.join(" ")).toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a, b) => (b.pinned - a.pinned) || (a.done - b.done) || (a.sortOrder - b.sortOrder) || (a.createdAt < b.createdAt ? -1 : 1));
+  }).sort((a, b) => (b.pinned - a.pinned) || (a.done - b.done) || (a.sortOrder - b.sortOrder) || (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
 }
 // ============ 列表手动排序（拖拽；对齐原生 TaskStore.move 整列表重写 sortOrder 语义） ============
 function applyManualSort(movedId, beforeId) {
@@ -251,7 +251,7 @@ function applyManualSort(movedId, beforeId) {
   const visibleIds = new Set(visible.map(t => t.id));
   // 被过滤/搜索隐藏的任务保持相对顺序追加在末尾（不参与本次拖拽）
   const rest = tasks.filter(t => !visibleIds.has(t.id))
-    .sort((a, b) => (a.sortOrder - b.sortOrder) || (a.createdAt < b.createdAt ? -1 : 1));
+    .sort((a, b) => (a.sortOrder - b.sortOrder) || (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
   const list = [...visible];
   const [moved] = list.splice(fromIdx, 1);
   const toIdx = beforeId ? list.findIndex(t => t.id === beforeId) : list.length;
