@@ -45,7 +45,8 @@ self.addEventListener("fetch", (e) => {
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   e.waitUntil((async () => {
-    // 优先取 data.id（完整 UUID）；兼容旧版本仅剩 tag 的通知
+    // 优先取 data.id（完整 UUID）；tag 回退仅兼容旧版本通知（tag 为完整 UUID）。
+    // 边界：新通知若平台丢失 data，8 位 hex 短 tag 会被页面 UUID 校验拒绝 → 点击静默无效（可接受，纯展示降级）
     const id = (e.notification.data && typeof e.notification.data.id === "string")
       ? e.notification.data.id
       : e.notification.tag.replace(/^tf-/, "");

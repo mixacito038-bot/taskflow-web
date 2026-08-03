@@ -986,7 +986,7 @@ $id("templateBtn").addEventListener("click", () => {
 });
 $id("icsBtn").addEventListener("click", exportICS);
 $id("notifyBtn").addEventListener("click", requestNotifyPermission);
-$id("qaClose").addEventListener("click", () => $id("quickAddOverlay").classList.add("hidden"));
+$id("qaClose").addEventListener("click", () => { quickAddDue = null; $id("quickAddOverlay").classList.add("hidden"); });
 $id("qaInput").addEventListener("input", qaParsePreview);
 $id("qaCreate").addEventListener("click", qaCreate);
 $id("qaClear").addEventListener("click", () => { $id("qaInput").value = ""; $id("qaParsed").innerHTML = ""; });
@@ -1012,12 +1012,12 @@ document.querySelectorAll(".skin-btn").forEach(btn => {
   });
 });
 document.querySelectorAll(".overlay").forEach(ov => {
-  ov.addEventListener("click", (e) => { if (e.target === ov) ov.classList.add("hidden"); });
+  ov.addEventListener("click", (e) => { if (e.target === ov) { quickAddDue = null; ov.classList.add("hidden"); } });
 });
 // 事件委托（任务卡片/勾选/日历/详情动作；防 inline onclick XSS）
 document.addEventListener("click", (e) => {
-  // 日历日
-  const day = e.target.closest("[data-iso]");
+  // 日历日（限定 .day 元素，避免误吞「该天添加」按钮——其带 data-iso 但属 data-action，review blocking 修复）
+  const day = e.target.closest(".day[data-iso]");
   if (day) { showDayTasks(day.dataset.iso); return; }
   const el = e.target.closest("[data-action]");
   if (!el) return;
