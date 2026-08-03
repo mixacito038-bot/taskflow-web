@@ -31,6 +31,7 @@ const Store = {
           pinned: t.pinned === true,
           createdAt: typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString(),
           list: typeof t.list === "string" ? t.list : null,
+          sortOrder: Number.isFinite(t.sortOrder) ? t.sortOrder : 0,   // 与原生 Task.sortOrder 对齐（默认 0 → createdAt 兜底）
           reminder: Number.isFinite(t.reminder) ? t.reminder : null,
           recurrence: typeof t.recurrence === "string" ? t.recurrence : null,
           subtasks: Array.isArray(t.subtasks) ? t.subtasks.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : [],
@@ -101,7 +102,7 @@ const NLP = {
 
     // 重复规则
     const weeklyM = remaining.match(/每周([一二三四五六日天])/);
-    if (weeklyM) { result.recurrence = "weekly:" + "一二三四五六日天".indexOf(weeklyM[1]) + 1; }
+    if (weeklyM) { result.recurrence = "weekly:" + ("一二三四五六日天".indexOf(weeklyM[1]) + 1); }   // 括号防字符串拼接（NLP 对照测试暴露 weekly:21 bug）
     else if (/每周/.test(remaining)) { result.recurrence = "weekly"; remaining = remaining.replace(/每周/, " "); }
     else if (/每天|每日/.test(remaining)) { result.recurrence = "daily"; remaining = remaining.replace(/每天|每日/g, " "); }
     else {
@@ -240,9 +241,56 @@ function filteredTasks() {
     if (status === "active" && t.done) return false;
     if (q && !(t.title + " " + t.tags.join(" ")).toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a, b) => (b.pinned - a.pinned) || (a.done - b.done) || priRank(a.priority) - priRank(b.priority));
+  }).sort((a, b) => (b.pinned - a.pinned) || (a.done - b.done) || (a.sortOrder - b.sortOrder) || priRank(a.priority) - priRank(b.priority));
 }
 function priRank(p) { return p === "high" ? 0 : p === "medium" ? 1 : p === "low" ? 2 : 3; }
+
+// ============ 列表手动排序（拖拽；对齐原生 TaskStore.move 整列表重写 sortOrder 语义） ============
+function applyManualSort(movedId, afterId) {
+  const visible = filteredTasks();
+  const fromIdx = visible.findIndex(t => t.id === movedId);
+  if (fromIdx < 0 || afterId === movedId) return false;
+  const visibleIds = new Set(visible.map(t => t.id));
+  // 被过滤/搜索隐藏的任务保持相对顺序追加在末尾（不参与本次拖拽）
+  const rest = tasks.filter(t => !visibleIds.has(t.id))
+    .sort((a, b) => (a.sortOrder - b.sortOrder) || (a.createdAt < b.createdAt ? -1 : 1));
+  const list = [...visible];
+  const [moved] = list.splice(fromIdx, 1);
+  const toIdx = afterId ? list.findIndex(t => t.id === afterId) : list.length;
+  if (toIdx < 0) return false;
+  list.splice(toIdx, 0, moved);
+  // 整列表重写 sortOrder = index（与原生 move 一致；避免默认 0 与手动序冲突）
+  [...list, ...rest].forEach((t, i) => {
+    const real = tasks.find(x => x.id === t.id);
+    if (real) real.sortOrder = i;
+  });
+  Store.save(tasks);
+  return true;
+}
+
+function wireListSort() {
+  const container = $id("viewContainer");
+  container.querySelectorAll(".task-card").forEach(card => {
+    card.draggable = true;
+    card.addEventListener("dragstart", e => {
+      e.dataTransfer.setData("text/plain", card.dataset.id);
+      e.dataTransfer.effectAllowed = "move";
+    });
+  });
+  // container 级监听只绑一次（render 重渲染不累积；卡片监听随 innerHTML 重建自然销毁）
+  if (!container.dataset.sortBound) {
+    container.dataset.sortBound = "1";
+    container.addEventListener("dragover", e => e.preventDefault());
+    container.addEventListener("drop", e => {
+      e.preventDefault();
+      const id = e.dataTransfer.getData("text/plain");
+      if (!id) return;
+      const afterEl = e.target.closest(".task-card");
+      const afterId = afterEl ? afterEl.dataset.id : null;
+      if (applyManualSort(id, afterId)) render();
+    });
+  }
+}
 
 // ============ 视图渲染 ============
 function taskCardHTML(t) {
@@ -280,6 +328,7 @@ function render() {
       container.innerHTML =
         (pinned.length ? `<div class="side-group" style="margin:0 4px 8px">📌 置顶</div>${pinned.map(taskCardHTML).join("")}` : "") +
         rest.map(taskCardHTML).join("");
+      wireListSort();   // 拖拽排序（卡片 draggable + 容器 drop）
     }
   } else if (currentView === "board") {
     // A4: 分组模式（状态/清单/标签）——看板工具栏选择
@@ -842,6 +891,7 @@ function importJSON(file) {
           due: typeof t.due === "string" ? t.due : null,
           pinned: t.pinned === true, createdAt: typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString(),
           list: typeof t.list === "string" ? t.list : null,
+          sortOrder: Number.isFinite(t.sortOrder) ? t.sortOrder : 0,   // 与原生 Task.sortOrder 对齐
           reminder: Number.isFinite(t.reminder) ? t.reminder : null,
           recurrence: typeof t.recurrence === "string" ? t.recurrence : null,
           subtasks: Array.isArray(t.subtasks) ? t.subtasks.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : [],
