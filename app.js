@@ -277,17 +277,30 @@ function wireListSort() {
     card.addEventListener("dragstart", e => {
       e.dataTransfer.setData("text/plain", card.dataset.id);
       e.dataTransfer.effectAllowed = "move";
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      container.querySelectorAll(".drop-target").forEach(c => c.classList.remove("drop-target"));
     });
   });
   // container 级监听只绑一次（render 重渲染不累积；卡片监听随 innerHTML 重建自然销毁）
   if (!container.dataset.sortBound) {
     container.dataset.sortBound = "1";
-    container.addEventListener("dragover", e => { if (currentView === "list") e.preventDefault(); });
+    container.addEventListener("dragover", e => {
+      if (currentView !== "list") return;
+      e.preventDefault();
+      // 落点占位：目标卡片虚线框（每次 dragover 先清理再标记，防残留）
+      const el = e.target.closest(".task-card");
+      container.querySelectorAll(".drop-target").forEach(c => { if (c !== el) c.classList.remove("drop-target"); });
+      if (el && !el.classList.contains("dragging")) el.classList.add("drop-target");
+    });
     container.addEventListener("drop", e => {
       // 仅列表视图响应；看板拖拽的 drop 冒泡到容器时静默跳过（review blocking 修复：
       // 否则 board 拖拽会误触发 applyManualSort 重写全部 sortOrder）
       if (currentView !== "list") return;
       e.preventDefault();
+      container.querySelectorAll(".drop-target").forEach(c => c.classList.remove("drop-target"));
       const id = e.dataTransfer.getData("text/plain");
       if (!id) return;
       const beforeEl = e.target.closest(".task-card");
@@ -403,12 +416,25 @@ function boardColumns(list, group) {
 // 看板拖拽（按分组模式处理落列：状态→完成切换；清单/标签→移动分组）
 function wireBoardDrag(group) {
   document.querySelectorAll(".board-card").forEach(card => {
-    card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", card.dataset.id); });
+    card.addEventListener("dragstart", e => {
+      e.dataTransfer.setData("text/plain", card.dataset.id);
+      e.dataTransfer.effectAllowed = "move";
+      card.classList.add("dragging");   // 拖拽中视觉态（半透明+微缩）
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      document.querySelectorAll(".board-col.drag-over").forEach(c => c.classList.remove("drag-over"));
+    });
   });
   document.querySelectorAll(".board-col").forEach(col => {
-    col.addEventListener("dragover", e => e.preventDefault());
+    col.addEventListener("dragover", e => {
+      e.preventDefault();
+      col.classList.add("drag-over");   // 列悬停高亮
+    });
+    col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
     col.addEventListener("drop", e => {
       e.preventDefault();
+      col.classList.remove("drag-over");
       const id = e.dataTransfer.getData("text/plain");
       const task = tasks.find(t => t.id === id);
       if (!task) return;
