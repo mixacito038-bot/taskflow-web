@@ -320,13 +320,18 @@ function taskCardHTML(t) {
   </div>`;
 }
 
+// 空态引导组件（emoji + 主文案 + 操作提示；统一各视图无数据时的首次使用引导）
+function emptyHint(emoji, title, tip) {
+  return `<div class="empty-state"><div class="big">${emoji}</div>${esc(title)}<br><span class="hint-text">${esc(tip)}</span></div>`;
+}
+
 function render() {
   const container = $id("viewContainer");
   const list = filteredTasks();
 
   if (currentView === "list") {
     if (list.length === 0) {
-      container.innerHTML = `<div class="empty-state"><div class="big">📋</div>没有任务<br>点右上角「＋ 新建任务」试试 NLP 快速添加</div>`;
+      container.innerHTML = emptyHint("📋", "没有任务", "按 n 或点「＋ 新建任务」，试试 NLP：明天下午3点 高优先级 买牛奶 #生活");
     } else {
       const pinned = list.filter(t => t.pinned);
       const rest = list.filter(t => !t.pinned);
@@ -336,6 +341,10 @@ function render() {
       wireListSort();   // 拖拽排序（卡片 draggable + 容器 drop）
     }
   } else if (currentView === "board") {
+    if (list.length === 0) {
+      container.innerHTML = emptyHint("📊", "看板还没有任务", "创建任务后可按状态/清单/标签分组查看（按 n 快速添加）");
+      return;
+    }
     // A4: 分组模式（状态/清单/标签）——看板工具栏选择
     const boardGroup = settings.boardGroup || "status";
     const chips = [["status","按状态"],["list","按清单"],["tag","按标签"]]
@@ -356,6 +365,10 @@ function render() {
   } else if (currentView === "stats") {
     renderStats();
   } else if (currentView === "matrix") {
+    if (tasks.length === 0) {
+      container.innerHTML = emptyHint("🧭", "四象限还没有任务", "创建任务后按「紧急（今天到期/逾期）× 重要（高/中优先级）」自动归类");
+      return;
+    }
     renderMatrix();
   } else if (currentView === "habits") {
     renderHabits();
@@ -503,6 +516,7 @@ function renderStats() {
   const trendToggle = [["7d","近7天"],["4w","近4周"]].map(([k,label]) => `<button class="btn ${trendMode===k?"active":""}" data-action="trendMode" data-g="${k}" style="font-size:11px;padding:4px 10px">${label}</button>`).join("");
   const wk = computeWeekRate();   // 本周完成率（对齐原生 completionRate 口径）
   containerHTML(`<div class="stats">
+    ${total === 0 ? `<div class="hint-text" style="margin-bottom:8px">还没有任务——创建后这里会展示完成率、趋势与分布（按 n 快速添加）</div>` : ""}
     <div class="stat-card"><h4>完成率</h4><div class="stat-big">${rate}%</div><div style="font-size:12px;color:var(--ink3)">${done}/${total} 任务 · 逾期 ${overdueCount} 项</div></div>
     <div class="stat-card"><h4>本周完成率</h4><div class="stat-big">${wk.rate}%</div><div style="font-size:12px;color:var(--ink3)">本周完成 ${wk.completed} / 本周到期 ${wk.due}</div></div>
     <div class="stat-card"><h4>完成趋势</h4><div style="display:flex;gap:4px;margin-bottom:6px">${trendToggle}</div><div class="trend">${trendData.map(x => `<div class="bar" style="height:${Math.max(4, x.n / trendMax * 100)}%" title="${x.label}: ${x.n}"></div>`).join("")}</div><div style="font-size:10px;color:var(--ink3)">${trendData.map(x => x.label).join(" ")}</div></div>
