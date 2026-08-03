@@ -983,7 +983,8 @@ function openAbout() {
     6️⃣.5 🔔 提醒：点工具栏「🔔 提醒」授权后，<b>页面打开期间</b>任务到期（提前 N 分钟）会弹系统通知，点通知直达任务；<b>页面关闭/后台推送</b>仍受浏览器限制——原生版才有系统级通知<br>
     7️⃣ 侧栏「导出 JSON / 导入 JSON」验证数据备份<br>
     8️⃣ P2 功能：🔥 习惯打卡 / 🍅 番茄钟 / 📋 模板 / 🧭 四象限 / 📅 导出 ICS（日历导入）<br>
-    9️⃣ 位置提醒与协作共享：Web 版<b>不支持</b>（位置需后台权限、协作需服务器）——原生版 P2 再议<br><br>
+    9️⃣ 位置提醒与协作共享：Web 版<b>不支持</b>（位置需后台权限、协作需服务器）——原生版 P2 再议<br>
+    1️⃣0️⃣ 键盘快捷键：<code>n</code> 快速添加 / <code>/</code> 聚焦搜索 / <code>Esc</code> 关闭弹层 / <code>?</code> 本说明（输入框内不触发）<br><br>
     <b>与原生版关系</b><br>
     本原型用于功能/样式验证；最终交付仍为 SwiftUI 原生 App（M0~M4 代码已就绪，待你有 Apple ID + Xcode 后编译分发）。核心逻辑（NLP 解析规则、三套皮肤 token）两端一致。<br><br>
     <b>本地启动</b><br>
@@ -1060,6 +1061,26 @@ function checkReminders() {
     } catch { /* 构造失败不标记，下一轮轮询重试 */ }
   }
 }
+
+// 全局键盘快捷键（输入框聚焦时不触发；? 打开使用说明）
+function shortcutAction(key, targetTag) {
+  if (targetTag === "INPUT" || targetTag === "TEXTAREA" || targetTag === "SELECT") return null;
+  if (key === "n" || key === "N") return "quickAdd";
+  if (key === "/") return "focusSearch";
+  if (key === "Escape") return "closeOverlays";
+  if (key === "?") return "about";
+  return null;
+}
+document.addEventListener("keydown", (e) => {
+  const act = shortcutAction(e.key, e.target && e.target.tagName);
+  if (!act) return;
+  if (act === "quickAdd") openQuickAdd();
+  else if (act === "focusSearch") { e.preventDefault(); $id("searchInput").focus(); }
+  else if (act === "closeOverlays") {
+    document.querySelectorAll(".overlay").forEach(o => { if (!o.classList.contains("hidden")) { o.classList.add("hidden"); quickAddDue = null; } });
+  }
+  else if (act === "about") openAbout();
+});
 
 // ============ 事件绑定 ============
 document.querySelectorAll(".side-item[data-view]").forEach(el => {
