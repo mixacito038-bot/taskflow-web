@@ -170,7 +170,7 @@ body[data-skin="colorful"] .task-check.done { background: var(--green); border-c
 .board-card:active { cursor: grabbing; }
 .board-card-title { padding-right: 14px; }   /* 给 pri-dot 留位 */
 .board-card-meta { font-size: 10.5px; font-weight: 400; color: var(--ink3); margin-top: 3px; }
-.board-card .pri-dot { position: absolute; top: 8px; right: 8px; }
+.board-card .pri-dot { position: absolute; top: 8px; right: 8px; margin: 0; }   /* margin 覆盖基类，修正圆点偏移（review nit） */
 
 /* ===== 日历 ===== */
 .calendar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }

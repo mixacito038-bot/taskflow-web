@@ -398,7 +398,8 @@ function wireBoardDrag(group) {
       if (!task) return;
       const colName = col.querySelector("h4").dataset.col ?? col.querySelector("h4").textContent.replace(/\s*\d+$/, "").trim();
       if (group === "status") {
-        task.done = colName === "已完成";
+        // 与 toggleDone 同一入口（review should-fix：此前直接改 done 漏维护 completedAt，趋势落桶不一致）
+        setTaskDone(task.id, colName === "已完成");
       } else if (group === "list") {
         task.list = colName === "未分组" ? null : colName;
       } else if (group === "tag") {
@@ -451,10 +452,9 @@ function computeTrend(mode) {
   if (mode === "4w") {
     const weeks = [];
     for (let i = 3; i >= 0; i--) {
-      const end = new Date();
-      const start = new Date(end);
-      start.setDate(end.getDate() - (i + 1) * 7);
-      const from = start.getTime(), to = start.getTime() + 7 * 86400000;
+      const start = new Date();
+      start.setDate(start.getDate() - (i + 1) * 7);
+      const from = start.getTime(), to = start.getTime() + 7 * 86400000 + 1000;   // +1s 容差：右边界恰为 now 时排除"此刻完成"的任务（真实边界 bug）
       weeks.push({ label: `${start.getMonth()+1}/${start.getDate()}`, n: tasks.filter(t => t.done && when(t) && new Date(when(t)).getTime() >= from && new Date(when(t)).getTime() < to).length });
     }
     return weeks;
@@ -498,12 +498,18 @@ function renderStats() {
 }
 
 // ============ 交互 ============
+// 完成状态变更单一入口：维护 completedAt（对齐原生 StatsAggregator 完成日落桶）；
+// 幂等（done 未变化时不动 completedAt）。调用方负责 Store.save + render。
+function setTaskDone(id, done) {
+  const t = tasks.find(x => x.id === id);
+  if (!t || t.done === done) return;
+  t.done = done;
+  t.completedAt = done ? new Date().toISOString() : null;
+}
 function toggleDone(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
-  t.done = !t.done;
-  // 对齐原生 StatsAggregator：趋势按完成日（completedAt）落桶，取消完成则清空
-  t.completedAt = t.done ? new Date().toISOString() : null;
+  setTaskDone(id, !t.done);
   Store.save(tasks); render();
   if (editingId === id) openDetail(id);
 }
