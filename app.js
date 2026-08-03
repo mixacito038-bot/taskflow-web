@@ -586,17 +586,20 @@ function exportStatsText() {
     `标签 Top5：${topTags}`,
   ].join("\n");
 }
-function downloadStats() {
-  const text = exportStatsText();
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+// 统一下载入口（append→click→remove→延迟 revoke；防部分浏览器不触发与下载竞态，review 统一）
+function downloadBlob(text, filename, mime) {
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `taskflow-stats-${new Date().toISOString().slice(0, 10)}.txt`;
-  document.body.appendChild(a);   // 部分浏览器要求锚点在 DOM 中才触发下载（review nit）
+  a.download = filename;
+  document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);   // 延迟 revoke 防下载竞态（review nit）
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function downloadStats() {
+  downloadBlob(exportStatsText(), `taskflow-stats-${new Date().toISOString().slice(0, 10)}.txt`, "text/plain;charset=utf-8");
 }
 
 function renderStats() {
@@ -984,11 +987,7 @@ function exportICS() {
     lines.push("END:VEVENT");
   });
   lines.push("END:VCALENDAR");
-  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `taskflow-${new Date().toISOString().slice(0, 10)}.ics`;
-  a.click();
+  downloadBlob(lines.join("\r\n"), `taskflow-${new Date().toISOString().slice(0, 10)}.ics`, "text/calendar");
 }
 
 // ============ AI 设置 ============
@@ -1039,11 +1038,7 @@ function exportJSON() {
     exportedAt: new Date().toISOString(),
     tasks: tasks.map(t => ({ ...t }))
   };
-  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `taskflow-export-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
+  downloadBlob(JSON.stringify(doc, null, 2), `taskflow-export-${new Date().toISOString().slice(0, 10)}.json`, "application/json");
 }
 function importJSON(file) {
   if (file.size > 10 * 1024 * 1024) { alert("导入失败：文件超过 10MB 上限"); return; }
