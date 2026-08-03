@@ -365,7 +365,7 @@ function render() {
   } else if (currentView === "stats") {
     renderStats();
   } else if (currentView === "matrix") {
-    if (tasks.length === 0) {
+    if (list.length === 0) {   // 与看板空态同口径（当前视图结果为空即提示，review nit 统一）
       container.innerHTML = emptyHint("🧭", "四象限还没有任务", "创建任务后按「紧急（今天到期/逾期）× 重要（高/中优先级）」自动归类");
       return;
     }
