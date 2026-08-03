@@ -165,8 +165,12 @@ body[data-skin="colorful"] .task-check.done { background: var(--green); border-c
 .board-card {
   background: var(--surface-strong); border: 1px solid var(--border); border-radius: 10px;
   padding: 9px 11px; font-size: 12.5px; font-weight: 600; margin-bottom: 7px; cursor: grab;
+  position: relative;   /* pri-dot 右上角定位 */
 }
 .board-card:active { cursor: grabbing; }
+.board-card-title { padding-right: 14px; }   /* 给 pri-dot 留位 */
+.board-card-meta { font-size: 10.5px; font-weight: 400; color: var(--ink3); margin-top: 3px; }
+.board-card .pri-dot { position: absolute; top: 8px; right: 8px; }
 
 /* ===== 日历 ===== */
 .calendar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }

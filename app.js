@@ -25,6 +25,7 @@ const Store = {
           id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(t.id)) ? t.id : crypto.randomUUID(),
           title: t.title,
           done: t.done === true,
+          completedAt: typeof t.completedAt === "string" ? t.completedAt : null,   // 对齐原生 StatsAggregator 完成日落桶
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
           due: typeof t.due === "string" ? t.due : null,
@@ -340,7 +341,11 @@ function render() {
     container.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:10px">${chips}</div><div class="board">${cols.map(col => `
       <div class="board-col"><h4 data-col="${esc(col.name)}">${esc(col.name)}<span class="n">${col.tasks.length}</span></h4>
       ${col.tasks.map(t => `
-        <div class="board-card" draggable="true" data-id="${esc(t.id)}" data-action="detail">${esc(t.title)}</div>`).join("")}
+        <div class="board-card" draggable="true" data-id="${esc(t.id)}" data-action="detail">
+          <div class="board-card-title">${esc(t.title)}</div>
+          ${t.due ? `<div class="board-card-meta">🗓 ${esc(fmtDate(t.due).text)}</div>` : ""}
+          ${t.priority !== "none" ? `<div class="pri-dot ${t.priority[0]}"></div>` : ""}
+        </div>`).join("")}
       </div>`).join("")}</div>`;
     wireBoardDrag(boardGroup);
   } else if (currentView === "calendar") {
@@ -440,6 +445,28 @@ function showDayTasks(iso) {
 function containerHTML(html) { $id("viewContainer").innerHTML = html; }
 
 // 统计
+// 完成趋势（对齐原生 StatsAggregator：按 completedAt 完成日落桶；旧数据无 completedAt 时以 createdAt 兜底）
+function computeTrend(mode) {
+  const when = (t) => t.completedAt || t.createdAt;
+  if (mode === "4w") {
+    const weeks = [];
+    for (let i = 3; i >= 0; i--) {
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(end.getDate() - (i + 1) * 7);
+      const from = start.getTime(), to = start.getTime() + 7 * 86400000;
+      weeks.push({ label: `${start.getMonth()+1}/${start.getDate()}`, n: tasks.filter(t => t.done && when(t) && new Date(when(t)).getTime() >= from && new Date(when(t)).getTime() < to).length });
+    }
+    return weeks;
+  }
+  const trend = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    trend.push({ label: `${d.getMonth()+1}/${d.getDate()}`, n: tasks.filter(t => t.done && when(t) && new Date(when(t)).toDateString() === d.toDateString()).length });
+  }
+  return trend;
+}
+
 function renderStats() {
   const total = tasks.length, done = tasks.filter(t => t.done).length;
   const rate = total ? Math.round(done / total * 100) : 0;
@@ -449,20 +476,11 @@ function renderStats() {
   tasks.forEach(t => t.tags.forEach(tag => tagCount[tag] = (tagCount[tag] || 0) + 1));
   const topTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxTag = topTags.length ? topTags[0][1] : 1;
-  // 近 7 天完成趋势
-  const trend = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    trend.push({ label: `${d.getMonth()+1}/${d.getDate()}`, n: tasks.filter(t => t.done && t.createdAt && new Date(t.createdAt).toDateString() === d.toDateString()).length });
-  }
-  const maxTrend = Math.max(1, ...trend.map(x => x.n));
-  // A5: 逾期统计
+  // 逾期统计
   const overdueCount = tasks.filter(isOverdue).length;
-  // A5: 周/月趋势（工具栏切换）
+  // 周/月趋势（工具栏切换；按 completedAt 落桶，对齐原生 StatsAggregator）
   const trendMode = settings.trendMode || "7d";
-  const trendData = trendMode === "7d"
-    ? trend
-    : (() => { const weeks = []; for (let i = 3; i >= 0; i--) { const end = new Date(); const start = new Date(end); start.setDate(end.getDate() - (i + 1) * 7); weeks.push({ label: `${start.getMonth()+1}/${start.getDate()}`, n: tasks.filter(t => t.done && t.createdAt && new Date(t.createdAt) >= start && new Date(t.createdAt) < new Date(start.getTime() + 7 * 86400000)).length }); } return weeks; })();
+  const trendData = computeTrend(trendMode);
   const trendMax = Math.max(1, ...trendData.map(x => x.n));
   const trendToggle = [["7d","近7天"],["4w","近4周"]].map(([k,label]) => `<button class="btn ${trendMode===k?"active":""}" data-action="trendMode" data-g="${k}" style="font-size:11px;padding:4px 10px">${label}</button>`).join("");
   containerHTML(`<div class="stats">
@@ -484,6 +502,8 @@ function toggleDone(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
   t.done = !t.done;
+  // 对齐原生 StatsAggregator：趋势按完成日（completedAt）落桶，取消完成则清空
+  t.completedAt = t.done ? new Date().toISOString() : null;
   Store.save(tasks); render();
   if (editingId === id) openDetail(id);
 }
@@ -887,6 +907,7 @@ function importJSON(file) {
         // 字段规范化（防脏数据）
         const norm = {
           id: t.id, title: t.title, done: t.done === true,
+          completedAt: typeof t.completedAt === "string" ? t.completedAt : null,
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
           due: typeof t.due === "string" ? t.due : null,
