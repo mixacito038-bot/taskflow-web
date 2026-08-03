@@ -1072,6 +1072,8 @@ function shortcutAction(key, targetTag) {
   return null;
 }
 document.addEventListener("keydown", (e) => {
+  // 忽略修饰键组合（Cmd/Ctrl/Alt+n 等属浏览器/系统快捷键，不劫持——review should-fix）
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
   const act = shortcutAction(e.key, e.target && e.target.tagName);
   if (!act) return;
   if (act === "quickAdd") openQuickAdd();
