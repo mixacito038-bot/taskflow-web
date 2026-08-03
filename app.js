@@ -371,6 +371,7 @@ function clearCompleted() {
 function updateClearBtn() {
   const n = tasks.filter(t => t.done).length;
   const btn = $id("clearDoneBtn");
+  if (!btn) return;   // null 保护：按钮缺失时不中断渲染（review nit）
   btn.hidden = n === 0;
   if (n) btn.textContent = `🧹 清除已完成 (${n})`;
 }
