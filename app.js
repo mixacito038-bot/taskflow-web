@@ -241,24 +241,22 @@ function filteredTasks() {
     if (status === "active" && t.done) return false;
     if (q && !(t.title + " " + t.tags.join(" ")).toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a, b) => (b.pinned - a.pinned) || (a.done - b.done) || (a.sortOrder - b.sortOrder) || priRank(a.priority) - priRank(b.priority));
+  }).sort((a, b) => (b.pinned - a.pinned) || (a.done - b.done) || (a.sortOrder - b.sortOrder) || (a.createdAt < b.createdAt ? -1 : 1));
 }
-function priRank(p) { return p === "high" ? 0 : p === "medium" ? 1 : p === "low" ? 2 : 3; }
-
 // ============ 列表手动排序（拖拽；对齐原生 TaskStore.move 整列表重写 sortOrder 语义） ============
-function applyManualSort(movedId, afterId) {
+function applyManualSort(movedId, beforeId) {
   const visible = filteredTasks();
   const fromIdx = visible.findIndex(t => t.id === movedId);
-  if (fromIdx < 0 || afterId === movedId) return false;
+  if (fromIdx < 0 || beforeId === movedId) return false;
   const visibleIds = new Set(visible.map(t => t.id));
   // 被过滤/搜索隐藏的任务保持相对顺序追加在末尾（不参与本次拖拽）
   const rest = tasks.filter(t => !visibleIds.has(t.id))
     .sort((a, b) => (a.sortOrder - b.sortOrder) || (a.createdAt < b.createdAt ? -1 : 1));
   const list = [...visible];
   const [moved] = list.splice(fromIdx, 1);
-  const toIdx = afterId ? list.findIndex(t => t.id === afterId) : list.length;
+  const toIdx = beforeId ? list.findIndex(t => t.id === beforeId) : list.length;
   if (toIdx < 0) return false;
-  list.splice(toIdx, 0, moved);
+  list.splice(toIdx, 0, moved);   // 插入到目标卡片之前
   // 整列表重写 sortOrder = index（与原生 move 一致；避免默认 0 与手动序冲突）
   [...list, ...rest].forEach((t, i) => {
     const real = tasks.find(x => x.id === t.id);
@@ -280,14 +278,17 @@ function wireListSort() {
   // container 级监听只绑一次（render 重渲染不累积；卡片监听随 innerHTML 重建自然销毁）
   if (!container.dataset.sortBound) {
     container.dataset.sortBound = "1";
-    container.addEventListener("dragover", e => e.preventDefault());
+    container.addEventListener("dragover", e => { if (currentView === "list") e.preventDefault(); });
     container.addEventListener("drop", e => {
+      // 仅列表视图响应；看板拖拽的 drop 冒泡到容器时静默跳过（review blocking 修复：
+      // 否则 board 拖拽会误触发 applyManualSort 重写全部 sortOrder）
+      if (currentView !== "list") return;
       e.preventDefault();
       const id = e.dataTransfer.getData("text/plain");
       if (!id) return;
-      const afterEl = e.target.closest(".task-card");
-      const afterId = afterEl ? afterEl.dataset.id : null;
-      if (applyManualSort(id, afterId)) render();
+      const beforeEl = e.target.closest(".task-card");
+      const beforeId = beforeEl ? beforeEl.dataset.id : null;
+      if (applyManualSort(id, beforeId)) render();
     });
   }
 }
