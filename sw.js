@@ -45,7 +45,10 @@ self.addEventListener("fetch", (e) => {
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   e.waitUntil((async () => {
-    const id = e.notification.tag.replace(/^tf-/, "");
+    // 优先取 data.id（完整 UUID）；兼容旧版本仅剩 tag 的通知
+    const id = (e.notification.data && typeof e.notification.data.id === "string")
+      ? e.notification.data.id
+      : e.notification.tag.replace(/^tf-/, "");
     const list = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const c of list) {
       if ("focus" in c) {

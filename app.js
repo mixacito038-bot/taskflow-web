@@ -50,6 +50,7 @@ let settings = Store.loadSettings();
 let currentView = "list";
 let currentFilter = "";   // today / overdue / high
 let editingId = null;     // 详情面板当前任务
+let quickAddDue = null;   // 日历「该天添加」预置的日期（ISO），创建成功后清空
 
 // 演示样例（首次启动注入，便于立即测试）
 if (tasks.length === 0) {
@@ -380,9 +381,11 @@ function calShift(delta) { calCursor = new Date(calCursor.getFullYear(), calCurs
 function showDayTasks(iso) {
   const date = new Date(iso);
   const dayTasks = tasks.filter(t => t.due && new Date(t.due).toDateString() === date.toDateString());
-  $id("dayTasks").innerHTML = dayTasks.length
-    ? `<b>${date.toDateString()}：</b>` + dayTasks.map(t => taskCardHTML(t)).join("")
-    : `${date.toDateString()}：无任务`;
+  $id("dayTasks").innerHTML =
+    `<div class="day-tasks-head"><b>${date.toDateString()}</b><button class="btn ghost" data-action="quickAddDay" data-iso="${iso}">＋ 该天添加</button></div>` +
+    (dayTasks.length
+      ? dayTasks.map(t => taskCardHTML(t)).join("")
+      : `<div class="hint-text">无任务</div>`);
 }
 function containerHTML(html) { $id("viewContainer").innerHTML = html; }
 
@@ -437,9 +440,19 @@ function toggleDone(id) {
 
 // Quick Add
 function openQuickAdd() {
+  quickAddDue = null;   // 普通入口不带预置日期
   $id("quickAddOverlay").classList.remove("hidden");
   $id("qaInput").value = "";
   $id("qaParsed").innerHTML = "";
+  $id("qaInput").placeholder = '试试：「明天下午3点 高优先级 买牛奶 #生活」或「每周三晚上8点 健身」';
+  setTimeout(() => $id("qaInput").focus(), 50);
+}
+function openQuickAddFor(iso) {   // 日历「该天添加」：预置日期，NLP 未写日期时落到该天
+  quickAddDue = iso;
+  $id("quickAddOverlay").classList.remove("hidden");
+  $id("qaInput").value = "";
+  $id("qaParsed").innerHTML = "";
+  $id("qaInput").placeholder = `为该天（${new Date(iso).toDateString()}）添加任务，可直接输入 NLP 语法（写了日期以输入为准）`;
   setTimeout(() => $id("qaInput").focus(), 50);
 }
 function qaParsePreview() {
@@ -462,6 +475,8 @@ function qaCreate() {
   for (const line of lines) {
     const p = NLP.parse(line);
     if (!p.title) continue;
+    // 日历「该天添加」预置日期兜底：NLP 未解析出日期才使用（用户显式写的日期优先）
+    if (quickAddDue && !p.due) p.due = quickAddDue;
     tasks.push({
       id: crypto.randomUUID(), title: p.title, done: false, priority: p.priority,
       tags: p.tags, due: p.due, pinned: false, createdAt: new Date().toISOString(),
@@ -470,6 +485,7 @@ function qaCreate() {
     });
   }
   Store.save(tasks);
+  quickAddDue = null;   // 预置日期一次性使用
   $id("quickAddOverlay").classList.add("hidden");
   render();
 }
@@ -924,7 +940,10 @@ function checkReminders() {
     try {
       const n = new Notification(`⏰ ${t.title}`, {
         body: `提前 ${fmtReminder(t.reminder)} 提醒 · 到期 ${fmtDate(t.due).text}`,
-        tag: `tf-${t.id}`,
+        // tag 仅用于通知去重：≤32 字符（规范上限，超长会被个别浏览器截断）；
+        // 完整任务 id 走 data（无长度限制），sw.js 点击时优先取 data.id
+        tag: `tf-${t.id.slice(0, 8)}`,
+        data: { id: t.id },
       });
       n.onclick = () => { window.focus(); openDetail(t.id); };
       // 构造成功后才落库（review should-fix：此前先 markNotified，构造抛异常会永久丢提醒）
@@ -1011,6 +1030,7 @@ document.addEventListener("click", (e) => {
     case "setPriority": setPriority(id, el.dataset.p); break;
     case "delete": deleteTask(id); break;
     case "calShift": calShift(parseInt(el.dataset.d || "0")); break;
+    case "quickAddDay": openQuickAddFor(el.dataset.iso); break;
     case "toggleChecklist": toggleChecklist(id, parseInt(el.dataset.ci)); break;
     case "addChecklist": addChecklist(id); break;
     case "delChecklist": delChecklist(id, parseInt(el.dataset.ci)); break;
