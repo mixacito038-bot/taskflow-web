@@ -470,6 +470,21 @@ function computeTrend(mode) {
   return trend;
 }
 
+// 本周完成率（对齐原生 StatsAggregator.completionRate：completedAt 落本周为分子 / due 落本周为分母；
+// 分母为空为 0；周一起。webapp 分子对旧数据以 createdAt 兜底——与 computeTrend 同口径）
+function computeWeekRate() {
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));   // 周一 = 本周起点
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+  const inWeek = (v) => { const t = new Date(v).getTime(); return t >= weekStart.getTime() && t < weekEnd.getTime(); };
+  const due = tasks.filter(t => t.due && inWeek(t.due)).length;
+  if (!due) return { rate: 0, completed: 0, due: 0 };
+  const completed = tasks.filter(t => t.done && (t.completedAt || t.createdAt) && inWeek(t.completedAt || t.createdAt)).length;
+  return { rate: Math.round(completed / due * 100), completed, due };
+}
+
 function renderStats() {
   const total = tasks.length, done = tasks.filter(t => t.done).length;
   const rate = total ? Math.round(done / total * 100) : 0;
@@ -486,8 +501,10 @@ function renderStats() {
   const trendData = computeTrend(trendMode);
   const trendMax = Math.max(1, ...trendData.map(x => x.n));
   const trendToggle = [["7d","近7天"],["4w","近4周"]].map(([k,label]) => `<button class="btn ${trendMode===k?"active":""}" data-action="trendMode" data-g="${k}" style="font-size:11px;padding:4px 10px">${label}</button>`).join("");
+  const wk = computeWeekRate();   // 本周完成率（对齐原生 completionRate 口径）
   containerHTML(`<div class="stats">
     <div class="stat-card"><h4>完成率</h4><div class="stat-big">${rate}%</div><div style="font-size:12px;color:var(--ink3)">${done}/${total} 任务 · 逾期 ${overdueCount} 项</div></div>
+    <div class="stat-card"><h4>本周完成率</h4><div class="stat-big">${wk.rate}%</div><div style="font-size:12px;color:var(--ink3)">本周完成 ${wk.completed} / 本周到期 ${wk.due}</div></div>
     <div class="stat-card"><h4>完成趋势</h4><div style="display:flex;gap:4px;margin-bottom:6px">${trendToggle}</div><div class="trend">${trendData.map(x => `<div class="bar" style="height:${Math.max(4, x.n / trendMax * 100)}%" title="${x.label}: ${x.n}"></div>`).join("")}</div><div style="font-size:10px;color:var(--ink3)">${trendData.map(x => x.label).join(" ")}</div></div>
     <div class="stat-card"><h4>优先级分布</h4>
       ${[["high","高",pri.high],["medium","中",pri.medium],["low","低",pri.low],["none","无",pri.none]].map(([k,l,v]) => `
