@@ -199,12 +199,14 @@ function saveLists(lists) {
   settings.lists = lists;
   try { Store.saveSettings(settings); } catch { /* localStorage 配额异常静默（security_review LOW 建议） */ }
 }
-// NLP/导入时确保列表存在（重名复用，不重复建）
+// NLP/导入时确保列表存在（重名复用，不重复建；限长与 addList 一致——review：两入口口径统一）
 function ensureList(name) {
-  if (typeof name !== "string" || !name.trim()) return;
+  if (typeof name !== "string") return;
+  name = name.trim();
+  if (!name || name.length > 64) return;
   const lists = getLists();
-  if (!lists.some(l => l.name === name.trim())) {
-    lists.push({ id: crypto.randomUUID(), name: name.trim(), archived: false });
+  if (!lists.some(l => l.name === name)) {
+    lists.push({ id: crypto.randomUUID(), name, archived: false });
     saveLists(lists);
   }
 }
