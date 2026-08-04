@@ -1,7 +1,7 @@
 /* TaskFlow AI 网页原型 — Service Worker（PWA：添加到主屏幕后离线可用）
    简单缓存策略：安装时预缓存核心资源，运行时缓存命中优先；
    仅缓存同源 GET 且 resp.ok 的响应（4xx/5xx 与跨域 AI 请求不入缓存）。 */
-const CACHE = "taskflow-web-v2";
+const CACHE = "taskflow-web-v3";   // bump：v2 之后新增清除/导出/撤销/重复下一实例/Markdown 备注/多层子任务（review nit：防 PWA 缓存旧版）
 const CORE = [
   "./index.html", "./styles.css", "./app.js", "./manifest.json",
   "./apple-touch-icon.png", "./icon-192.png"

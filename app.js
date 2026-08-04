@@ -39,7 +39,7 @@ const Store = {
           sortOrder: Number.isFinite(t.sortOrder) ? t.sortOrder : 0,   // 与原生 Task.sortOrder 对齐（默认 0 → createdAt 兜底）
           reminder: Number.isFinite(t.reminder) ? t.reminder : null,
           recurrence: typeof t.recurrence === "string" ? t.recurrence : null,
-          subtasks: Array.isArray(t.subtasks) ? t.subtasks.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : [],
+          subtasks: normSubtasks(t.subtasks, 0),   // F-003 多层子任务（递归规范化，深度上限 32）
           checklist: Array.isArray(t.checklist) ? t.checklist.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : []
         }));
     } catch { return []; }
@@ -186,6 +186,35 @@ const NLP = {
 };
 
 // ============ 工具 ============
+// F-003 多层子任务：递归规范化（脏数据过滤 + 深度上限 32 对齐原生 deepCopySubtask 防御）
+function normSubtasks(list, depth) {
+  if (!Array.isArray(list) || depth > 32) return [];
+  return list.filter(x => x && typeof x.title === "string" && x.title.trim() !== "").map(x => ({
+    id: String(x.id || crypto.randomUUID()),
+    title: x.title,
+    done: x.done === true,
+    subtasks: normSubtasks(x.subtasks, (depth || 0) + 1)
+  }));
+}
+// F-003 递归统计子任务（总数/已完成数；父任务进度 = 子任务完成率，TC-0103）
+function countSubtasks(list) {
+  let total = 0, done = 0;
+  const walk = (items) => {
+    for (const s of items || []) { total++; if (s.done) done++; walk(s.subtasks); }
+  };
+  walk(list);
+  return { total, done };
+}
+// F-003 按路径（数组下标链）查找子任务节点；返回 { parent, idx, node } 或 null
+function findSubtaskByPath(t, path) {
+  let arr = t.subtasks || [], parent = null, node = null, idx = -1;
+  for (const seg of path) {
+    if (!Number.isInteger(seg) || seg < 0 || !Array.isArray(arr) || seg >= arr.length) return null;   // NaN 段防御（review nit：仅手工篡改 DOM 可触发）
+    parent = arr; idx = seg; node = arr[seg];
+    arr = node.subtasks;
+  }
+  return { parent, idx, node };
+}
 const $id = (id) => document.getElementById(id);
 const fmtDate = (iso) => {
   if (!iso) return null;
@@ -363,7 +392,7 @@ function taskCardHTML(t) {
         ${t.recurrence ? `<span>🔁 重复${nextOccurrenceText(t)}</span>` : ""}
         ${t.reminder ? `<span>🔔 提前 ${fmtReminder(t.reminder)}</span>` : ""}
         ${(t.checklist || []).length ? `<span>☑ ${t.checklist.filter(c => c.done).length}/${t.checklist.length}</span>` : ""}
-        ${(t.subtasks || []).length ? `<span>▣ 子任务 ${t.subtasks.length}</span>` : ""}
+        ${(t.subtasks || []).length ? (() => { const c = countSubtasks(t.subtasks); return `<span>▣ 子任务 ${c.done}/${c.total}</span>`; })() : ""}
         ${t.notes ? `<span>📝 备注</span>` : ""}
       </div>
     </div>
@@ -698,7 +727,7 @@ function spawnNextInstance(t) {
     sortOrder: t.sortOrder,
     reminder: t.reminder,
     recurrence: t.recurrence,
-    subtasks: Array.isArray(t.subtasks) ? t.subtasks.map(x => ({ ...x })) : [],
+    subtasks: normSubtasks(t.subtasks, 0),   // F-003 多层子任务递归深拷贝（复用规范化，含子级结构）
     checklist: Array.isArray(t.checklist) ? t.checklist.map(x => ({ ...x })) : []
   });
 }
@@ -718,6 +747,29 @@ function toggleDone(id) {
   if (editingId === id) openDetail(id);
 }
 
+// F-003 多层子任务递归渲染：path 为索引路径（如 [0,1] 表示第 2 层的第 2 项）；缩进随层级递增；
+// 有子级的节点显示折叠箭头（collapsedPaths 记录已折叠路径）；每项提供「＋ 子级」就地添加子任务
+let collapsedPaths = new Set();   // 折叠的子任务路径（"0,1" 格式；打开详情时重置）
+function renderSubtasks(list, path) {
+  if (!Array.isArray(list) || !list.length) return '<span class="hint-text">暂无子任务</span>';
+  return list.map((st, i) => {
+    const p = path.concat(i);
+    const key = p.join(",");
+    const hasKids = Array.isArray(st.subtasks) && st.subtasks.length > 0;
+    const collapsed = collapsedPaths.has(key);
+    return `
+      <div class="detail-check" style="padding-left:${path.length * 18}px">
+        ${hasKids ? `<button class="btn ghost" style="font-size:10px;padding:0 4px" data-action="collapseSubtask" data-spath="${key}">${collapsed ? "▸" : "▾"}</button>` : '<span style="width:18px"></span>'}
+        <input type="checkbox" ${st.done ? "checked" : ""} data-action="toggleSubtask" data-spath="${key}">
+        <span style="${st.done ? "text-decoration:line-through;color:var(--ink3)" : ""}">${esc(st.title)}</span>
+        ${hasKids ? `<span style="font-size:10px;color:var(--ink3)">(${countSubtasks(st.subtasks).done}/${countSubtasks(st.subtasks).total})</span>` : ""}
+        <button class="btn ghost" style="margin-left:auto;font-size:10px" data-action="addSubtaskTo" data-spath="${key}">＋</button>
+        <button class="btn ghost" style="font-size:10px" data-action="delSubtask" data-spath="${key}">✕</button>
+      </div>
+      ${collapsed ? "" : (Array.isArray(st.subtasks) && st.subtasks.length ? renderSubtasks(st.subtasks, p) : "")}
+    `;
+  }).join("");
+}
 // Quick Add
 function openQuickAdd() {
   quickAddDue = null;   // 普通入口不带预置日期
@@ -774,7 +826,7 @@ function qaCreate() {
 function openDetail(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
-  if (editingId !== id) editingNotes = false;   // 切换任务时重置备注编辑态；同任务内保留（review blocking：此前无条件重置使 editNotes 永远进不去编辑态）
+  if (editingId !== id) { editingNotes = false; collapsedPaths = new Set(); }   // 切换任务时重置备注编辑态与子任务折叠态；同任务内保留（review：此前无条件重置使 editNotes/collapse 失效）
   editingId = id;
   onlyThisTime = false;   // 每次打开详情重置"仅本次"（防残留影响后续完成，review）
   const due = fmtDate(t.due);
@@ -795,9 +847,9 @@ function openDetail(id) {
       ${(t.checklist||[]).map((c,i) => `<div class="detail-check"><input type="checkbox" ${c.done?"checked":""} data-action="toggleChecklist" data-ci="${i}"><span style="${c.done?"text-decoration:line-through;color:var(--ink3)":""}">${esc(c.title)}</span><button class="btn ghost" style="margin-left:auto;font-size:10px" data-action="delChecklist" data-ci="${i}">✕</button></div>`).join("") || '<span class="hint-text">暂无检查事项</span>'}
       <div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="checklistInput" placeholder="添加检查项…" style="flex:1;margin-bottom:0"><button class="btn" data-action="addChecklist">＋</button></div>
     </div>
-    <div style="margin-top:12px;font-size:12px;font-weight:700;color:var(--ink2)">子任务（${(t.subtasks||[]).length}）</div>
+    <div style="margin-top:12px;font-size:12px;font-weight:700;color:var(--ink2)">子任务（${(() => { const c = countSubtasks(t.subtasks); return `${c.done}/${c.total}`; })()}）</div>
     <div id="detailSubtasks">
-      ${(t.subtasks||[]).map((st,i) => `<div class="detail-check"><input type="checkbox" ${st.done?"checked":""} data-action="toggleSubtask" data-si="${i}"><span style="${st.done?"text-decoration:line-through;color:var(--ink3)":""}">${esc(st.title)}</span><button class="btn ghost" style="margin-left:auto;font-size:10px" data-action="delSubtask" data-si="${i}">✕</button></div>`).join("") || '<span class="hint-text">暂无子任务</span>'}
+      ${renderSubtasks(t.subtasks, [])}
       <div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="subtaskInput" placeholder="添加子任务…" style="flex:1;margin-bottom:0"><button class="btn" data-action="addSubtask">＋</button></div>
     </div>
     <div class="detail-row"># 标签<b>${esc(t.tags.join(", ")) || "无"}</b></div>
@@ -844,21 +896,44 @@ function delChecklist(id, idx) {
   const t = tasks.find(x => x.id === id); if (!t) return;
   t.checklist.splice(idx, 1); Store.save(tasks); render(); openDetail(id);
 }
-function toggleSubtask(id, idx) {
+// F-003 路径化子任务操作：spath 为 "0,1" 索引路径（顶层 addSubtask 为顶层追加）
+function parsePath(s) { return String(s || "").split(",").filter(x => x !== "").map(Number); }
+// 空路径防御：DOM 被篡改为空 data-spath 时防 splice(-1) 误删（review nit）
+function hasPath(s) { return String(s || "").split(",").filter(x => x !== "").length > 0; }
+function toggleSubtask(id, spath) {
   const t = tasks.find(x => x.id === id); if (!t) return;
-  if (t.subtasks[idx]) t.subtasks[idx].done = !t.subtasks[idx].done;
-  Store.save(tasks); render(); openDetail(id);
+  const hit = findSubtaskByPath(t, parsePath(spath));
+  if (hit) { hit.node.done = !hit.node.done; Store.save(tasks); render(); openDetail(id); }
 }
 function addSubtask(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
   const val = $id("subtaskInput").value.trim(); if (!val) return;
   t.subtasks = t.subtasks || [];
-  t.subtasks.push({ id: crypto.randomUUID(), title: val, done: false });
+  t.subtasks.push({ id: crypto.randomUUID(), title: val, done: false, subtasks: [] });
   Store.save(tasks); render(); openDetail(id);
 }
-function delSubtask(id, idx) {
+// 在指定子任务节点下追加子级（F-003 多层）；深度 ≥32 拒绝（review should-fix：防超深链保存后 reload 被 normSubtasks 静默截断）
+function addSubtaskTo(id, spath) {
   const t = tasks.find(x => x.id === id); if (!t) return;
-  t.subtasks.splice(idx, 1); Store.save(tasks); render(); openDetail(id);
+  const hit = findSubtaskByPath(t, parsePath(spath));
+  if (!hit) return;
+  const depth = parsePath(spath).length;
+  if (depth >= 32) return;   // 目标节点已是第 32 层，禁止再加深
+  hit.node.subtasks = hit.node.subtasks || [];
+  hit.node.subtasks.push({ id: crypto.randomUUID(), title: "新子任务", done: false, subtasks: [] });
+  collapsedPaths.delete(String(spath || ""));   // 向折叠节点添加后自动展开（review nit：新子任务可见）
+  Store.save(tasks); render(); openDetail(id);
+}
+function delSubtask(id, spath) {
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  if (!hasPath(spath)) return;   // 空路径防御（review nit：防 splice(-1) 误删）
+  const hit = findSubtaskByPath(t, parsePath(spath));
+  if (hit) { hit.parent.splice(hit.idx, 1); Store.save(tasks); render(); openDetail(id); }
+}
+function collapseSubtask(id, spath) {
+  const key = String(spath || "");
+  if (collapsedPaths.has(key)) collapsedPaths.delete(key); else collapsedPaths.add(key);
+  openDetail(id);
 }
 function setPriority(id, p) {
   const t = tasks.find(x => x.id === id);
@@ -1177,7 +1252,7 @@ function importJSON(file) {
           sortOrder: Number.isFinite(t.sortOrder) ? t.sortOrder : 0,   // 与原生 Task.sortOrder 对齐
           reminder: Number.isFinite(t.reminder) ? t.reminder : null,
           recurrence: typeof t.recurrence === "string" ? t.recurrence : null,
-          subtasks: Array.isArray(t.subtasks) ? t.subtasks.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : [],
+          subtasks: normSubtasks(t.subtasks, 0),   // F-003 多层子任务（递归规范化，深度上限 32）
           checklist: Array.isArray(t.checklist) ? t.checklist.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : []
         };
         tasks.push(norm); existing.add(t.id); added++;
@@ -1412,9 +1487,11 @@ document.addEventListener("click", (e) => {
     case "boardGroup": settings.boardGroup = el.dataset.g; Store.saveSettings(settings); render(); break;
     case "trendMode": settings.trendMode = el.dataset.g; Store.saveSettings(settings); render(); break;
     case "exportStats": downloadStats(); break;
-    case "toggleSubtask": toggleSubtask(id, parseInt(el.dataset.si)); break;
+    case "toggleSubtask": toggleSubtask(id, el.dataset.spath); break;
     case "addSubtask": addSubtask(id); break;
-    case "delSubtask": delSubtask(id, parseInt(el.dataset.si)); break;
+    case "addSubtaskTo": addSubtaskTo(id, el.dataset.spath); break;
+    case "delSubtask": delSubtask(id, el.dataset.spath); break;
+    case "collapseSubtask": collapseSubtask(id, el.dataset.spath); break;
     case "addHabit": addHabit(); break;
     case "toggleHabit": toggleHabit(parseInt(el.dataset.hi)); break;
     case "delHabit": delHabit(parseInt(el.dataset.hi)); break;
