@@ -897,7 +897,8 @@ function delChecklist(id, idx) {
   t.checklist.splice(idx, 1); Store.save(tasks); render(); openDetail(id);
 }
 // F-003 路径化子任务操作：spath 为 "0,1" 索引路径（顶层 addSubtask 为顶层追加）
-function parsePath(s) { return String(s || "").split(",").filter(x => x !== "").map(Number); }
+// trim 过滤空白段（security_review informational：Number(" ")=0 会误命中第一个子任务，仅手工篡改 DOM 可达）
+function parsePath(s) { return String(s || "").split(",").map(x => x.trim()).filter(x => x !== "").map(Number); }
 // 空路径防御：DOM 被篡改为空 data-spath 时防 splice(-1) 误删（review nit）
 function hasPath(s) { return String(s || "").split(",").filter(x => x !== "").length > 0; }
 function toggleSubtask(id, spath) {
