@@ -200,15 +200,17 @@ function saveLists(lists) {
   try { Store.saveSettings(settings); } catch { /* localStorage 配额异常静默（security_review LOW 建议） */ }
 }
 // NLP/导入时确保列表存在（重名复用，不重复建；限长与 addList 一致——review：两入口口径统一）
+// 返回是否成功注册；调用方失败时应置空 list 防孤儿引用（review should-fix）
 function ensureList(name) {
-  if (typeof name !== "string") return;
+  if (typeof name !== "string") return false;
   name = name.trim();
-  if (!name || name.length > 64) return;
+  if (!name || name.length > 64) return false;
   const lists = getLists();
   if (!lists.some(l => l.name === name)) {
     lists.push({ id: crypto.randomUUID(), name, archived: false });
     saveLists(lists);
   }
+  return true;
 }
 function addList(name) {
   if (typeof name !== "string" || !name.trim()) return false;
@@ -903,7 +905,7 @@ function qaCreate() {
     if (!p.title) continue;
     // 日历「该天添加」预置日期兜底：NLP 未解析出日期才使用（用户显式写的日期优先）
     if (quickAddDue && !p.due) p.due = quickAddDue;
-    if (p.list) ensureList(p.list);   // F-005：NLP !xxx 自动建列表
+    if (p.list && !ensureList(p.list)) p.list = null;   // F-005：NLP !xxx 自动建列表；注册失败（超长等）置空防孤儿（review should-fix）
     tasks.push({
       id: crypto.randomUUID(), title: p.title, done: false, priority: p.priority,
       tags: p.tags, due: p.due, pinned: false, createdAt: new Date().toISOString(),
@@ -1227,7 +1229,7 @@ function applyTemplate(idx) {
   t.tasks.forEach(line => {
     const p = NLP.parse(line);
     if (!p.title) return;
-    if (p.list) ensureList(p.list);   // F-005 模板任务自动建列表（review should-fix）
+    if (p.list && !ensureList(p.list)) p.list = null;   // F-005 模板任务自动建列表；失败置空防孤儿（review should-fix）
     tasks.push({ id: crypto.randomUUID(), title: p.title, done: false, priority: p.priority,
       tags: p.tags, due: p.due, pinned: false, createdAt: new Date().toISOString(),
       list: p.list, reminder: p.reminder, recurrence: p.recurrence, subtasks: [], checklist: [] });
@@ -1355,8 +1357,8 @@ function importJSON(file) {
           subtasks: normSubtasks(t.subtasks, 0),   // F-003 多层子任务（递归规范化，深度上限 32）
           checklist: Array.isArray(t.checklist) ? t.checklist.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : []
         };
+        if (norm.list && !ensureList(norm.list)) norm.list = null;   // F-005：导入任务自动建列表；失败置空防孤儿（review should-fix；置空在 push 前，与 qaCreate/applyTemplate 风格统一）
         tasks.push(norm); existing.add(t.id); added++;
-        if (norm.list) ensureList(norm.list);   // F-005：导入任务自动建列表
       }
       Store.save(tasks);
       render();
