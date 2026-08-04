@@ -195,7 +195,10 @@ function getLists() {
     .map(x => ({ id: String(x.id || crypto.randomUUID()), name: x.name.trim(), archived: x.archived === true }))
     .filter(x => { if (seen.has(x.name)) return false; seen.add(x.name); return true; });
 }
-function saveLists(lists) { settings.lists = lists; Store.saveSettings(settings); }
+function saveLists(lists) {
+  settings.lists = lists;
+  try { Store.saveSettings(settings); } catch { /* localStorage 配额异常静默（security_review LOW 建议） */ }
+}
 // NLP/导入时确保列表存在（重名复用，不重复建）
 function ensureList(name) {
   if (typeof name !== "string" || !name.trim()) return;
@@ -207,6 +210,7 @@ function ensureList(name) {
 }
 function addList(name) {
   if (typeof name !== "string" || !name.trim()) return false;
+  if (name.trim().length > 64) return false;   // 列表名限长（security_review LOW：防 localStorage 配额异常）
   const lists = getLists();
   if (lists.some(l => l.name === name.trim())) return false;   // 重名拒绝（名称唯一）
   lists.push({ id: crypto.randomUUID(), name: name.trim(), archived: false });
@@ -1356,7 +1360,7 @@ function importJSON(file) {
       render();
       alert(`导入完成：新增 ${added} 条，跳过 ${skipped} 条（重复/无效）`);
     } catch (e) {
-      alert(`导入失败：${e.message}`);
+      alert(`导入失败：文件格式不正确`);   // 固定文案（security_review INFO：防 alert 回显解析错误内嵌片段）
     }
   };
   reader.readAsText(file);
