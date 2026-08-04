@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-primary-light text-slate-800 font-sans antialiased;
+}
+
+/* 表单基础样式（不用组件库，全项目统一） */
+.inp {
+  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition
+    focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-slate-100 disabled:text-slate-400;
+}
+.btn {
+  @apply inline-flex items-center justify-center gap-1 rounded-lg px-4 py-2 text-sm font-medium transition
+    disabled:opacity-50 disabled:cursor-not-allowed select-none;
+}
+.btn-primary { @apply btn bg-primary text-white hover:bg-primary-hover; }
+.btn-ghost   { @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50; }
+.btn-danger  { @apply btn border border-red-200 bg-white text-red-600 hover:bg-red-50; }
+.card { @apply rounded-xl bg-white shadow-sm border border-slate-200/60; }
+
+/* 表格 */
+.tbl { @apply w-full text-sm; }
+.tbl th { @apply px-3 py-2.5 text-left font-medium text-slate-500 bg-slate-50 whitespace-nowrap; }
+.tbl td { @apply px-3 py-2.5 border-t border-slate-100 align-middle; }
+.tbl tbody tr:hover { @apply bg-primary-light/50; }
