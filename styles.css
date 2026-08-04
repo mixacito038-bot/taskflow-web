@@ -243,6 +243,14 @@ body[data-skin="colorful"] .task-check.done { background: var(--green); border-c
 .detail-actions { display: flex; gap: 8px; margin-top: 14px; }
 .detail-check { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
 .detail-check input { accent-color: var(--accent); }
+/* F-002 备注渲染区（Markdown 输出；h1/h2/li/blockquote/code/strong/em/a 行内样式） */
+.detail-notes { font-size: 13px; line-height: 1.6; color: var(--ink2); padding: 6px 0 10px; border-bottom: 1px solid var(--border); }
+.detail-notes h1, .detail-notes h2 { font-size: 14px; margin: 6px 0 2px; color: var(--ink); }
+.detail-notes p { margin: 4px 0; }
+.detail-notes li { margin-left: 18px; list-style: disc; }
+.detail-notes blockquote { border-left: 3px solid var(--accent); padding-left: 8px; color: var(--ink3); margin: 4px 0; }
+.detail-notes code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.detail-notes a { color: var(--accent); text-decoration: underline; }
 
 /* ===== 说明 ===== */
 .about-body { font-size: 13px; line-height: 1.9; color: var(--ink2); }

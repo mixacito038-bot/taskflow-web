@@ -27,6 +27,7 @@ const Store = {
       }).map(t => ({
           id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(t.id)) ? t.id : crypto.randomUUID(),
           title: t.title,
+          notes: typeof t.notes === "string" ? t.notes : null,   // F-002 Markdown 备注（脏数据归 null）
           done: t.done === true,
           completedAt: isValidISO(t.completedAt) ? t.completedAt : null,   // ISO 校验（脏数据归 null → createdAt 兜底）
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
@@ -201,6 +202,33 @@ const fmtDate = (iso) => {
   return { text: `${names[startDue.getDay()]} ${hm}`, cls: "" };
 };
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+// F-002 Markdown 备注渲染（零依赖、纯函数）：块级语法（标题/引用/列表）在 esc 前识别，
+// 内容部分统一 esc 防 XSS 后再做行内解析
+// 支持：标题 #/##、无序列表 -/*、有序列表 1.、引用 >、行内 `code`、**加粗**、*斜体*、[链接](url)、空行分段
+function mdRender(src) {
+  if (typeof src !== "string" || !src.trim()) return "";
+  const inline = (s) => esc(s)
+    .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const lines = String(src).split("\n");
+  const out = [];
+  let para = [];
+  const flush = () => { if (para.length) { out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; } };
+  for (const raw of lines) {
+    const t = raw.trim();
+    if (!t) { flush(); continue; }
+    let m;
+    if ((m = t.match(/^(#{1,2})\s+(.*)$/))) { flush(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); }
+    else if ((m = t.match(/^>\s?(.*)$/))) { flush(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); }
+    else if ((m = t.match(/^[-*]\s+(.*)$/))) { flush(); out.push(`<li>${inline(m[1])}</li>`); }
+    else if ((m = t.match(/^\d+\.\s+(.*)$/))) { flush(); out.push(`<li>${inline(m[1])}</li>`); }
+    else para.push(t);
+  }
+  flush();
+  return out.join("\n");
+}
 // 提醒单位友好显示（分钟→小时/天）
 const fmtReminder = (min) => min % 1440 === 0 ? `${min / 1440} 天` : min % 60 === 0 ? `${min / 60} 小时` : `${min} 分钟`;
 // 重复规则下次日期（weekly:N / daily / monthly:days），对标 Swift RecurrenceEngine 语义
@@ -336,6 +364,7 @@ function taskCardHTML(t) {
         ${t.reminder ? `<span>🔔 提前 ${fmtReminder(t.reminder)}</span>` : ""}
         ${(t.checklist || []).length ? `<span>☑ ${t.checklist.filter(c => c.done).length}/${t.checklist.length}</span>` : ""}
         ${(t.subtasks || []).length ? `<span>▣ 子任务 ${t.subtasks.length}</span>` : ""}
+        ${t.notes ? `<span>📝 备注</span>` : ""}
       </div>
     </div>
     ${priClass ? `<div class="pri-dot ${priClass}"></div>` : ""}
@@ -657,6 +686,7 @@ function spawnNextInstance(t) {
   tasks.push({
     id: crypto.randomUUID(),
     title: t.title,
+    notes: typeof t.notes === "string" ? t.notes : null,   // F-002 备注随重复实例复制
     done: false,
     completedAt: null,
     priority: t.priority,
@@ -674,6 +704,8 @@ function spawnNextInstance(t) {
 }
 // 详情面板"仅本次"勾选状态（标记完成时跳过生成下一实例；打开详情时重置）
 let onlyThisTime = false;
+// 备注编辑态（F-002：打开详情重置，保存/取消退出）
+let editingNotes = false;
 function toggleDone(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
@@ -728,7 +760,7 @@ function qaCreate() {
     tasks.push({
       id: crypto.randomUUID(), title: p.title, done: false, priority: p.priority,
       tags: p.tags, due: p.due, pinned: false, createdAt: new Date().toISOString(),
-      list: p.list, reminder: p.reminder, recurrence: p.recurrence,
+      list: p.list, reminder: p.reminder, recurrence: p.recurrence, notes: null,
       subtasks: [], checklist: []
     });
   }
@@ -742,6 +774,7 @@ function qaCreate() {
 function openDetail(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
+  if (editingId !== id) editingNotes = false;   // 切换任务时重置备注编辑态；同任务内保留（review blocking：此前无条件重置使 editNotes 永远进不去编辑态）
   editingId = id;
   onlyThisTime = false;   // 每次打开详情重置"仅本次"（防残留影响后续完成，review）
   const due = fmtDate(t.due);
@@ -749,6 +782,14 @@ function openDetail(id) {
     <div style="font-size:16px;font-weight:700;margin-bottom:10px">${esc(t.title)}</div>
     <div class="detail-row">🗓 截止日期<b>${due ? due.text : "未设置"}</b></div>
     <div class="detail-row">⚑ 优先级<b>${esc({ high:"高", medium:"中", low:"低", none:"无" }[t.priority] || "无")}</b></div>
+    <div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--ink2)">备注 <button class="btn ghost" data-action="editNotes" style="font-size:10px">${t.notes ? "编辑" : "＋ 添加"}</button></div>
+    <div id="detailNotes" class="detail-notes">
+      ${editingNotes ? `
+        <textarea id="notesInput" style="width:100%;min-height:80px;margin-bottom:6px">${esc(t.notes || "")}</textarea>
+        <button class="btn primary" data-action="saveNotes">保存</button>
+        <button class="btn ghost" data-action="cancelNotes">取消</button>
+      ` : (t.notes ? mdRender(t.notes) : '<span class="hint-text">无备注</span>')}
+    </div>
     <div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--ink2)">检查事项（${(t.checklist||[]).filter(c=>c.done).length}/${(t.checklist||[]).length}）</div>
     <div id="detailChecklist">
       ${(t.checklist||[]).map((c,i) => `<div class="detail-check"><input type="checkbox" ${c.done?"checked":""} data-action="toggleChecklist" data-ci="${i}"><span style="${c.done?"text-decoration:line-through;color:var(--ink3)":""}">${esc(c.title)}</span><button class="btn ghost" style="margin-left:auto;font-size:10px" data-action="delChecklist" data-ci="${i}">✕</button></div>`).join("") || '<span class="hint-text">暂无检查事项</span>'}
@@ -777,6 +818,14 @@ function togglePinned(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
   t.pinned = !t.pinned;
+  Store.save(tasks); render(); openDetail(id);
+}
+// F-002 备注保存（读 notesInput textarea → 写回任务 → 退出编辑态）
+function saveNotes(id) {
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  const val = $id("notesInput") ? $id("notesInput").value : "";
+  t.notes = val.trim() ? val.trim() : null;   // 空备注归 null（与 Store.load 口径一致）
+  editingNotes = false;
   Store.save(tasks); render(); openDetail(id);
 }
 function toggleChecklist(id, idx) {
@@ -1118,6 +1167,7 @@ function importJSON(file) {
         // 字段规范化（防脏数据）
         const norm = {
           id: t.id, title: t.title, done: t.done === true,
+          notes: typeof t.notes === "string" ? t.notes : null,   // F-002 Markdown 备注
           completedAt: isValidISO(t.completedAt) ? t.completedAt : null,   // ISO 校验（security_review informational 加固）
           priority: ["high","medium","low","none"].includes(t.priority) ? t.priority : "none",
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
@@ -1348,6 +1398,9 @@ document.addEventListener("click", (e) => {
     case "toggle": e.stopPropagation(); toggleDone(id); break;
     case "undoDelete": undoDelete(); break;
     case "togglePinned": togglePinned(id); break;
+    case "editNotes": editingNotes = true; openDetail(id); break;
+    case "cancelNotes": editingNotes = false; openDetail(id); break;
+    case "saveNotes": saveNotes(id); break;
     case "onlyThisTime": onlyThisTime = el.checked === true; break;
     case "setPriority": setPriority(id, el.dataset.p); break;
     case "delete": deleteTask(id); break;
