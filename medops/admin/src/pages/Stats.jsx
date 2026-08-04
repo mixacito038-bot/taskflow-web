@@ -25,9 +25,9 @@ function normSignature(r) {
     deptName: nz(r.deptName, r.dept_name),
     name: nz(r.name, r.signName, r.sign_name, ''),
     title: nz(r.title, ''),
-    day: nz(r.day, r.days, r.dayCount, 0),
-    week: nz(r.week, r.weeks, r.weekCount, 0),
-    month: nz(r.month, r.months, r.monthCount, 0)
+    day: nz(r.daySigns, r.day, r.days, r.dayCount, 0),
+    week: nz(r.weekSigns, r.week, r.weeks, r.weekCount, 0),
+    month: nz(r.monthSigns, r.month, r.months, r.monthCount, 0)
   }
 }
 
