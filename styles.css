@@ -66,6 +66,14 @@ body {
   transition: background .4s, color .4s;
 }
 .hidden { display: none !important; }
+/* 删除撤销条（TC-0101：fixed 底部浮层，5s 自动消失） */
+.undo-bar {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px;
+  box-shadow: var(--shadow); z-index: 300; display: flex; gap: 12px; align-items: center;
+  font-size: 13px;
+}
+.undo-bar .btn { color: var(--accent); font-weight: 700; }
 
 /* ===== 顶栏 ===== */
 .topbar {

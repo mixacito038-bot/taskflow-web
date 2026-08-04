@@ -204,9 +204,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",
 // 提醒单位友好显示（分钟→小时/天）
 const fmtReminder = (min) => min % 1440 === 0 ? `${min / 1440} 天` : min % 60 === 0 ? `${min / 60} 小时` : `${min} 分钟`;
 // 重复规则下次日期（weekly:N / daily / monthly:days），对标 Swift RecurrenceEngine 语义
-function nextOccurrenceText(t) {
-  if (!t.recurrence) return "";
-  const now = new Date();
+// 提取为纯函数：TC-0111 完成时生成下一实例复用（nextOccurrenceDate + spawnNextInstance）
+function nextOccurrenceDate(t) {
+  if (!t.recurrence) return null;
   const base = t.due ? new Date(t.due) : new Date();
   const [kind, param] = t.recurrence.split(":");
   let next = null;
@@ -224,6 +224,10 @@ function nextOccurrenceText(t) {
     const day = days.filter(d => d <= dim).sort((a, b) => a - b)[0] || dim;
     next.setDate(day);
   }
+  return next;
+}
+function nextOccurrenceText(t) {
+  const next = nextOccurrenceDate(t);
   if (!next) return "";
   const names = ["日","一","二","三","四","五","六"];
   return ` · 下次 ${next.getMonth() + 1}/${next.getDate()} 周${names[next.getDay()]}`;
@@ -645,10 +649,39 @@ function setTaskDone(id, done) {
   t.done = done;
   t.completedAt = done ? new Date().toISOString() : null;
 }
+// 完成重复任务时生成下一实例（TC-0111：完成后生成下一实例且"仅本次"可选）
+// 复制原任务全部字段，仅 done/completedAt/createdAt/due 变化；规则结束（nextOccurrenceDate 返回 null）不生成
+function spawnNextInstance(t) {
+  const next = nextOccurrenceDate(t);
+  if (!next) return;
+  tasks.push({
+    id: crypto.randomUUID(),
+    title: t.title,
+    done: false,
+    completedAt: null,
+    priority: t.priority,
+    tags: Array.isArray(t.tags) ? [...t.tags] : [],
+    due: next.toISOString(),
+    pinned: t.pinned,
+    createdAt: new Date().toISOString(),
+    list: t.list,
+    sortOrder: t.sortOrder,
+    reminder: t.reminder,
+    recurrence: t.recurrence,
+    subtasks: Array.isArray(t.subtasks) ? t.subtasks.map(x => ({ ...x })) : [],
+    checklist: Array.isArray(t.checklist) ? t.checklist.map(x => ({ ...x })) : []
+  });
+}
+// 详情面板"仅本次"勾选状态（标记完成时跳过生成下一实例；打开详情时重置）
+let onlyThisTime = false;
 function toggleDone(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
+  const wasDone = t.done;
   setTaskDone(id, !t.done);
+  // 从未完成→完成 且 有重复规则 且 未勾选"仅本次" → 生成下一实例（TC-0111）
+  if (!wasDone && t.recurrence && !onlyThisTime) spawnNextInstance(t);
+  onlyThisTime = false;   // 一次性消费（review：防残留影响后续完成）
   Store.save(tasks); render();
   if (editingId === id) openDetail(id);
 }
@@ -710,6 +743,7 @@ function openDetail(id) {
   const t = tasks.find(x => x.id === id);
   if (!t) return;
   editingId = id;
+  onlyThisTime = false;   // 每次打开详情重置"仅本次"（防残留影响后续完成，review）
   const due = fmtDate(t.due);
   $id("detailBody").innerHTML = `
     <div style="font-size:16px;font-weight:700;margin-bottom:10px">${esc(t.title)}</div>
@@ -726,7 +760,7 @@ function openDetail(id) {
       <div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="subtaskInput" placeholder="添加子任务…" style="flex:1;margin-bottom:0"><button class="btn" data-action="addSubtask">＋</button></div>
     </div>
     <div class="detail-row"># 标签<b>${esc(t.tags.join(", ")) || "无"}</b></div>
-    ${t.recurrence ? `<div class="detail-row">🔁 重复<b>${esc(t.recurrence)}</b></div>` : ""}
+    ${t.recurrence ? `<div class="detail-row">🔁 重复<b>${esc(t.recurrence)}</b> <label style="font-weight:400;margin-left:8px"><input type="checkbox" data-action="onlyThisTime"> 仅本次</label></div>` : ""}
     ${t.reminder ? `<div class="detail-row">🔔 提醒<b>提前 ${esc(t.reminder)} 分钟</b></div>` : ""}
     <div class="detail-row">📌 置顶<b><input type="checkbox" ${t.pinned ? "checked" : ""} data-action="togglePinned"></b></div>
     <div style="margin-top:12px;font-size:12px;font-weight:700;color:var(--ink2)">优先级（点击修改）</div>
@@ -783,11 +817,40 @@ function setPriority(id, p) {
   t.priority = p;
   Store.save(tasks); render(); openDetail(id);
 }
+// 删除撤销（TC-0101：删除 5s 内可撤销）：记录被删任务快照 + 原索引，undoBar 提供"撤销"入口
+let lastDeleted = null;      // { task, index }
+let undoBarTimer = null;
+function showUndoBar(msg) {
+  const bar = $id("undoBar");
+  if (!bar) return;   // 测试环境无该元素时静默
+  bar.innerHTML = `${esc(msg)} <button class="btn ghost" data-action="undoDelete">撤销</button>`;
+  bar.classList.remove("hidden");
+}
+function hideUndoBar() {
+  const bar = $id("undoBar");
+  if (bar) bar.classList.add("hidden");
+}
 function deleteTask(id) {
-  tasks = tasks.filter(x => x.id !== id);
+  const idx = tasks.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  const [removed] = tasks.splice(idx, 1);
   Store.save(tasks);
+  lastDeleted = { task: removed, index: idx };
+  clearTimeout(undoBarTimer);
+  undoBarTimer = setTimeout(() => { lastDeleted = null; hideUndoBar(); }, 5000);   // 5s 撤销窗口
+  showUndoBar(`已删除「${removed.title}」`);
   $id("detailOverlay").classList.add("hidden");
   editingId = null;
+  onlyThisTime = false;   // 删除路径关闭详情：同步清理（review 复核：防残留影响后续完成）
+  render();
+}
+function undoDelete() {
+  if (!lastDeleted) return;
+  tasks.splice(Math.min(lastDeleted.index, tasks.length), 0, lastDeleted.task);   // 原索引恢复（索引越界则末尾）
+  lastDeleted = null;
+  clearTimeout(undoBarTimer);
+  hideUndoBar();
+  Store.save(tasks);
   render();
 }
 
@@ -1190,7 +1253,13 @@ document.addEventListener("keydown", (e) => {
   if (act === "quickAdd") openQuickAdd();
   else if (act === "focusSearch") { e.preventDefault(); $id("searchInput").focus(); }
   else if (act === "closeOverlays") {
-    document.querySelectorAll(".overlay").forEach(o => { if (!o.classList.contains("hidden")) { o.classList.add("hidden"); quickAddDue = null; } });
+    document.querySelectorAll(".overlay").forEach(o => {
+      if (!o.classList.contains("hidden")) {
+        o.classList.add("hidden");
+        if (o.id === "detailOverlay") { editingId = null; onlyThisTime = false; }   // Escape 关闭详情：同步清理（review 复核第 4 条路径）
+        if (o.id === "quickAddOverlay") quickAddDue = null;
+      }
+    });
   }
   else if (act === "about") openAbout();
 });
@@ -1233,7 +1302,7 @@ $id("qaClose").addEventListener("click", () => { quickAddDue = null; $id("quickA
 $id("qaInput").addEventListener("input", qaParsePreview);
 $id("qaCreate").addEventListener("click", qaCreate);
 $id("qaClear").addEventListener("click", () => { $id("qaInput").value = ""; $id("qaParsed").innerHTML = ""; /* 刻意保留 quickAddDue：清空=重输（保留上下文），qaClose=取消（清空预置） */ });
-$id("detailClose").addEventListener("click", () => { $id("detailOverlay").classList.add("hidden"); editingId = null; });
+$id("detailClose").addEventListener("click", () => { $id("detailOverlay").classList.add("hidden"); editingId = null; onlyThisTime = false; });
 $id("aiBtn").addEventListener("click", openAI);
 $id("aiClose").addEventListener("click", () => $id("aiOverlay").classList.add("hidden"));
 $id("aiSave").addEventListener("click", aiSave);
@@ -1257,7 +1326,13 @@ document.querySelectorAll(".skin-btn").forEach(btn => {
   });
 });
 document.querySelectorAll(".overlay").forEach(ov => {
-  ov.addEventListener("click", (e) => { if (e.target === ov) { quickAddDue = null; ov.classList.add("hidden"); } });
+  ov.addEventListener("click", (e) => {
+    if (e.target === ov) {
+      ov.classList.add("hidden");
+      if (ov.id === "quickAddOverlay") quickAddDue = null;
+      if (ov.id === "detailOverlay") { editingId = null; onlyThisTime = false; }   // 空白点击关闭详情：同步清理（review should-fix：防 onlyThisTime 残留影响后续完成）
+    }
+  });
 });
 // 事件委托（任务卡片/勾选/日历/详情动作；防 inline onclick XSS）
 document.addEventListener("click", (e) => {
@@ -1271,7 +1346,9 @@ document.addEventListener("click", (e) => {
   switch (el.dataset.action) {
     case "detail": openDetail(id); break;
     case "toggle": e.stopPropagation(); toggleDone(id); break;
+    case "undoDelete": undoDelete(); break;
     case "togglePinned": togglePinned(id); break;
+    case "onlyThisTime": onlyThisTime = el.checked === true; break;
     case "setPriority": setPriority(id, el.dataset.p); break;
     case "delete": deleteTask(id); break;
     case "calShift": calShift(parseInt(el.dataset.d || "0")); break;
