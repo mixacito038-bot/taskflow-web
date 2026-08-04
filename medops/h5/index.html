@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#2F6BFF">
+<meta name="theme-color" content="#F1F5F4">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="急救设备巡检">
@@ -36,7 +36,7 @@ button{border:0;background:none;padding:0;cursor:pointer}
 /* ===== 布局 ===== */
 #app{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
 .hd{
-  position:sticky;top:0;z-index:30;background:rgba(244,247,252,.92);backdrop-filter:blur(12px);
+  position:sticky;top:0;z-index:30;background:rgba(241,245,244,.92);backdrop-filter:blur(12px);
   padding:calc(var(--sat) + 10px) 16px 10px;display:flex;align-items:center;gap:10px;
   border-bottom:1px solid transparent;transition:border-color .2s;
 }
@@ -48,6 +48,11 @@ button{border:0;background:none;padding:0;cursor:pointer}
 .back svg{width:21px;height:21px;stroke-width:2.2}
 .back:active{background:rgba(21,34,32,.05)}
 .hact{display:flex;gap:6px;align-items:center;flex-shrink:0}
+/* 一级页标题左侧的图标徽章 */
+.hicon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;
+  background:var(--brand);color:#fff;box-shadow:0 6px 16px -8px rgba(15,85,77,.5)}
+.hicon svg{width:19px;height:19px}
+.hicon.lite{background:var(--brand-l);color:var(--brand);box-shadow:none}
 main{flex:1;padding:4px 16px 16px}
 .pad-tab{padding-bottom:calc(72px + var(--sab))}
 .pad-bar{padding-bottom:calc(96px + var(--sab))}
@@ -108,7 +113,7 @@ main{flex:1;padding:4px 16px 16px}
 .p-no{background:var(--line2);color:var(--faint)}
 .p-bad{background:var(--bad-l);color:var(--bad)}
 .p-br{background:var(--brand-l);color:var(--brand)}
-.bar-bg{height:6px;border-radius:99px;background:#F1F3F7;overflow:hidden;margin-top:9px}
+.bar-bg{height:6px;border-radius:99px;background:var(--line2);overflow:hidden;margin-top:9px}
 .bar-fg{height:100%;border-radius:99px;background:var(--brand);transition:width .35s cubic-bezier(.4,0,.2,1)}
 .bar-fg.done{background:var(--ok)}
 
@@ -336,6 +341,9 @@ select.in{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 /* 分组标题带右侧说明 */
 .sec.row2{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .sec.row2 em{font-style:normal;font-weight:400;color:var(--faint);font-size:11.5px;text-align:right}
+
+/* 页内轻提示（周/月详情底部） */
+.hint{font-size:12.5px;color:var(--muted);margin:10px 2px 0;line-height:1.6;text-align:center}
 </style>
 </head>
 <body>
@@ -401,6 +409,7 @@ const ICON={
   chevdown:'<path d="M6 9l6 6 6-6"/>',
   warn:'<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>',
   hist:'<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>',
+  pen:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   out:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'
 };
 const svg=(k,c='')=>`<svg class="${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
@@ -709,8 +718,12 @@ function sheet(h){closeSheet();const m=document.createElement('div');m.className
   document.body.appendChild(m);return m}
 function closeSheet(){const m=$('.mask');if(m)m.remove()}
 
-function header(t,sub,back,act){return `<div class="hd" id="hd">
-  ${back?`<button class="back" onclick="${back}">${svg('back')}</button>`:''}
+/* x（可选）：{icon:'home', tone:'lite'} —— 一级页（无返回键）标题左侧的图标徽章 */
+function header(t,sub,back,act,x){
+  x=x||{};
+  const icon=!back&&x.icon?`<div class="hicon ${x.tone||''}">${svg(x.icon)}</div>`:'';
+  return `<div class="hd" id="hd">
+  ${back?`<button class="back" onclick="${back}">${svg('back')}</button>`:''}${icon}
   <h1>${H(t)}${sub?`<div class="sub">${H(sub)}</div>`:''}</h1>
   ${act?`<div class="hact">${act}</div>`:''}</div>`}
 
@@ -882,7 +895,7 @@ async function viewInspector(){
   const p=await pending(S.me);
   const depts=await API.depts(S.me);
   const recs=await API.recordsRange(S.date,S.date);
-  if(!depts.length) return header('今日任务',dLab(S.date))+
+  if(!depts.length) return header('今日任务',dLab(S.date),null,null,{icon:'home'})+
     `<main class="pad-tab"><div class="empty">${svg('box')}
       <div>还没有为你配置负责的科室<br><span style="font-size:12.5px">请联系设备科在后台配置</span></div></div></main>`+tabbar();
   let tAll=0,tDone=0,tSign=0;
@@ -926,7 +939,7 @@ async function viewInspector(){
     <div class="hfoot"><span>负责 <b>${depts.length}</b> 个科室</span>
       <span>待巡检 <b>${tAll-tDone}</b> 台</span></div>
     ${note}${btn}</div>`;
-  return header('今日任务',`${dLab(S.date)} · 负责 ${depts.length} 个科室`)+`<main class="pad-tab">
+  return header('今日任务',`${dLab(S.date)} · 负责 ${depts.length} 个科室`,null,null,{icon:'home'})+`<main class="pad-tab">
     ${alertBar(p)}
     ${hero}
     <div class="sec row2"><span>今日分发的任务</span><em>逐科室勾选后日签</em></div>
@@ -1000,7 +1013,7 @@ async function viewDeptHome(){
     </button>`;
   }).join('');
 
-  return header('周确认',d.name)+`<main class="pad-tab">
+  return header('周确认',d.name,null,null,{icon:'cal'})+`<main class="pad-tab">
     ${alertBar(p,true)}
     ${hero}
     <div class="stat" style="margin-bottom:14px">
@@ -1059,7 +1072,7 @@ async function viewEquipHome(){
       <span>异常 <b>${tNg}</b> 台次</span></div>
     ${note}${btn}</div>`;
   return header('月确认',`${moLab(m)} · 全院 ${depts.length} 个科室`,null,
-    `<button class="btn gho" style="padding:7px 11px;font-size:13px" onclick="switchMonth('${isCur?prev:moOf(today())}')">${isCur?'看上月':'看本月'}</button>`)+
+    `<button class="btn gho" style="padding:7px 11px;font-size:13px" onclick="switchMonth('${isCur?prev:moOf(today())}')">${isCur?'看上月':'看本月'}</button>`,{icon:'chart'})+
   `<main class="pad-tab">
     ${alertBar(p,true)}
     ${hero}
@@ -1505,7 +1518,8 @@ async function viewRecords(){
         ${r.sign?`<span class="pill p-ok">${H(r.sign.name)} 已签</span>`:`<span class="pill p-bad">未日签</span>`}
         ${svg('chev','chev')}</div></button>`}).join('');
     return `<div class="sec">${dLab(date)}</div><div class="list">${its}</div>`}).join('');
-  return header('巡检记录')+`<main class="pad-tab">${blocks||`<div class="empty">${svg('file')}<div>还没有巡检记录</div></div>`}</main>`+tabbar();
+  return header('巡检记录',`最近 ${recs.length} 条`,null,null,{icon:'list',tone:'lite'})+
+    `<main class="pad-tab">${blocks||`<div class="empty">${svg('file')}<div>还没有巡检记录</div></div>`}</main>`+tabbar();
 }
 window.openRec=async(deptId,date)=>{
   const rec=await API.record(deptId,date);if(!rec)return;
@@ -1596,7 +1610,7 @@ async function viewMe(){
     dept:'每周一早上提醒上一周未签字的记录',
     equip:'每月 1 日提醒上一个月未签字的记录'}[S.me.role];
   const d=S.me.deptId?await API.dept(S.me.deptId):null;
-  return header('我的')+`<main class="pad-tab">
+  return header('我的',null,null,null,{icon:'user'})+`<main class="pad-tab">
     <div class="card" style="text-align:center;padding:26px 16px">
       <div class="logo" style="margin:0 auto 14px">${svg('user')}</div>
       <div class="tt" style="font-size:19px">${H(S.me.displayName)}</div>
