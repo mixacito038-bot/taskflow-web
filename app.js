@@ -35,7 +35,7 @@ const Store = {
           due: typeof t.due === "string" ? t.due : null,
           pinned: t.pinned === true,
           createdAt: typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString(),
-          list: typeof t.list === "string" ? t.list : null,
+          list: typeof t.list === "string" && t.list.trim() ? t.list.trim() : null,   // F-005 trim（与列表名口径一致，review should-fix）
           sortOrder: Number.isFinite(t.sortOrder) ? t.sortOrder : 0,   // 与原生 Task.sortOrder 对齐（默认 0 → createdAt 兜底）
           reminder: Number.isFinite(t.reminder) ? t.reminder : null,
           recurrence: typeof t.recurrence === "string" ? t.recurrence : null,
@@ -185,6 +185,91 @@ const NLP = {
   }
 };
 
+// ============ 列表/文件夹（F-005：settings.lists 持久化；NLP !xxx 自动建列表） ============
+function getLists() {
+  const raw = settings.lists;
+  if (!Array.isArray(raw)) return [];
+  // 规范化：name 唯一（旧数据/重复导入去重）、archived 布尔化
+  const seen = new Set();
+  return raw.filter(x => x && typeof x.name === "string" && x.name.trim() !== "")
+    .map(x => ({ id: String(x.id || crypto.randomUUID()), name: x.name.trim(), archived: x.archived === true }))
+    .filter(x => { if (seen.has(x.name)) return false; seen.add(x.name); return true; });
+}
+function saveLists(lists) { settings.lists = lists; Store.saveSettings(settings); }
+// NLP/导入时确保列表存在（重名复用，不重复建）
+function ensureList(name) {
+  if (typeof name !== "string" || !name.trim()) return;
+  const lists = getLists();
+  if (!lists.some(l => l.name === name.trim())) {
+    lists.push({ id: crypto.randomUUID(), name: name.trim(), archived: false });
+    saveLists(lists);
+  }
+}
+function addList(name) {
+  if (typeof name !== "string" || !name.trim()) return false;
+  const lists = getLists();
+  if (lists.some(l => l.name === name.trim())) return false;   // 重名拒绝（名称唯一）
+  lists.push({ id: crypto.randomUUID(), name: name.trim(), archived: false });
+  saveLists(lists);
+  render();
+  return true;
+}
+function archiveList(name) {
+  const lists = getLists();
+  const hit = lists.find(l => l.name === name);
+  if (!hit) return;
+  hit.archived = true;
+  saveLists(lists);
+  render();
+}
+function restoreList(name) {
+  const lists = getLists();
+  const hit = lists.find(l => l.name === name);
+  if (!hit) return;
+  hit.archived = false;
+  saveLists(lists);
+  render();
+}
+// 删除列表：解除全部任务关联（t.list 置 null，防孤儿引用）
+function deleteList(name) {
+  const lists = getLists().filter(l => l.name !== name);
+  saveLists(lists);
+  tasks.forEach(t => { if (t.list === name) t.list = null; });
+  if (currentFilter === "list:" + name) currentFilter = "";
+  Store.save(tasks);
+  render();
+}
+// F-005 列表过滤（委托 case 复用；抽成纯函数便于测试——review：委托 handler 无法在 stub 中触发）
+function applyListFilter(name) {
+  currentView = "list";
+  document.querySelectorAll(".side-filter").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".side-item[data-view]").forEach(x => x.classList.remove("active"));
+  document.querySelector(".side-item[data-view='list']")?.classList.add("active");
+  currentFilter = name ? "list:" + name : "";
+}
+// F-005 侧栏列表区渲染：未归档在前（可点过滤/归档），已归档折叠在尾部（可恢复/删除）；计数 = 关联任务数
+function renderListSection() {
+  const sec = $id("listSection");
+  if (!sec) return;   // 测试环境无该元素时静默
+  const lists = getLists();
+  const countOf = (name) => tasks.filter(t => t.list === name).length;
+  const row = (l) => `
+    <div class="side-item side-filter ${currentFilter === "list:" + l.name ? "active" : ""}" data-action="filterList" data-name="${esc(l.name)}">
+      📁 ${esc(l.name)} <span style="margin-left:auto;font-size:11px;color:var(--ink3)">${countOf(l.name)}</span>
+      <span style="margin-left:6px;font-size:10px;opacity:.7">
+        ${l.archived
+          ? `<button class="btn ghost" data-action="restoreList" data-name="${esc(l.name)}">恢复</button><button class="btn ghost" data-action="delList" data-name="${esc(l.name)}">删</button>`
+          : `<button class="btn ghost" data-action="archiveList" data-name="${esc(l.name)}">归档</button>`}
+      </span>
+    </div>`;
+  const active = lists.filter(l => !l.archived);
+  const archived = lists.filter(l => l.archived);
+  sec.innerHTML =
+    (active.length ? active.map(row).join("") : '<div class="side-item" style="color:var(--ink3);font-size:12px;cursor:default">暂无列表</div>') +
+    (archived.length ? `<div class="side-group" style="margin-top:8px">已归档</div>${archived.map(row).join("")}` : "") +
+    '<div style="display:flex;gap:4px;padding:6px 12px"><input type="text" id="newListInput" placeholder="新建列表…" style="flex:1;font-size:12px;min-width:0"><button class="btn" data-action="addListBtn" style="font-size:12px">＋</button></div>';
+}
+
 // ============ 工具 ============
 // F-003 多层子任务：递归规范化（脏数据过滤 + 深度上限 32 对齐原生 deepCopySubtask 防御）
 function normSubtasks(list, depth) {
@@ -305,6 +390,7 @@ function filteredTasks() {
     if (currentFilter === "today" && !isToday(t)) return false;
     if (currentFilter === "overdue" && !isOverdue(t)) return false;
     if (currentFilter === "high" && t.priority !== "high") return false;
+    if (currentFilter.startsWith("list:") && t.list !== currentFilter.slice(5)) return false;   // F-005：按列表过滤
     if (pri && t.priority !== pri) return false;
     if (status === "done" && !t.done) return false;
     if (status === "active" && t.done) return false;
@@ -388,6 +474,7 @@ function taskCardHTML(t) {
       <div class="task-title ${t.done ? "done" : ""}">${t.pinned ? '<span class="pinned">📌</span>' : ""}${esc(t.title)}</div>
       <div class="task-meta">
         ${t.tags.map(tag => `<span class="tag-pill">${esc(tag)}</span>`).join("")}
+        ${t.list ? `<span>📁 ${esc(t.list)}</span>` : ""}
         ${due ? `<span class="${due.cls}">🗓 ${due.text}</span>` : ""}
         ${t.recurrence ? `<span>🔁 重复${nextOccurrenceText(t)}</span>` : ""}
         ${t.reminder ? `<span>🔔 提前 ${fmtReminder(t.reminder)}</span>` : ""}
@@ -441,6 +528,7 @@ function updateClearBtn() {
 function render() {
   updateTodayBadge();   // 徽标随任何渲染刷新（任务增删/完成/视图切换）
   updateClearBtn();     // 清除按钮随渲染刷新（done 数量/可见性）
+  renderListSection();  // F-005 侧栏列表区（含归档）
   const container = $id("viewContainer");
   const list = filteredTasks();
 
@@ -809,6 +897,7 @@ function qaCreate() {
     if (!p.title) continue;
     // 日历「该天添加」预置日期兜底：NLP 未解析出日期才使用（用户显式写的日期优先）
     if (quickAddDue && !p.due) p.due = quickAddDue;
+    if (p.list) ensureList(p.list);   // F-005：NLP !xxx 自动建列表
     tasks.push({
       id: crypto.randomUUID(), title: p.title, done: false, priority: p.priority,
       tags: p.tags, due: p.due, pinned: false, createdAt: new Date().toISOString(),
@@ -1132,6 +1221,7 @@ function applyTemplate(idx) {
   t.tasks.forEach(line => {
     const p = NLP.parse(line);
     if (!p.title) return;
+    if (p.list) ensureList(p.list);   // F-005 模板任务自动建列表（review should-fix）
     tasks.push({ id: crypto.randomUUID(), title: p.title, done: false, priority: p.priority,
       tags: p.tags, due: p.due, pinned: false, createdAt: new Date().toISOString(),
       list: p.list, reminder: p.reminder, recurrence: p.recurrence, subtasks: [], checklist: [] });
@@ -1252,7 +1342,7 @@ function importJSON(file) {
           tags: Array.isArray(t.tags) ? t.tags.filter(x => typeof x === "string") : [],
           due: typeof t.due === "string" ? t.due : null,
           pinned: t.pinned === true, createdAt: typeof t.createdAt === "string" ? t.createdAt : new Date().toISOString(),
-          list: typeof t.list === "string" ? t.list : null,
+          list: typeof t.list === "string" && t.list.trim() ? t.list.trim() : null,   // F-005 trim（与列表名口径一致，review should-fix）
           sortOrder: Number.isFinite(t.sortOrder) ? t.sortOrder : 0,   // 与原生 Task.sortOrder 对齐
           reminder: Number.isFinite(t.reminder) ? t.reminder : null,
           recurrence: typeof t.recurrence === "string" ? t.recurrence : null,
@@ -1260,6 +1350,7 @@ function importJSON(file) {
           checklist: Array.isArray(t.checklist) ? t.checklist.filter(x => x && typeof x.title === "string").map(x => ({ id: String(x.id || crypto.randomUUID()), title: x.title, done: x.done === true })) : []
         };
         tasks.push(norm); existing.add(t.id); added++;
+        if (norm.list) ensureList(norm.list);   // F-005：导入任务自动建列表
       }
       Store.save(tasks);
       render();
@@ -1489,6 +1580,15 @@ document.addEventListener("click", (e) => {
     case "addChecklist": addChecklist(id); break;
     case "delChecklist": delChecklist(id, parseInt(el.dataset.ci)); break;
     case "boardGroup": settings.boardGroup = el.dataset.g; Store.saveSettings(settings); render(); break;
+    case "archiveList": archiveList(el.dataset.name); break;
+    case "restoreList": restoreList(el.dataset.name); break;
+    case "delList": deleteList(el.dataset.name); break;
+    case "filterList":   // F-005 动态列表行过滤（委托绑定；review blocking：静态 side-filter 绑定在 innerHTML 重建后失效）
+      applyListFilter(el.dataset.name);
+      el.classList.add("active");
+      render();
+      break;
+    case "addListBtn": { const inp = $id("newListInput"); if (inp && inp.value.trim()) { addList(inp.value.trim()); inp.value = ""; } break; }
     case "trendMode": settings.trendMode = el.dataset.g; Store.saveSettings(settings); render(); break;
     case "exportStats": downloadStats(); break;
     case "toggleSubtask": toggleSubtask(id, el.dataset.spath); break;
