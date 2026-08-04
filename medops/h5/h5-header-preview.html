@@ -1,0 +1,1922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#F1F5F4">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="急救设备巡检">
+<meta name="format-detection" content="telephone=no">
+<title>急救设备巡检</title>
+<style>
+:root{
+  /* 主色：医院标识墨绿 */
+  --brand:#0F554D; --brand-d:#0A3A34; --brand-l:#E9F2F0; --brand-r:#A8C9C3;
+  --brand-s:#157A6E;                       /* 亮一档，用于图表/进度 */
+  /* 中性：底色带一点绿灰，与主色同温 */
+  --bg:#F1F5F4; --card:#fff; --ink:#152220; --ink2:#3B4A47; --muted:#6B7A77; --faint:#9AA8A5;
+  --line:#DFE7E5; --line2:#F0F4F3;
+  /* 语义：正常/注意/异常，明度与墨绿拉开，避免撞色 */
+  --ok:#1E9E6A; --ok-l:#E8F7F0; --warn:#C2620F; --warn-l:#FDF3E7; --bad:#C0334A; --bad-l:#FCEDEF;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+svg{width:20px;height:20px;flex-shrink:0;display:block;stroke-width:2}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:15px; line-height:1.55; overscroll-behavior-y:none;
+}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{border:0;background:none;padding:0;cursor:pointer}
+.hide{display:none!important}
+
+/* ===== 布局 ===== */
+#app{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+.hd{
+  position:sticky;top:0;z-index:30;background:rgba(241,245,244,.92);backdrop-filter:blur(12px);
+  padding:calc(var(--sat) + 10px) 16px 10px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid transparent;transition:border-color .2s;
+}
+.hd.sc{border-bottom-color:var(--line)}
+.hd h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.2px;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hd .sub{font-size:12px;color:var(--muted);font-weight:400;margin-top:1px}
+.back{width:34px;height:34px;display:grid;place-items:center;margin-left:-6px;border-radius:12px;color:var(--ink2)}
+.back svg{width:21px;height:21px;stroke-width:2.2}
+.back:active{background:rgba(21,34,32,.05)}
+.hact{display:flex;gap:6px;align-items:center;flex-shrink:0}
+main{flex:1;padding:4px 16px 16px}
+.pad-tab{padding-bottom:calc(72px + var(--sab))}
+.pad-bar{padding-bottom:calc(96px + var(--sab))}
+
+/* ===== 底部导航 ===== */
+.tabs{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;
+  background:rgba(255,255,255,.94);backdrop-filter:blur(14px);border-top:1px solid var(--line);
+  padding-bottom:var(--sab);
+}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px 7px;color:var(--faint);font-size:11px}
+.tab.on{color:var(--brand)}
+.tab svg{width:23px;height:23px;stroke-width:1.9}
+.tab .dot{position:absolute;transform:translate(11px,-3px);width:7px;height:7px;border-radius:99px;background:var(--bad)}
+
+/* ===== 底部操作条 ===== */
+.bar{
+  position:fixed;left:0;right:0;bottom:0;z-index:45;background:rgba(255,255,255,.96);
+  backdrop-filter:blur(14px);border-top:1px solid var(--line);
+  padding:10px 16px calc(10px + var(--sab));display:flex;gap:10px;align-items:center;
+}
+.bar .info{flex:1;min-width:0;font-size:13px;color:var(--muted);line-height:1.35}
+.bar .info b{color:var(--ink);font-size:15px;font-weight:700}
+
+/* ===== 卡片 ===== */
+.card{background:var(--card);border-radius:18px;padding:14px 16px;box-shadow:0 4px 18px -12px rgba(15,85,77,.24)}
+.card+.card{margin-top:10px}
+.list .card+.card{margin-top:0}
+.list{display:flex;flex-direction:column;gap:10px}
+.row{display:flex;align-items:center;gap:12px}
+.grow{flex:1;min-width:0}
+.tt{font-weight:600;font-size:15.5px;letter-spacing:.1px}
+.st{font-size:12.5px;color:var(--muted);margin-top:2px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.chev{width:18px;height:18px;color:#C3CFCC;stroke-width:2.4}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ===== 按钮 ===== */
+.btn svg{width:17px;height:17px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 18px;border-radius:14px;font-size:15px;font-weight:600;
+  background:#fff;color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line);white-space:nowrap}
+.btn:active{transform:scale(.98)}
+.btn.pri{background:var(--brand);color:#fff;box-shadow:none}
+.btn.pri:disabled{background:#A8C9C3;color:#fff}
+.btn.soft{background:var(--brand-l);color:var(--brand);box-shadow:none}
+.btn.gho{background:none;box-shadow:none;color:var(--muted)}
+.btn.lg{padding:14px 20px;font-size:16px;border-radius:16px}
+.btn.blk{width:100%}
+.btn:disabled{opacity:.55;pointer-events:none}
+
+/* ===== 徽章 / 进度 ===== */
+.pill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;
+  font-size:11.5px;font-weight:600;line-height:1.5;white-space:nowrap}
+.pill svg{width:13px;height:13px;stroke-width:2.6}
+.p-ok{background:var(--ok-l);color:var(--ok)}
+.p-go{background:var(--warn-l);color:var(--warn)}
+.p-no{background:var(--line2);color:var(--faint)}
+.p-bad{background:var(--bad-l);color:var(--bad)}
+.p-br{background:var(--brand-l);color:var(--brand)}
+.bar-bg{height:6px;border-radius:99px;background:#F1F3F7;overflow:hidden;margin-top:9px}
+.bar-fg{height:100%;border-radius:99px;background:var(--brand);transition:width .35s cubic-bezier(.4,0,.2,1)}
+.bar-fg.done{background:var(--ok)}
+
+/* ===== 设备勾选行 ===== */
+.dev{display:flex;align-items:center;gap:12px;padding:11px 14px;background:#fff;border-radius:15px;
+  box-shadow:0 3px 14px -11px rgba(15,85,77,.28);transition:background .15s}
+.dev:active{background:#FAFBFD}
+.dev.ng{box-shadow:inset 0 0 0 1.5px #FDA4AF}
+.tick{width:28px;height:28px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;
+  box-shadow:inset 0 0 0 2px var(--line);color:transparent;transition:all .18s}
+.dev.ok .tick{background:var(--ok);box-shadow:none;color:#fff}
+.dev.ng .tick{background:var(--bad);box-shadow:none;color:#fff}
+.tick svg{width:17px;height:17px;stroke-width:3}
+.ngbtn{flex-shrink:0;padding:6px 10px;border-radius:10px;font-size:12px;font-weight:600;
+  background:#F7FAF9;color:var(--faint);box-shadow:inset 0 0 0 1px var(--line)}
+.dev.ng .ngbtn{background:var(--bad-l);color:var(--bad);box-shadow:inset 0 0 0 1px #FDA4AF}
+.ngnote{margin:8px 0 0;padding:9px 12px;background:var(--bad-l);border-radius:12px;
+  font-size:13px;color:#9F1239;line-height:1.5}
+
+/* ===== 表单 ===== */
+.fld{margin-bottom:14px}
+.lb{font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:7px;display:block}
+.lb i{color:var(--bad);font-style:normal;margin-left:2px}
+.in{width:100%;padding:12px 14px;border-radius:14px;background:#fff;border:0;
+  box-shadow:inset 0 0 0 1px var(--line);font-size:16px;outline:none}
+.in:focus{box-shadow:inset 0 0 0 2px var(--brand)}
+textarea.in{min-height:88px;resize:none;line-height:1.6}
+select.in{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 13px center;background-size:17px;padding-right:40px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:9px 15px;border-radius:99px;font-size:14px;font-weight:600;background:#fff;
+  color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line)}
+.chip.on{background:var(--brand);color:#fff;box-shadow:none}
+
+/* ===== 签名 ===== */
+.sig-wrap{position:relative;background:#fff;border-radius:16px;box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
+.sig-wrap.blank::after{
+  content:"请在此处签名";position:absolute;inset:0;display:grid;place-items:center;
+  color:#C3CFCC;font-size:15px;pointer-events:none;letter-spacing:2px}
+#sigpad{display:block;width:100%;height:190px;touch-action:none}
+.sig-line{position:absolute;left:24px;right:24px;bottom:38px;border-bottom:1px dashed var(--line);pointer-events:none}
+.sig-done{padding:14px;background:#fff;border-radius:16px;box-shadow:inset 0 0 0 1px var(--line);text-align:center}
+.sig-done img{max-width:100%;height:auto;display:block;margin:0 auto}
+
+/* ===== 其他 ===== */
+.empty{text-align:center;padding:52px 20px;color:var(--faint);font-size:14px}
+.empty svg{width:44px;height:44px;stroke-width:1.4;margin:0 auto 12px;opacity:.5}
+.sec{font-size:12.5px;font-weight:600;color:var(--faint);margin:18px 2px 9px;letter-spacing:.4px}
+.sec:first-child{margin-top:6px}
+.kv{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--line2);font-size:14px}
+.kv:last-child{border-bottom:0}
+.kv span{color:var(--muted);flex-shrink:0}
+.kv b{font-weight:600;text-align:right;min-width:0;word-break:break-all}
+.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat>div{background:#fff;border-radius:16px;padding:13px 10px;text-align:center;
+  box-shadow:0 3px 14px -11px rgba(15,85,77,.28)}
+.stat .n{font-size:22px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
+.stat .l{font-size:11.5px;color:var(--muted);margin-top:3px}
+
+/* ===== 弹层 ===== */
+.mask{position:fixed;inset:0;z-index:60;background:rgba(21,34,32,.42);backdrop-filter:blur(3px);
+  display:flex;align-items:flex-end;animation:fade .2s}
+.sheet{width:100%;background:#fff;border-radius:22px 22px 0 0;padding:20px 18px calc(20px + var(--sab));
+  max-height:86vh;overflow-y:auto;animation:up .26s cubic-bezier(.3,1,.4,1)}
+.sheet h3{margin:0 0 4px;font-size:17px;font-weight:700}
+.sheet .d{font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.55}
+@keyframes fade{from{opacity:0}}
+@keyframes up{from{transform:translateY(100%)}}
+.toast{position:fixed;left:50%;bottom:calc(84px + var(--sab));transform:translateX(-50%);z-index:80;
+  background:rgba(21,34,32,.94);color:#fff;padding:11px 20px;border-radius:99px;font-size:14px;
+  font-weight:500;max-width:88vw;text-align:center;animation:fade .18s;box-shadow:0 8px 24px -8px #0006}
+
+/* ===== 登录 ===== */
+.login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:32px 26px calc(40px + var(--sab))}
+.logo{width:56px;height:56px;border-radius:18px;background:var(--brand);display:grid;place-items:center;
+  color:#fff;margin-bottom:20px;box-shadow:0 10px 26px -10px rgba(15,85,77,.55)}
+.logo svg{width:28px;height:28px;stroke-width:2}
+.login h2{margin:0;font-size:26px;font-weight:800;letter-spacing:-.4px}
+.login .p{color:var(--muted);font-size:14px;margin:6px 0 30px}
+.demo{margin-top:22px;padding:13px 15px;background:#fff;border-radius:14px;font-size:12.5px;
+  color:var(--muted);line-height:1.85;box-shadow:inset 0 0 0 1px var(--line)}
+.demo b{color:var(--ink2)}
+.demo button{color:var(--brand);font-weight:600;font-size:12.5px}
+
+/* ===== 提醒条 ===== */
+.alert{background:#fff;border-radius:16px;padding:13px 15px;margin-bottom:14px;
+  box-shadow:0 4px 18px -12px rgba(192,51,74,.34),inset 0 0 0 1.5px #F0C3CA}
+.alert.warn{box-shadow:0 4px 18px -12px rgba(194,98,15,.34),inset 0 0 0 1.5px #F2D5B4}
+.alert .ttl{display:flex;align-items:center;gap:7px;font-weight:700;font-size:14.5px;color:var(--bad)}
+.alert.warn .ttl{color:var(--warn)}
+.alert .ttl svg{width:17px;height:17px}
+.alert .why{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.6}
+.alert .its{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+.aitem{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:12px;
+  background:var(--bad-l);font-size:13.5px;width:100%;text-align:left}
+.alert.warn .aitem{background:var(--warn-l)}
+.aitem b{font-weight:600}
+.aitem .grow{min-width:0}
+.aitem svg{width:16px;height:16px;color:rgba(21,34,32,.22)}
+
+/* ===== 周日历格 ===== */
+.wk{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:11px}
+.wd{aspect-ratio:1;border-radius:11px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:1px;font-size:11px;background:var(--line2);color:var(--faint);line-height:1.2}
+.wd b{font-size:13.5px;font-weight:700}
+.wd.ok{background:var(--ok-l);color:var(--ok)}
+.wd.ng{background:var(--bad-l);color:var(--bad)}
+.wd.miss{background:var(--bad-l);color:#D4667A;box-shadow:inset 0 0 0 1.5px #F0C3CA}
+.wd.future{background:#F7FAF9;color:#C3CFCC}
+.wd.today{box-shadow:inset 0 0 0 2px var(--brand)}
+
+/* ===== 递进链 ===== */
+.chain{display:flex;align-items:center;gap:0;margin:12px 0 2px}
+.cstep{flex:1;text-align:center;font-size:11px;color:var(--faint);position:relative}
+.cstep .dot{width:26px;height:26px;border-radius:99px;background:var(--line2);color:#C3CFCC;
+  display:grid;place-items:center;margin:0 auto 5px;font-weight:700;font-size:12px}
+.cstep .dot svg{width:15px;height:15px}
+.cstep.done .dot{background:var(--ok);color:#fff}
+.cstep.now .dot{background:var(--brand);color:#fff;box-shadow:0 0 0 4px var(--brand-l)}
+.cstep.done,.cstep.now{color:var(--ink2);font-weight:600}
+.cline{height:2px;flex:0 0 20px;background:var(--line2);margin-bottom:20px}
+.cline.done{background:var(--ok)}
+
+/* ===== 锁定态 ===== */
+.lock{background:#F7FAF9;border-radius:16px;padding:14px 16px;text-align:center;
+  box-shadow:inset 0 0 0 1px var(--line);font-size:13.5px;color:var(--muted);line-height:1.6}
+.lock b{color:var(--ink2)}
+
+/* ===== 登录页 ===== */
+.hosplogo{width:246px;max-width:74%;height:auto;display:block;margin:0 0 26px;
+  image-rendering:-webkit-optimize-contrast}
+.pw{position:relative}
+.pw .in{padding-right:50px}
+.eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:42px;height:42px;
+  display:grid;place-items:center;border-radius:12px;color:var(--faint)}
+.eye:active{background:rgba(21,34,32,.05)}
+.eye svg{width:20px;height:20px}
+.rem{display:flex;align-items:center;gap:9px;margin:-2px 0 16px;font-size:13.5px;color:var(--ink2)}
+.rem input{width:19px;height:19px;accent-color:var(--brand);flex-shrink:0}
+.lockmsg{background:var(--bad-l);color:var(--bad);border-radius:12px;padding:10px 13px;
+  font-size:13px;font-weight:600;margin-bottom:12px;text-align:center}
+.acct{display:flex;align-items:center;gap:8px;background:#fff;border-radius:16px;padding:13px 8px 13px 16px;
+  box-shadow:0 4px 18px -12px rgba(15,85,77,.24)}
+.acct.lk{opacity:.62}
+.acct .tt{font-weight:600;font-size:15.5px}
+.acct .st{font-size:12.5px;color:var(--muted);margin-top:2px}
+.xbtn{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;color:#C3CFCC;flex-shrink:0}
+.xbtn:active{background:rgba(21,34,32,.05)}
+.xbtn svg{width:17px;height:17px}
+/* 多科室提示 */
+.scope{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.scope span{padding:3px 9px;border-radius:99px;background:var(--brand-l);color:var(--brand);
+  font-size:11.5px;font-weight:600}
+
+/* ===== 底部提示：醒目版 ===== */
+.bar .info.warnmsg{display:flex;align-items:flex-start;gap:7px;background:var(--warn-l);
+  border-radius:12px;padding:9px 11px;color:var(--warn);font-weight:600;font-size:12.5px;line-height:1.5}
+.bar .info.warnmsg svg{width:16px;height:16px;flex-shrink:0;margin-top:1px}
+.bar .info.warnmsg b{color:var(--warn);display:block;font-size:13.5px;margin-bottom:1px}
+
+/* ===== 自定义下拉（替代原生 select，样式跨端一致） ===== */
+.pick{width:100%;display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:14px;
+  background:#fff;box-shadow:inset 0 0 0 1px var(--line);font-size:16px;text-align:left;color:var(--ink)}
+.pick.ph{color:var(--faint)}
+.pick .grow{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick svg{width:18px;height:18px;color:var(--faint);flex-shrink:0}
+.pick:active{background:#F7FAF9}
+.opt{display:flex;align-items:center;gap:11px;width:100%;padding:14px 14px;border-radius:14px;
+  text-align:left;font-size:15.5px;background:#fff;box-shadow:inset 0 0 0 1px var(--line)}
+.opt+.opt{margin-top:8px}
+.opt.on{background:var(--brand-l);box-shadow:inset 0 0 0 1.5px var(--brand);color:var(--brand);font-weight:600}
+.opt .grow{min-width:0}
+.opt .sub{font-size:12.5px;color:var(--muted);font-weight:400;margin-top:2px}
+.opt.on .sub{color:var(--brand)}
+.opt .ck{width:20px;height:20px;flex-shrink:0;color:var(--brand);opacity:0}
+.opt.on .ck{opacity:1}
+
+/* ===== 可点击的统计卡 ===== */
+.stat button.tap{position:relative}
+.stat button.tap::after{content:"";position:absolute;right:8px;top:8px;width:5px;height:5px;
+  border-radius:99px;background:var(--brand);opacity:.5}
+.stat button.tap:active{background:#F7FAF9}
+
+/* ===== 明细列表 ===== */
+.dtl{display:flex;gap:11px;padding:12px 0;border-bottom:1px solid var(--line2)}
+.dtl:last-child{border-bottom:0}
+.dtl .dot{width:7px;height:7px;border-radius:99px;background:var(--bad);flex-shrink:0;margin-top:7px}
+.dtl .grow{min-width:0}
+.dtl .h{font-size:14px;font-weight:600}
+.dtl .m{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.55}
+.dtl .t{font-size:11.5px;color:var(--faint);margin-top:3px}
+.signrow{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line2)}
+.signrow:last-child{border-bottom:0}
+.signrow img{height:34px;width:auto;flex-shrink:0}
+
+/* ===== 首页状态主卡 ===== */
+.hero{position:relative;overflow:hidden;border-radius:20px;padding:18px 20px 20px;margin-bottom:14px;
+  background:linear-gradient(138deg,#0B4841 0%,#0F554D 46%,#17786B 100%);color:#fff;
+  box-shadow:0 12px 28px -16px rgba(15,85,77,.85)}
+.hero::before{content:"";position:absolute;right:-48px;top:-60px;width:176px;height:176px;
+  border-radius:99px;background:rgba(255,255,255,.07)}
+.hero::after{content:"";position:absolute;right:22px;bottom:-46px;width:104px;height:104px;
+  border-radius:99px;background:rgba(255,255,255,.05)}
+.hero>*{position:relative;z-index:1}
+.hero .hl{font-size:12.5px;opacity:.82;letter-spacing:.3px}
+.hero .hb{font-size:33px;font-weight:800;line-height:1.06;margin-top:6px;font-variant-numeric:tabular-nums}
+.hero .hb small{font-size:17px;font-weight:600;opacity:.62;margin-left:2px}
+.hero .hs{font-size:13px;opacity:.86;margin-top:3px}
+.hero .hbadge{flex-shrink:0;padding:5px 12px;border-radius:99px;font-size:12px;font-weight:700;
+  background:rgba(255,255,255,.18);white-space:nowrap}
+.hero .hbadge.on{background:#fff;color:var(--brand)}
+.hero .hbadge.warn{background:rgba(255,255,255,.92);color:var(--warn)}
+.hprog{height:7px;border-radius:99px;background:rgba(255,255,255,.22);margin-top:15px;overflow:hidden}
+.hprog i{display:block;height:100%;border-radius:99px;background:#fff;transition:width .45s cubic-bezier(.4,0,.2,1)}
+.hfoot{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;opacity:.88;margin-top:10px}
+.hfoot b{font-weight:700}
+.hbtn{margin-top:15px;width:100%;padding:12px;border-radius:14px;background:#fff;color:var(--brand);
+  font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:6px}
+.hbtn:active{transform:scale(.99)}
+.hbtn svg{width:17px;height:17px}
+.hnote{margin-top:14px;padding:10px 13px;border-radius:13px;background:rgba(255,255,255,.14);
+  font-size:12.5px;line-height:1.6;display:flex;gap:7px;align-items:flex-start}
+.hnote svg{width:15px;height:15px;flex-shrink:0;margin-top:1.5px;opacity:.9}
+
+/* 分组标题带右侧说明 */
+.sec.row2{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.sec.row2 em{font-style:normal;font-weight:400;color:var(--faint);font-size:11.5px;text-align:right}
+
+/* 页内轻提示（周/月详情底部） */
+.hint{font-size:12.5px;color:var(--muted);margin:10px 2px 0;line-height:1.6;text-align:center}
+
+/* =====================================================================
+   头部方案预览（body[data-hd] 命名空间，选定后未用的方案样式会被移除）
+   ===================================================================== */
+
+/* ---- 方案 A · 品牌色头图 ---- */
+body[data-hd="a"] .hd{
+  background:linear-gradient(138deg,#0B4841 0%,#0F554D 46%,#17786B 100%);
+  color:#fff;padding-bottom:13px;border-bottom:0}
+body[data-hd="a"] .hd .sub{color:rgba(255,255,255,.72)}
+body[data-hd="a"] .hd.sc{border-bottom-color:transparent;box-shadow:0 8px 20px -14px rgba(10,58,52,.75)}
+body[data-hd="a"] .back{color:#fff}
+body[data-hd="a"] .back:active{background:rgba(255,255,255,.13)}
+body[data-hd="a"] .hd .btn.gho{color:rgba(255,255,255,.88)}
+.havatar{width:32px;height:32px;border-radius:99px;background:rgba(255,255,255,.17);
+  display:grid;place-items:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
+
+/* ---- 方案 B · 图标徽章 ---- */
+.hicon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;
+  background:var(--brand);color:#fff;box-shadow:0 6px 16px -8px rgba(15,85,77,.5)}
+.hicon svg{width:19px;height:19px}
+.hicon.lite{background:var(--brand-l);color:var(--brand);box-shadow:none}
+
+/* ---- 方案 C · 大标题 + 右侧胶囊 ---- */
+body[data-hd="c"] .hd.big{padding-top:calc(var(--sat) + 14px);padding-bottom:12px;align-items:flex-end}
+body[data-hd="c"] .hd.big h1{font-size:24px;font-weight:800;letter-spacing:-.2px;line-height:1.16}
+body[data-hd="c"] .hd.big h1::before{content:"";display:block;width:20px;height:4px;border-radius:99px;
+  background:var(--brand);margin-bottom:8px}
+body[data-hd="c"] .hd.big .sub{font-size:12.5px;margin-top:3px}
+.hcap{padding:5px 11px;border-radius:99px;background:var(--brand-l);color:var(--brand);
+  font-size:12px;font-weight:700;white-space:nowrap;margin-bottom:2px}
+
+/* ---- 方案 D · 标题并入主卡 ---- */
+.dtop{padding-top:calc(var(--sat) + 14px)}
+.hero .dht{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  margin-bottom:13px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.16)}
+.hero .dht b{font-size:17px;font-weight:800;letter-spacing:.2px}
+.hero .dht span{font-size:12px;opacity:.78}
+.hero .dht button{font-size:12.5px;font-weight:600;color:rgba(255,255,255,.88);white-space:nowrap}
+.dbar{background:linear-gradient(138deg,#0B4841 0%,#0F554D 46%,#17786B 100%);color:#fff;
+  border-radius:16px;padding:13px 16px;margin-bottom:12px;display:flex;justify-content:space-between;
+  align-items:center;gap:10px;box-shadow:0 10px 24px -14px rgba(15,85,77,.8)}
+.dbar b{font-size:16px;font-weight:800;letter-spacing:.2px}
+.dbar span{font-size:12px;opacity:.8}
+.mecard .dht2{font-size:13px;font-weight:800;color:var(--faint);letter-spacing:1px;
+  text-align:left;margin:-8px 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line2)}
+
+/* ---- 预览切换器（选定方案后整块移除） ---- */
+#hdsw{position:fixed;right:10px;bottom:calc(118px + var(--sab));z-index:95;display:flex;flex-direction:column;
+  gap:5px;background:rgba(21,34,32,.85);backdrop-filter:blur(8px);padding:8px 7px;border-radius:14px;
+  box-shadow:0 12px 30px -10px rgba(0,0,0,.45)}
+#hdsw .t{color:rgba(255,255,255,.6);font-size:9.5px;text-align:center;letter-spacing:1px}
+#hdsw button{width:40px;height:29px;border-radius:9px;color:#fff;font-size:12px;font-weight:700;
+  background:rgba(255,255,255,.1)}
+#hdsw button.on{background:#fff;color:var(--brand)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const LOGO='data:image/png;base64,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';
+/* =========================================================================
+   急救设备巡检 H5 · V3   上海市浦东新区周浦医院 · 设备科
+   -------------------------------------------------------------------------
+   三级递进签字：巡检员日签 → 科室周签 → 设备科月签
+   上一级签完，下一级才解锁；可随时补签，但不能提前签（周期未开始）
+   数据层收敛在 API 对象，接后端时只需把各方法换成 fetch
+   ========================================================================= */
+
+/* ---------- 基础工具 ---------- */
+const $=(s,r=document)=>r.querySelector(s);
+const H=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const D=s=>new Date(String(s).replace(/-/g,'/')+' 00:00:00');
+const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const addDay=(s,n)=>{const d=D(s);d.setDate(d.getDate()+n);return fmt(d)};
+const today=()=>fmt(new Date());
+const nowT=()=>{const d=new Date();return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
+const stamp=()=>`${today()} ${nowT()}`;
+const uid=p=>p+Math.random().toString(36).slice(2,10);
+const WD=['日','一','二','三','四','五','六'];
+const dLab=s=>`${+s.slice(5,7)}月${+s.slice(8,10)}日 周${WD[D(s).getDay()]}`;
+const dShort=s=>`${+s.slice(5,7)}/${+s.slice(8,10)}`;
+
+/* 周以「周一日期」为标识，避免跨年周号问题 */
+const wkOf=s=>{const d=D(s);const off=(d.getDay()+6)%7;d.setDate(d.getDate()-off);return fmt(d)};
+const wkDays=w=>Array.from({length:7},(_,i)=>addDay(w,i));
+const wkLab=w=>`${dShort(w)}–${dShort(addDay(w,6))}`;
+const moOf=s=>s.slice(0,7);
+const moLab=m=>`${+m.slice(5,7)}月`;
+/* 某月包含的周（以周一归属月份计），仅返回已开始的 */
+const wksOfMonth=m=>{
+  const out=[];let w=wkOf(m+'-01');
+  if(moOf(w)!==m) w=addDay(w,7);
+  while(moOf(w)===m){ if(w<=today()) out.push(w); w=addDay(w,7); }
+  return out;
+};
+const prevMonth=m=>{let y=+m.slice(0,4),mm=+m.slice(5,7)-1;if(mm<1){mm=12;y--}return `${y}-${pad(mm)}`};
+
+const ICON={
+  home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
+  list:'<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/>',
+  cal:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  chart:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5S20 17 20 21"/>',
+  back:'<path d="M15 5l-7 7 7 7"/>',
+  chev:'<path d="M9 5l7 7-7 7"/>',
+  check:'<path d="M4 12.5l5 5L20 6.5"/>',
+  box:'<path d="M21 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2"/><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 13h18"/>',
+  heart:'<path d="M12 20s-7-4.6-7-9.5A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.5C19 15.4 12 20 12 20Z"/>',
+  ok:'<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+  bell:'<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  lock:'<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3"/>',
+  file:'<path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff:'<path d="M9.9 4.2A9.5 9.5 0 0 1 12 4c6.5 0 10 7 10 7a17 17 0 0 1-3 3.7M6.5 6.5A17 17 0 0 0 2 11s3.5 7 10 7a9.5 9.5 0 0 0 4-.9"/><path d="M3 3l18 18"/>',
+  close:'<path d="M6 6l12 12M18 6L6 18"/>',
+  chevdown:'<path d="M6 9l6 6 6-6"/>',
+  warn:'<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>',
+  hist:'<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>',
+  pen:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  out:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'
+};
+const svg=(k,c='')=>`<svg class="${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+
+/* ---------- 头部方案预览开关（选定后此段移除，只保留选中方案） ---------- */
+let HD=localStorage.getItem('insp:hdstyle')||'0';   /* 0=原版 a/b/c/d=四个方案 */
+function applyHD(){
+  document.body.dataset.hd=HD;
+  const m=document.querySelector('meta[name="theme-color"]');
+  if(m)m.content=HD==='a'?'#0F554D':'#F1F5F4';
+}
+
+/* =========================================================================
+   API 层 —— 换后端时只改这里
+   ========================================================================= */
+const LOCK_N=5, LOCK_MIN=5;        /* 密码连错 5 次冻结，5/10/15… 递增，不设上限 */
+const PROBE_N=8, PROBE_MIN=2;      /* 同一设备连试 8 个不存在的账号 → 冷却 2 分钟，防字典遍历 */
+const HOSP='上海市浦东新区周浦医院';
+const DB={
+  get(k,d){try{const v=localStorage.getItem('insp:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem('insp:'+k,JSON.stringify(v))}catch(e){}}
+};
+const API={
+  /* ---------- 登录态 ---------- */
+  async login(u,p){
+    const un=String(u||'').trim();
+    if(!un) throw new Error('请输入账号');
+    /* ① 设备级探测冷却：防止拿字典遍历账号名 */
+    const pb=await API.probeState();
+    if(pb.cooling) throw new Error(`尝试过于频繁，请 ${pb.leftText}后再试`);
+    /* ② 账号是否冻结 */
+    const lk=await API.lockOf(un);
+    if(lk.locked) throw new Error(`账号已冻结，请 ${lk.leftText}后再试`);
+    /* ③ 账号是否存在 —— 不存在就没必要判密码，也不计入该账号的冻结 */
+    const me=DB.get('users',[]).find(x=>x.username===un);
+    if(!me){
+      const st=await API.addProbe();
+      throw new Error(st.cooling
+        ? `连续输入了 ${PROBE_N} 个不存在的账号，请 ${PROBE_MIN} 分钟后再试`
+        : '该账号不存在，请核对后重试');
+    }
+    /* ④ 账号被后台禁用 —— 不判密码、不计冻结、不计探测，直接告知去向 */
+    if(me.status==='off'){ await API.clearProbe();
+      throw new Error('您的账户已被禁用，请联系设备科'); }
+    /* ⑤ 账号正常 → 才校验密码，错了才累计冻结 */
+    if(!p) throw new Error('请输入密码');
+    if(me.password!==p){
+      const st=await API.addFail(un);
+      if(st.locked) throw new Error(`密码连续输错 ${LOCK_N} 次，账号冻结 ${st.mins} 分钟`);
+      throw new Error(`密码不对，还可尝试 ${LOCK_N-st.fails} 次`);
+    }
+    await API.clearFail(un); await API.clearProbe();
+    DB.set('session',{userId:me.id,at:stamp()});
+    return me;
+  },
+
+  /* 登录前置状态：账号输入变化时调用，用于实时刷新冻结提示与按钮可用性
+     接后端时对应 GET /auth/login-state?username=xxx
+     刻意不返回「账号是否存在」，避免通过该接口枚举账号 */
+  async loginState(un){
+    un=String(un||'').trim();
+    const pb=await API.probeState();
+    if(pb.cooling) return {locked:true,leftText:pb.leftText,reason:'probe',
+      msg:`尝试过于频繁，请 ${pb.leftText}后再试`};
+    if(!un) return {locked:false};
+    const lk=await API.lockOf(un);
+    return lk.locked?{locked:true,leftText:lk.leftText,reason:'lock',
+      msg:`账号已冻结，请 ${lk.leftText}后再试`}:{locked:false};
+  },
+
+  /* 仅用于「本机已保存账号」的状态展示，不用于任意账号探测 */
+  async isDisabled(un){
+    const u=DB.get('users',[]).find(x=>x.username===String(un||'').trim());
+    return !!(u&&u.status==='off');
+  },
+
+  /* 设备级探测计数（不存在的账号） */
+  async probeState(){
+    const o=DB.get('probe',{fails:0,until:0});
+    if(!o.until) return {cooling:false,fails:o.fails||0};
+    const left=o.until-Date.now();
+    if(left<=0){DB.set('probe',{fails:0,until:0});return {cooling:false,fails:0}}
+    const tot=Math.ceil(left/1000),mm=Math.floor(tot/60),ss=tot%60;
+    return {cooling:true,left,leftText:mm>0?`${mm} 分 ${pad(ss)} 秒`:`${ss} 秒`};
+  },
+  async addProbe(){
+    const o=DB.get('probe',{fails:0,until:0});
+    o.fails=(o.fails||0)+1;
+    let cooling=false;
+    if(o.fails>=PROBE_N){o.until=Date.now()+PROBE_MIN*60000;o.fails=0;cooling=true}
+    DB.set('probe',o);return {cooling,fails:o.fails};
+  },
+  async clearProbe(){DB.set('probe',{fails:0,until:0})},
+  async me(){
+    const s=DB.get('session',null);if(!s)return null;
+    const u=DB.get('users',[]).find(x=>x.id===s.userId);
+    /* 后台禁用后，下次进入立即失效（接后端时对应接口返回 403 → 同样踢回登录） */
+    if(!u||u.status==='off'){
+      localStorage.removeItem('insp:session');
+      if(u) DB.set('kicked',{username:u.username,reason:'disabled',at:stamp()});
+      return null;
+    }
+    return u;
+  },
+  async takeKicked(){const k=DB.get('kicked',null);if(k)localStorage.removeItem('insp:kicked');return k},
+  async logout(){localStorage.removeItem('insp:session')},
+
+  /* ---------- 失败次数与冻结（递增：5/10/15… 不设上限） ---------- */
+  async lockOf(un){
+    const all=DB.get('lock',{}),o=all[un];
+    if(!o||!o.until) return {locked:false,fails:(o&&o.fails)||0};
+    const left=o.until-Date.now();
+    if(left<=0){o.until=0;o.fails=0;all[un]=o;DB.set('lock',all);return {locked:false,fails:0}}
+    const tot=Math.ceil(left/1000),mm=Math.floor(tot/60),ss=tot%60;
+    return {locked:true,left,leftText:mm>0?`${mm} 分 ${pad(ss)} 秒`:`${ss} 秒`,fails:o.fails||0,round:o.round||0};
+  },
+  async addFail(un){
+    const all=DB.get('lock',{}),o=all[un]||{fails:0,round:0,until:0};
+    o.fails=(o.fails||0)+1;
+    let locked=false,mins=0;
+    if(o.fails>=LOCK_N){
+      o.round=(o.round||0)+1;            // 第几轮触发，冻结时长递增
+      mins=LOCK_MIN*o.round;
+      o.until=Date.now()+mins*60000;o.fails=0;locked=true;
+    }
+    all[un]=o;DB.set('lock',all);
+    return {locked,mins,fails:o.fails,round:o.round};
+  },
+  async clearFail(un){const all=DB.get('lock',{});delete all[un];DB.set('lock',all)},
+
+  /* ---------- 记住的账号（下次一键登录） ---------- */
+  /* 演示阶段本地保存凭据；接后端后应改为保存 refreshToken，不落密码 */
+  async savedAccounts(){return DB.get('saved',[])},
+  async saveAccount(me,pwd){
+    const all=DB.get('saved',[]).filter(x=>x.username!==me.username);
+    all.unshift({username:me.username,displayName:me.displayName,role:me.role,
+      cred:btoa(unescape(encodeURIComponent(pwd))),at:stamp()});
+    DB.set('saved',all.slice(0,5));
+  },
+  async credOf(un){
+    const a=DB.get('saved',[]).find(x=>x.username===un);
+    if(!a)return '';try{return decodeURIComponent(escape(atob(a.cred)))}catch(e){return ''}
+  },
+  async forgetAccount(un){DB.set('saved',DB.get('saved',[]).filter(x=>x.username!==un))},
+
+  /* ---------- 数据范围（后台按角色配置） ----------
+     inspector：按 deptIds 配置，可一人多科室
+     dept：仅本科室   equip：全院                     */
+  async depts(me){
+    const all=DB.get('depts',[]).filter(d=>d.status!=='off');
+    if(!me) return all;
+    if(me.role==='dept') return all.filter(d=>d.id===me.deptId);
+    if(me.role==='inspector'){
+      const ids=Array.isArray(me.deptIds)?me.deptIds:(me.deptId?[me.deptId]:[]);
+      return ids.length?all.filter(d=>ids.includes(d.id)):[];
+    }
+    return all;
+  },
+  async dept(id){return DB.get('depts',[]).find(d=>d.id===id)||null},
+  async members(deptId){return DB.get('members',[]).filter(m=>m.deptId===deptId&&m.status!=='off')},
+  async cats(deptId){
+    const ds=DB.get('devices',[]).filter(d=>d.deptId===deptId&&d.status==='in_use');
+    const map=new Map();
+    ds.forEach(d=>{const c=map.get(d.catName)||{name:d.catName,devices:[]};c.devices.push(d);map.set(d.catName,c)});
+    return [...map.values()].sort((a,b)=>b.devices.length-a.devices.length);
+  },
+  async devices(deptId,cat){return DB.get('devices',[]).filter(d=>d.deptId===deptId&&d.catName===cat&&d.status==='in_use').sort((a,b)=>a.code.localeCompare(b.code))},
+  async devCount(deptId){return DB.get('devices',[]).filter(d=>d.deptId===deptId&&d.status==='in_use').length},
+
+  /* 日巡检 + 日签 */
+  async record(deptId,date){return DB.get('records',[]).find(r=>r.deptId===deptId&&r.date===date)||null},
+  async recordsRange(from,to,deptId){
+    return DB.get('records',[]).filter(r=>r.date>=from&&r.date<=to&&(!deptId||r.deptId===deptId));
+  },
+  async saveChecks(deptId,date,checks,notes,me){
+    const all=DB.get('records',[]);
+    let r=all.find(x=>x.deptId===deptId&&x.date===date);
+    if(!r){r={id:uid('rec_'),deptId,date,checks:{},notes:{},sign:null,createdAt:stamp()};all.push(r)}
+    r.checks=checks;r.notes=notes;r.inspectorId=r.inspectorId||me.id;
+    r.inspectorName=r.inspectorName||me.displayName;r.updatedAt=stamp();
+    DB.set('records',all);return r;
+  },
+  async signDay(deptId,date,sign){
+    if(date>today()) throw new Error('还没到这一天，不能提前签字');
+    const all=DB.get('records',[]);const r=all.find(x=>x.deptId===deptId&&x.date===date);
+    if(!r||!Object.keys(r.checks||{}).length) throw new Error('还没有巡检记录，请先勾选设备');
+    r.sign={...sign,at:stamp()};DB.set('records',all);return r;
+  },
+
+  /* 周签 */
+  async weekSign(deptId,week){return DB.get('weeksigns',[]).find(x=>x.deptId===deptId&&x.week===week)||null},
+  async weekSigns(deptId){return DB.get('weeksigns',[]).filter(x=>!deptId||x.deptId===deptId)},
+  async signWeek(deptId,week,sign,stat){
+    if(week>today()) throw new Error('这一周还没开始，不能提前签字');
+    const all=DB.get('weeksigns',[]);
+    if(all.find(x=>x.deptId===deptId&&x.week===week)) throw new Error('本周已签字');
+    const rec={id:uid('wk_'),deptId,week,sign:{...sign,at:stamp()},stat,at:stamp()};
+    all.push(rec);DB.set('weeksigns',all);return rec;
+  },
+  /* 月签 */
+  async monthSign(deptId,month){return DB.get('monthsigns',[]).find(x=>x.deptId===deptId&&x.month===month)||null},
+  async monthSigns(){return DB.get('monthsigns',[])},
+  async signMonth(deptId,month,sign,stat){
+    if(month>moOf(today())) throw new Error('这个月还没开始，不能提前签字');
+    const all=DB.get('monthsigns',[]);
+    if(all.find(x=>x.deptId===deptId&&x.month===month)) throw new Error('本月已签字');
+    const rec={id:uid('mo_'),deptId,month,sign:{...sign,at:stamp()},stat,at:stamp()};
+    all.push(rec);DB.set('monthsigns',all);return rec;
+  }
+};
+
+/* =========================================================================
+   递进关系判定
+   ========================================================================= */
+/* 日签是否完成 */
+async function dayDone(deptId,date){
+  const r=await API.record(deptId,date);return !!(r&&r.sign);
+}
+/* 某周状态：需要该周所有「已过去的日期」都完成日签 */
+async function weekState(deptId,week){
+  const days=wkDays(week).filter(d=>d<=today());
+  const recs=await API.recordsRange(week,addDay(week,6),deptId);
+  const map=new Map(recs.map(r=>[r.date,r]));
+  const signed=days.filter(d=>{const r=map.get(d);return r&&r.sign});
+  const miss=days.filter(d=>!signed.includes(d));
+  let checked=0,ng=0;
+  recs.forEach(r=>{const v=Object.values(r.checks||{});checked+=v.length;ng+=v.filter(x=>x==='ng').length});
+  const ws=await API.weekSign(deptId,week);
+  return {week,days,signed,miss,checked,ng,ws,
+    started:week<=today(), ended:addDay(week,6)<today(),
+    ready:days.length>0&&miss.length===0, locked:!!ws};
+}
+/* 某月状态：需要该月所有「已开始的周」都完成周签 */
+async function monthState(deptId,month){
+  const wks=wksOfMonth(month);
+  const signs=(await API.weekSigns(deptId)).filter(x=>wks.includes(x.week));
+  const miss=wks.filter(w=>!signs.find(s=>s.week===w));
+  const from=month+'-01',to=month+'-31';
+  const recs=await API.recordsRange(from,to,deptId);
+  let checked=0,ng=0,dsign=0;
+  recs.forEach(r=>{const v=Object.values(r.checks||{});checked+=v.length;
+    ng+=v.filter(x=>x==='ng').length;if(r.sign)dsign++});
+  const ms=await API.monthSign(deptId,month);
+  return {month,weeks:wks,signedWeeks:signs.length,miss,checked,ng,dsign,ms,
+    started:month<=moOf(today()), ended:month<moOf(today()),
+    ready:wks.length>0&&miss.length===0, locked:!!ms};
+}
+
+/* =========================================================================
+   提醒（按角色的时机推导）
+   ========================================================================= */
+async function pending(me){
+  const t=today();
+  /* 提醒只针对「确实有任务/有数据」的周期，避免把没数据的历史月份也报成未签 */
+  if(me.role==='inspector'){
+    const depts=await API.depts(me);
+    const recs=await API.recordsRange(addDay(t,-7),addDay(t,-1));
+    const out=[];
+    for(let i=1;i<=7;i++){
+      const d=addDay(t,-i);
+      depts.forEach(dp=>{
+        const r=recs.find(x=>x.deptId===dp.id&&x.date===d);
+        if(!r||!r.sign) out.push({type:'day',date:d,deptId:dp.id,deptName:dp.name,
+          label:`${dLab(d)} · ${dp.name}`});
+      });
+    }
+    return {items:out.slice(0,10),total:out.length,
+      title:out.length?`有 ${out.length} 项巡检未签字`:'',
+      why:'每天早上提醒昨天及最近 7 天未签字的巡检任务'};
+  }
+  if(me.role==='dept'){
+    const out=[];
+    for(let i=1;i<=4;i++){
+      const w=addDay(wkOf(t),-7*i);
+      const st=await weekState(me.deptId,w);
+      if(!st.ended||st.locked||!st.checked) continue;   // 无巡检数据的周不提醒
+      out.push({type:'week',week:w,deptId:me.deptId,
+        label:`${wkLab(w)} 这一周`, ready:st.ready, miss:st.miss.length});
+    }
+    return {items:out,total:out.length,
+      title:out.length?`有 ${out.length} 周未签字`:'',
+      why:'每周一早上提醒上一周（已过周日）未签字的记录'};
+  }
+  /* 设备科：只回溯 2 个月，且该月须有巡检数据 */
+  const depts=await API.depts(me);const out=[];
+  let m=moOf(t);
+  for(let i=1;i<=2;i++){
+    m=prevMonth(m);
+    for(const dp of depts){
+      const st=await monthState(dp.id,m);
+      if(!st.ended||st.locked||!st.checked) continue;   // 无数据不提醒
+      out.push({type:'month',month:m,deptId:dp.id,deptName:dp.name,
+        label:`${moLab(m)} · ${dp.name}`, ready:st.ready, miss:st.miss.length});
+    }
+  }
+  return {items:out.slice(0,10),total:out.length,
+    title:out.length?`有 ${out.length} 项月度确认未完成`:'',
+    why:'每月 1 日提醒上一个月（已过月底）未签字的记录'};
+}
+
+/* =========================================================================
+   全局状态
+   ========================================================================= */
+const S={me:null,view:'home',tab:'home',deptId:null,catName:null,
+  date:today(),week:wkOf(today()),month:moOf(today()),
+  checks:{},notes:{},signKind:'day',alertOpen:false};
+
+function toast(m,ms=1900){const o=$('.toast');if(o)o.remove();
+  const e=document.createElement('div');e.className='toast';e.textContent=m;
+  document.body.appendChild(e);setTimeout(()=>e.remove(),ms)}
+function sheet(h){closeSheet();const m=document.createElement('div');m.className='mask';
+  m.innerHTML=`<div class="sheet">${h}</div>`;
+  m.addEventListener('click',e=>{if(e.target===m)closeSheet()});
+  document.body.appendChild(m);return m}
+function closeSheet(){const m=$('.mask');if(m)m.remove()}
+
+/* x = 方案预览的上下文（可选）：{icon:'home', tone:'lite', cap:'共 N 条'}
+   icon/tone → 方案 B 的图标徽章；cap → 方案 C 的右侧信息胶囊 */
+function header(t,sub,back,act,x){
+  x=x||{};
+  const top=!back;                                    /* 一级页（无返回键）才应用 B/C 的装饰 */
+  /* 方案 B：标题左侧图标徽章 */
+  const icon=HD==='b'&&top&&x.icon?`<div class="hicon ${x.tone||''}">${svg(x.icon)}</div>`:'';
+  /* 方案 C：大标题 + 右侧胶囊（胶囊替代副标题，避免信息重复） */
+  const big=HD==='c'&&top;
+  const cap=big&&x.cap?`<span class="hcap">${H(x.cap)}</span>`:'';
+  const showSub=sub&&!(big&&x.cap);
+  /* 方案 A：右侧当前用户首字圆标（有操作按钮时让位） */
+  const ava=HD==='a'&&top&&!act&&S.me?`<div class="havatar">${H(String(S.me.displayName||'').slice(0,1))}</div>`:'';
+  return `<div class="hd${big?' big':''}" id="hd">
+  ${back?`<button class="back" onclick="${back}">${svg('back')}</button>`:''}${icon}
+  <h1>${H(t)}${showSub?`<div class="sub">${H(sub)}</div>`:''}</h1>
+  ${cap}${act?`<div class="hact">${act}</div>`:''}${ava}</div>`}
+
+function tabbar(){
+  const m={inspector:[['home','任务','home'],['records','记录','list'],['me','我的','user']],
+           dept:[['home','周确认','cal'],['records','记录','list'],['me','我的','user']],
+           equip:[['home','月确认','chart'],['records','记录','list'],['me','我的','user']]}[S.me.role];
+  return `<div class="tabs">${m.map(([k,l,i])=>
+    `<button class="tab ${S.tab===k?'on':''}" onclick="go('${k}')">${svg(i)}<span>${l}</span></button>`).join('')}</div>`;
+}
+/* 递进链 */
+function chain(cur,st){
+  const step=(n,lab,s)=>`<div class="cstep ${s}"><div class="dot">${s==='done'?svg('ok'):n}</div>${lab}</div>`;
+  const line=s=>`<div class="cline ${s}"></div>`;
+  return `<div class="chain">${step(1,'日签',st[0])}${line(st[0]==='done'?'done':'')}
+    ${step(2,'周签',st[1])}${line(st[1]==='done'?'done':'')}${step(3,'月签',st[2])}</div>`;
+}
+function alertBar(p,warn){
+  if(!p.total) return '';
+  const its=p.items.map(it=>`<button class="aitem" onclick="jump('${it.type}','${it.deptId||''}','${it.date||it.week||it.month}')">
+    <div class="grow"><b>${H(it.label)}</b>${it.miss?` <span style="opacity:.7">（还差 ${it.miss} 项未完成前一级）</span>`:''}</div>
+    ${svg('chev')}</button>`).join('');
+  return `<div class="alert ${warn?'warn':''}">
+    <div class="ttl">${svg('bell')} ${H(p.title)}</div>
+    <div class="why">${H(p.why)}</div>
+    <div class="its">${its}</div>
+    ${p.total>p.items.length?`<div class="why" style="text-align:center;margin-top:8px">还有 ${p.total-p.items.length} 项…</div>`:''}
+  </div>`;
+}
+window.jump=(type,deptId,key)=>{
+  if(type==='day'){S.deptId=deptId;S.date=key;S.view='dept'}
+  else if(type==='week'){S.deptId=deptId||S.me.deptId;S.week=key;S.view='week'}
+  else {S.deptId=deptId;S.month=key;S.view='month'}
+  render();
+};
+
+/* =========================================================================
+   登录
+   ========================================================================= */
+let LOGIN={mode:'list',user:'',show:false,tick:null,dt:null,kick:''};
+async function viewLogin(){
+  const saved=await API.savedAccounts();
+  const RN={inspector:'巡检员 · 日签',dept:'科室 · 周签',equip:'设备科 · 月签'};
+  /* 有已保存账号且未主动切换 → 显示一键登录列表 */
+  if(saved.length&&LOGIN.mode==='list'){
+    const rows=await Promise.all(saved.map(async a=>{
+      const lk=await API.lockOf(a.username);
+      const off=await API.isDisabled(a.username);
+      const stop=off||lk.locked;
+      return `<div class="acct ${stop?'lk':''}">
+        <button class="grow" style="text-align:left;display:block;min-width:0" ${stop?'':`onclick="quickLogin('${a.username}')"`}>
+          <div class="tt">${H(a.displayName)}${off?' <span class="pill p-bad" style="margin-left:4px">已禁用</span>':''}</div>
+          <div class="st"><span class="mono">${H(a.username)}</span> · ${RN[a.role]||''}</div>
+          ${off?`<div class="st" style="color:var(--bad)">账户已被禁用，请联系设备科</div>`
+               :lk.locked?`<div class="st" style="color:var(--bad)">已冻结，${H(lk.leftText)}后可用</div>`:''}
+        </button>
+        <button class="xbtn" onclick="forget('${a.username}')" aria-label="移除">${svg('close')}</button>
+      </div>`;
+    }));
+    return `<div class="login">
+      <img class="hosplogo" src="${LOGO}" alt="${HOSP}">
+      <h2>急救设备巡检</h2><p class="p">${HOSP} · 设备科</p>
+      ${LOGIN.kick?`<div class="lockmsg" style="margin:18px 0 0">账户「${H(LOGIN.kick)}」已被禁用，请联系设备科</div>`:''}
+      <div class="sec" style="margin:22px 2px 9px">选择账号登录</div>
+      <div class="list">${rows.join('')}</div>
+      <button class="btn blk" style="margin-top:14px" onclick="LOGIN.mode='form';LOGIN.user='';render()">使用其他账号</button>
+    </div>`;
+  }
+  const lk=await API.loginState(LOGIN.user);
+  const kick=LOGIN.kick;
+  return `<div class="login">
+    <img class="hosplogo" src="${LOGO}" alt="${HOSP}">
+    <h2>急救设备巡检</h2><p class="p">${HOSP} · 设备科</p>
+    <div class="fld"><label class="lb">账号</label>
+      <input class="in" id="lu" value="${H(LOGIN.user)}" autocomplete="username"
+        placeholder="请输入账号" oninput="onAcct(this.value)"></div>
+    <div class="fld"><label class="lb">密码</label>
+      <div class="pw"><input class="in" id="lp" type="${LOGIN.show?'text':'password'}" autocomplete="current-password" placeholder="请输入密码">
+        <button class="eye" onclick="toggleEye()" aria-label="显示密码">${svg(LOGIN.show?'eyeoff':'eye')}</button></div></div>
+    <label class="rem"><input type="checkbox" id="lr" checked><span>记住此账号，下次一键登录</span></label>
+    ${kick?`<div class="lockmsg" style="margin-bottom:12px">账户「${H(kick)}」已被禁用，请联系设备科</div>`:''}
+    <div id="lockmsg" class="lockmsg ${lk.locked?'':'hide'}">${lk.locked?H(lk.msg):''}</div>
+    <button class="btn pri lg blk" id="lbtn" onclick="doLogin()" ${lk.locked?'disabled':''}>登录</button>
+    ${saved.length?`<button class="btn blk" style="margin-top:10px" onclick="LOGIN.mode='list';render()">返回账号列表</button>`:''}
+    <div class="demo"><b>演示账号</b>（密码均为 123456）<br>
+      日签·巡检员 <button onclick="fill('gh01')">gh01</button>（2 个科室）/ <button onclick="fill('gh02')">gh02</button>（1 个科室）<br>
+      周签·科室 <button onclick="fill('icu')">icu</button> / <button onclick="fill('jz')">jz</button><br>
+      月签·设备科 <button onclick="fill('sbk')">sbk</button><br>
+      已禁用示例 <button onclick="fill('gh03')">gh03</button><br>
+      <span style="color:var(--faint)">连续输错 ${LOCK_N} 次将冻结 ${LOCK_MIN} 分钟，再次触发依次延长</span></div></div>`;
+}
+window.fill=u=>{$('#lu').value=u;$('#lp').value='123456';onAcct(u)};
+window.toggleEye=()=>{
+  const i=$('#lp'),v=i.value,p=i.selectionStart;
+  LOGIN.show=!LOGIN.show;LOGIN.user=$('#lu').value;
+  i.type=LOGIN.show?'text':'password';
+  $('.eye').innerHTML=svg(LOGIN.show?'eyeoff':'eye');
+  i.value=v;try{i.setSelectionRange(p,p)}catch(e){}
+  i.focus();
+};
+window.forget=async u=>{
+  await API.forgetAccount(u);
+  if(!(await API.savedAccounts()).length) LOGIN.mode='form';
+  render();toast('已移除该账号');
+};
+window.quickLogin=async u=>{
+  const p=await API.credOf(u);
+  if(!p){LOGIN.mode='form';LOGIN.user=u;render();return toast('请输入密码')}
+  await tryLogin(u,p,false);
+};
+window.doLogin=async()=>{
+  const u=$('#lu').value,p=$('#lp').value;
+  LOGIN.user=u;
+  await tryLogin(u,p,$('#lr')&&$('#lr').checked);
+};
+async function tryLogin(u,p,remember){
+  try{
+    S.me=await API.login(u,p);
+    if(remember) await API.saveAccount(S.me,p);
+    LOGIN.mode='list';LOGIN.show=false;LOGIN.kick='';stopTick();
+    S.tab='home';S.view='home';S.deptId=S.me.deptId||null;S.date=today();
+    S.week=wkOf(today());S.month=moOf(today());
+    render();toast('欢迎，'+S.me.displayName);
+  }catch(e){
+    toast(e.message,2600);
+    if(LOGIN.mode==='list'){LOGIN.mode='form';render()}
+    /* 账号冻结或设备冷却，都按「当前输入框里的账号」刷新提示与按钮 */
+    setTimeout(()=>refreshLock(LOGIN.user),60);
+  }
+}
+
+/* ---------- 账号输入联动：换个账号就立刻重算冻结状态 ---------- */
+window.onAcct=v=>{
+  LOGIN.user=String(v||'').trim();
+  clearTimeout(LOGIN.dt);
+  LOGIN.dt=setTimeout(()=>refreshLock(LOGIN.user),350);   /* 防抖，接后端后也不会高频打接口 */
+};
+async function refreshLock(un){
+  stopTick();
+  const el=$('#lockmsg'),btn=$('#lbtn');
+  if(!el||!btn)return;
+  const st=await API.loginState(un);
+  if(st.locked){
+    el.classList.remove('hide');el.textContent=st.msg;btn.disabled=true;
+    startTick(un,st.reason);
+  }else{
+    el.classList.add('hide');el.textContent='';btn.disabled=false;
+  }
+}
+/* 倒计时绑定发起时的账号；账号一变立即停并重算 */
+function startTick(u,reason){
+  stopTick();
+  LOGIN.tick=setInterval(async()=>{
+    const el=$('#lockmsg'),btn=$('#lbtn');
+    if(!el){stopTick();return}
+    if(reason==='lock'&&LOGIN.user!==u){stopTick();refreshLock(LOGIN.user);return}
+    const st=await API.loginState(u);
+    if(st.locked){el.classList.remove('hide');el.textContent=st.msg;if(btn)btn.disabled=true}
+    else{el.classList.add('hide');el.textContent='';if(btn)btn.disabled=false;stopTick();
+      toast(reason==='probe'?'已可重新尝试':'冻结已解除，可以重新登录')}
+  },1000);
+}
+function stopTick(){if(LOGIN.tick){clearInterval(LOGIN.tick);LOGIN.tick=null}}
+
+/* =========================================================================
+   首页 · 巡检员（每日任务）
+   ========================================================================= */
+async function viewInspector(){
+  const p=await pending(S.me);
+  const depts=await API.depts(S.me);
+  const recs=await API.recordsRange(S.date,S.date);
+  if(!depts.length) return header('今日任务',dLab(S.date),null,null,{icon:'home',cap:dLab(S.date)})+
+    `<main class="pad-tab"><div class="empty">${svg('box')}
+      <div>还没有为你配置负责的科室<br><span style="font-size:12.5px">请联系设备科在后台配置</span></div></div></main>`+tabbar();
+  let tAll=0,tDone=0,tSign=0;
+  const cards=[];
+  for(const d of depts){
+    const total=await API.devCount(d.id);
+    const r=recs.find(x=>x.deptId===d.id);
+    const ck=r?Object.values(r.checks||{}):[];
+    const done=ck.length,ng=ck.filter(x=>x==='ng').length,signed=!!(r&&r.sign);
+    tAll+=total;tDone+=done;if(signed)tSign++;
+    cards.push(`<button class="card" style="display:block;width:100%;text-align:left" onclick="openDept('${d.id}')">
+      <div class="row"><div class="grow"><div class="tt">${H(d.name)}</div>
+        <div class="st">${done}/${total} 台已巡检${ng?` · <span style="color:var(--bad)">${ng} 台异常</span>`:''}</div></div>
+      ${signed?`<span class="pill p-ok">${svg('ok')} 已签</span>`
+        :done>=total&&total>0?`<span class="pill p-br">待日签</span>`
+        :done?`<span class="pill p-go">巡检中</span>`:`<span class="pill p-no">未开始</span>`}
+      ${svg('chev','chev')}</div>
+      ${done>0?`<div class="bar-bg"><div class="bar-fg ${signed?'done':''}" style="width:${Math.round(done/total*100)}%"></div></div>`:''}
+      ${signed?`<div class="st" style="margin-top:8px">${H(r.sign.name)} ${H(r.sign.at.slice(11))} 已签字</div>`:''}
+    </button>`);
+  }
+  const pct=tAll?Math.round(tDone/tAll*100):0;
+  const allSigned=tSign===depts.length&&depts.length>0;
+  const nextDept=depts.find(x=>{const r=recs.find(y=>y.deptId===x.id);return !(r&&r.sign)});
+  let badge,btn,note='';
+  if(allSigned){
+    badge=`<span class="hbadge on">${svg('ok')} 今日已完成</span>`;
+    btn=`<button class="hbtn" onclick="go('records')">${svg('list')} 查看巡检记录</button>`;
+  }else{
+    badge=`<span class="hbadge ${tDone?'':'warn'}">${tSign}/${depts.length} 科室已签</span>`;
+    btn=`<button class="hbtn" onclick="openDept('${nextDept?nextDept.id:depts[0].id}')">${svg('check')} ${tDone?'继续巡检':'开始巡检'} · ${H(nextDept?nextDept.name:'')}</button>`;
+  }
+  if(p.total) note=`<div class="hnote">${svg('warn')}<div>另有 ${p.total} 项往期巡检未签字，可在上方提醒中补签</div></div>`;
+  const dht=HD==='d'?`<div class="dht"><b>今日任务</b><span>负责 ${depts.length} 个科室</span></div>`:'';
+  const hero=`<div class="hero">${dht}
+    <div class="row"><div class="grow">
+      <div class="hl">今日 · ${dLab(S.date)}</div>
+      <div class="hb">${tDone}<small>/${tAll}</small></div>
+      <div class="hs">台设备已巡检</div>
+    </div>${badge}</div>
+    <div class="hprog"><i style="width:${pct}%"></i></div>
+    <div class="hfoot"><span>负责 <b>${depts.length}</b> 个科室</span>
+      <span>待巡检 <b>${tAll-tDone}</b> 台</span></div>
+    ${note}${btn}</div>`;
+  return (HD==='d'?'':header('今日任务',`${dLab(S.date)} · 负责 ${depts.length} 个科室`,null,null,
+    {icon:'home',cap:dLab(S.date)}))+`<main class="pad-tab${HD==='d'?' dtop':''}">
+    ${alertBar(p)}
+    ${hero}
+    <div class="sec row2"><span>今日分发的任务</span><em>逐科室勾选后日签</em></div>
+    <div class="list">${cards.join('')}</div>
+  </main>`+tabbar();
+}
+
+/* =========================================================================
+   首页 · 科室（周确认）
+   ========================================================================= */
+async function viewDeptHome(){
+  const p=await pending(S.me);
+  const d=await API.dept(S.me.deptId);
+  const cur=wkOf(today());
+  const weeks=[];let w=cur;
+  for(let i=0;i<8;i++){weeks.push(w);w=addDay(w,-7)}
+
+  /* 先算各周状态，供主卡与列表共用 */
+  const sts=[];
+  for(const wk of weeks){
+    const st=await weekState(S.me.deptId,wk);
+    if(!st.checked&&wk!==cur) continue;
+    sts.push(st); if(sts.length>=6) break;
+  }
+  const now=sts.find(x=>x.week===cur)||sts[0]||{days:[],signed:[],miss:[],checked:0,ng:0,locked:false,ready:false};
+  const canSign=sts.filter(x=>!x.locked&&x.ready);
+  const mo=moOf(today());
+  const moRecs=await API.recordsRange(mo+'-01',mo+'-31',S.me.deptId);
+  let moCk=0,moNg=0;moRecs.forEach(r=>{const v=Object.values(r.checks||{});moCk+=v.length;moNg+=v.filter(x=>x==='ng').length});
+
+  /* 状态主卡：直接回答「现在该做什么」 */
+  const pct=now.days.length?Math.round(now.signed.length/now.days.length*100):0;
+  let badge,btn,note='';
+  if(now.locked){
+    badge=`<span class="hbadge on">${svg('ok')} 本周已确认</span>`;
+    btn=`<button class="hbtn" onclick="openWeek('${now.week}')">${svg('pen')} 查看签字</button>`;
+  }else if(now.ready){
+    badge=`<span class="hbadge on">可以签字了</span>`;
+    btn=`<button class="hbtn" onclick="openWeek('${now.week}')">${svg('pen')} 去周签</button>`;
+  }else{
+    badge=`<span class="hbadge warn">还差 ${now.miss.length} 天</span>`;
+    btn=`<button class="hbtn" onclick="openWeek('${now.week}')">${svg('cal')} 查看本周明细</button>`;
+    note=`<div class="hnote">${svg('warn')}<div>还有 ${now.miss.length} 天的日签没完成，等巡检员补签后才能周签</div></div>`;
+  }
+  const dht=HD==='d'?`<div class="dht"><b>周确认</b><span>${H(d.name)}</span></div>`:'';
+  const hero=`<div class="hero">${dht}
+    <div class="row"><div class="grow">
+      <div class="hl">本周 · ${wkLab(now.week||cur)}</div>
+      <div class="hb">${now.signed.length}<small>/${now.days.length||7}</small></div>
+      <div class="hs">天已完成日签</div>
+    </div>${badge}</div>
+    <div class="hprog"><i style="width:${pct}%"></i></div>
+    <div class="hfoot"><span>巡检 <b>${now.checked}</b> 台次</span>
+      <span>异常 <b>${now.ng}</b> 台次</span></div>
+    ${note}${btn}</div>`;
+
+  /* 周卡片列表 */
+  const cards=sts.map(st=>{
+    const cells=wkDays(st.week).map(dt=>{
+      const fut=dt>today(),done=st.signed.includes(dt);
+      return `<div class="wd ${fut?'future':done?'ok':'miss'} ${dt===today()?'today':''}">
+        <b>${+dt.slice(8,10)}</b>${fut?'':done?'已签':'未签'}</div>`}).join('');
+    const bg=st.locked?`<span class="pill p-ok">${svg('ok')} 已周签</span>`
+      :st.ready?`<span class="pill p-br">可签字</span>`
+      :`<span class="pill p-go">还差 ${st.miss.length} 天日签</span>`;
+    return `<button class="card" style="display:block;width:100%;text-align:left" onclick="openWeek('${st.week}')">
+      <div class="row"><div class="grow"><div class="tt">${wkLab(st.week)}${st.week===cur?' · 本周':''}</div>
+        <div class="st">巡检 ${st.checked} 台次${st.ng?` · <span style="color:var(--bad)">异常 ${st.ng}</span>`:''}</div></div>
+      ${bg}${svg('chev','chev')}</div>
+      <div class="wk">${cells}</div>
+      ${st.locked?`<div class="st" style="margin-top:9px">${H(st.ws.sign.name)} · ${H(st.ws.at)} 已签字</div>`:''}
+    </button>`;
+  }).join('');
+
+  return (HD==='d'?'':header('周确认',d.name,null,null,{icon:'cal',cap:wkLab(cur)}))+
+  `<main class="pad-tab${HD==='d'?' dtop':''}">
+    ${alertBar(p,true)}
+    ${hero}
+    <div class="stat" style="margin-bottom:14px">
+      <div><div class="n" style="color:${canSign.length?'var(--brand)':'inherit'}">${canSign.length}</div><div class="l">待签周数</div></div>
+      <div><div class="n">${moCk}</div><div class="l">本月巡检台次</div></div>
+      <div><div class="n" style="color:${moNg?'var(--bad)':'inherit'}">${moNg}</div><div class="l">本月异常</div></div>
+    </div>
+    <div class="sec row2"><span>按周确认</span><em>巡检员日签齐了才能周签</em></div>
+    <div class="list">${cards||`<div class="empty">${svg('cal')}<div>暂无巡检记录</div></div>`}</div>
+  </main>`+tabbar();
+}
+
+/* =========================================================================
+   首页 · 设备科（月确认）
+   ========================================================================= */
+async function viewEquipHome(){
+  const p=await pending(S.me);
+  const depts=await API.depts(S.me);
+  const m=S.month;
+  const cards=[];let tCk=0,tNg=0,tOk=0,tReady=0,firstReady='';
+  for(const d of depts){
+    const st=await monthState(d.id,m);
+    tCk+=st.checked;tNg+=st.ng;if(st.locked)tOk++;
+    if(!st.locked&&st.ready){tReady++;if(!firstReady)firstReady=d.id}
+    const badge=st.locked?`<span class="pill p-ok">${svg('ok')} 已月签</span>`
+      :st.ready?`<span class="pill p-br">可签字</span>`
+      :`<span class="pill p-go">${st.signedWeeks}/${st.weeks.length} 周已签</span>`;
+    cards.push(`<button class="card" style="display:block;width:100%;text-align:left" onclick="openMonth('${d.id}')">
+      <div class="row"><div class="grow"><div class="tt">${H(d.name)}</div>
+        <div class="st">巡检 ${st.checked} 台次 · 日签 ${st.dsign} 天${st.ng?` · <span style="color:var(--bad)">异常 ${st.ng}</span>`:''}</div></div>
+      ${badge}${svg('chev','chev')}</div></button>`);
+  }
+  const prev=prevMonth(m),isCur=m===moOf(today());
+  const pct=depts.length?Math.round(tOk/depts.length*100):0;
+  const readyN=tReady;
+  let badge,btn,note='';
+  if(tOk===depts.length&&depts.length){
+    badge=`<span class="hbadge on">${svg('ok')} 全部已确认</span>`;
+    btn=`<button class="hbtn" onclick="go('records')">${svg('list')} 查看巡检记录</button>`;
+  }else if(readyN){
+    badge=`<span class="hbadge on">${readyN} 个科室可签</span>`;
+    btn=`<button class="hbtn" onclick="openMonth('${firstReady}')">${svg('pen')} 去月签</button>`;
+  }else{
+    badge=`<span class="hbadge warn">等待科室周签</span>`;
+    btn='';
+    note=`<div class="hnote">${svg('warn')}<div>各科室的周签尚未完成，周签齐全后才能进行月度确认</div></div>`;
+  }
+  const dht=HD==='d'?`<div class="dht"><b>月确认</b><button onclick="switchMonth('${isCur?prev:moOf(today())}')">${isCur?'看上月':'看本月'} ›</button></div>`:'';
+  const hero=`<div class="hero">${dht}
+    <div class="row"><div class="grow">
+      <div class="hl">${isCur?'本月':'上月'} · ${moLab(m)}</div>
+      <div class="hb">${tOk}<small>/${depts.length}</small></div>
+      <div class="hs">个科室已月度确认</div>
+    </div>${badge}</div>
+    <div class="hprog"><i style="width:${pct}%"></i></div>
+    <div class="hfoot"><span>巡检 <b>${tCk}</b> 台次</span>
+      <span>异常 <b>${tNg}</b> 台次</span></div>
+    ${note}${btn}</div>`;
+  return (HD==='d'?'':header('月确认',`${moLab(m)} · 全院 ${depts.length} 个科室`,null,
+    `<button class="btn gho" style="padding:7px 11px;font-size:13px" onclick="switchMonth('${isCur?prev:moOf(today())}')">${isCur?'看上月':'看本月'}</button>`,
+    {icon:'chart'}))+
+  `<main class="pad-tab${HD==='d'?' dtop':''}">
+    ${alertBar(p,true)}
+    ${hero}
+    <div class="sec row2"><span>分科室</span><em>科室周签齐了才能月签</em></div>
+    <div class="list">${cards.join('')}</div>
+  </main>`+tabbar();
+}
+window.switchMonth=m=>{S.month=m;render()};
+
+/* =========================================================================
+   科室 → 品类 → 设备（巡检员）
+   ========================================================================= */
+async function viewDept(){
+  const d=await API.dept(S.deptId);
+  const cats=await API.cats(S.deptId);
+  const rec=await API.record(S.deptId,S.date);
+  S.checks=rec?{...rec.checks}:{};S.notes=rec?{...rec.notes}:{};
+  const total=cats.reduce((a,c)=>a+c.devices.length,0);
+  const vals=Object.values(S.checks);
+  const done=vals.length,ng=vals.filter(x=>x==='ng').length,rest=total-done;
+  const signed=!!(rec&&rec.sign);
+  const future=S.date>today();
+
+  const rows=cats.map(c=>{
+    const dn=c.devices.filter(x=>S.checks[x.id]).length;
+    const cng=c.devices.filter(x=>S.checks[x.id]==='ng').length;
+    const full=dn===c.devices.length;
+    return `<button class="card" style="display:block;width:100%;text-align:left" onclick="openCat('${H(c.name)}')">
+      <div class="row"><div class="grow"><div class="tt">${H(c.name)}</div>
+        <div class="st">${dn}/${c.devices.length} 台${cng?` · <span style="color:var(--bad)">${cng} 台异常</span>`:''}</div></div>
+      ${full?`<span class="pill ${cng?'p-bad':'p-ok'}">${cng?'有异常':'已完成'}</span>`:dn?`<span class="pill p-go">${dn}/${c.devices.length}</span>`:''}
+      ${svg('chev','chev')}</div></button>`;
+  }).join('');
+
+  let bar;
+  if(signed) bar=`<div class="bar"><div class="info"><b>已日签</b><br>${H(rec.sign.name)} · ${H(rec.sign.at)}</div>
+    <button class="btn" onclick="viewSignOf('day')">查看签名</button></div>`;
+  else if(future) bar=`<div class="bar"><div class="info">这一天还没到<br>不能提前签字</div></div>`;
+  else bar=`<div class="bar"><div class="info"><b>${done}/${total}</b> 台已巡检${rest?`<br>还有 ${rest} 台未勾选`:'<br>全部完成，可以签字了'}</div>
+    <button class="btn soft" onclick="markAllOk()">全部正常</button>
+    <button class="btn pri" onclick="goSign('day')" ${done===0?'disabled':''}>日签</button></div>`;
+
+  const isToday=S.date===today();
+  return header(d.name,dLab(S.date)+(isToday?'':' · 补签'),`go('home')`)+
+  `<main class="pad-bar"><div class="sec">设备品类</div>
+    <div class="list">${rows||`<div class="empty">${svg('box')}<div>该科室暂无在用设备</div></div>`}</div>
+  </main>`+bar;
+}
+
+async function viewCat(){
+  const d=await API.dept(S.deptId);
+  const devs=await API.devices(S.deptId,S.catName);
+  const rec=await API.record(S.deptId,S.date);
+  const signed=!!(rec&&rec.sign);
+  const done=devs.filter(x=>S.checks[x.id]).length;
+  const rows=devs.map(dv=>{const st=S.checks[dv.id];
+    return `<div class="dev ${st==='ok'?'ok':''} ${st==='ng'?'ng':''}" id="dev_${dv.id}">
+      <button class="tick" onclick="tick('${dv.id}')">${svg('check')}</button>
+      <div class="grow" onclick="tick('${dv.id}')">
+        <div class="tt mono trunc" style="font-size:14.5px;letter-spacing:.3px">${H(dv.code)}</div>
+        <div class="st trunc">${H(dv.model||dv.name)}${dv.location?' · '+H(dv.location):''}</div>
+        ${st==='ng'&&S.notes[dv.id]?`<div class="ngnote">${H(S.notes[dv.id])}</div>`:''}
+      </div><button class="ngbtn" onclick="markNg('${dv.id}')">异常</button></div>`}).join('');
+  const bar=signed?'':`<div class="bar"><div class="info"><b>${done}/${devs.length}</b> 台已勾选</div>
+    <button class="btn soft" onclick="catAllOk()">本类全选</button>
+    <button class="btn pri" onclick="saveBack()">保存返回</button></div>`;
+  return header(S.catName,`${d.name} · ${devs.length} 台`,'openDept(S.deptId)')+
+  `<main class="${signed?'':'pad-bar'}" style="${signed?'padding-bottom:calc(24px + var(--sab))':''}">
+    ${signed?`<div class="lock" style="margin-bottom:12px">${svg('lock')} 本日已签字确认，记录已锁定</div>`:''}
+    <div class="list">${rows}</div></main>`+bar;
+}
+
+/* ---------- 勾选 ---------- */
+async function locked(){const r=await API.record(S.deptId,S.date);return !!(r&&r.sign)}
+window.tick=async id=>{
+  if(S.date>today()) return toast('这一天还没到');
+  if(await locked()) return toast('已签字确认，不能再修改');
+  const c=S.checks[id];
+  if(c){delete S.checks[id];delete S.notes[id]} else S.checks[id]='ok';
+  await autosave();patchDev(id);
+};
+window.markNg=async id=>{
+  if(await locked()) return toast('已签字确认，不能再修改');
+  const devs=await API.devices(S.deptId,S.catName);const dv=devs.find(x=>x.id===id);
+  sheet(`<h3>标记异常</h3><div class="d">${H(dv.code)} · ${H(dv.model||dv.name)}<br>请简要描述异常情况，科室周签时会看到。</div>
+    <div class="fld"><textarea class="in" id="ngtxt" placeholder="例如：显示屏偶发闪烁，已通知厂家">${H(S.notes[id]||'')}</textarea></div>
+    <div class="chips" style="margin-bottom:16px">${['外观破损','无法开机','报警异常','按键失灵','管路老化','电池不蓄电'].map(t=>
+      `<button class="chip" onclick="document.getElementById('ngtxt').value='${t}'">${t}</button>`).join('')}</div>
+    <div class="row" style="gap:10px">${S.checks[id]==='ng'?`<button class="btn gho" onclick="clearNg('${id}')">取消异常</button>`:''}
+      <div class="grow"></div><button class="btn" onclick="closeSheet()">取消</button>
+      <button class="btn pri" onclick="saveNg('${id}')">确定</button></div>`);
+};
+window.saveNg=async id=>{const v=$('#ngtxt').value.trim();if(!v)return toast('请填写异常情况');
+  S.checks[id]='ng';S.notes[id]=v;closeSheet();await autosave();patchDev(id);toast('已标记异常')};
+window.clearNg=async id=>{delete S.checks[id];delete S.notes[id];closeSheet();await autosave();patchDev(id)};
+window.catAllOk=async()=>{
+  if(await locked())return toast('已签字确认，不能再修改');
+  const devs=await API.devices(S.deptId,S.catName);let n=0;
+  devs.forEach(d=>{if(!S.checks[d.id]){S.checks[d.id]='ok';n++}});
+  await autosave();render();toast(n?`已勾选 ${n} 台`:'本类已全部勾选')};
+window.markAllOk=async()=>{
+  if(await locked())return toast('已签字确认，不能再修改');
+  const cats=await API.cats(S.deptId);let n=0;
+  cats.forEach(c=>c.devices.forEach(d=>{if(!S.checks[d.id]){S.checks[d.id]='ok';n++}}));
+  await autosave();render();toast(n?`已勾选 ${n} 台，异常项请单独标记`:'已全部勾选')};
+window.saveBack=async()=>{await autosave();openDept(S.deptId)};
+async function autosave(){if(S.me)await API.saveChecks(S.deptId,S.date,S.checks,S.notes,S.me)}
+async function patchDev(id){
+  const el=document.getElementById('dev_'+id);if(!el)return;
+  const st=S.checks[id];el.className='dev '+(st==='ok'?'ok':st==='ng'?'ng':'');
+  const n=el.querySelector('.ngnote');
+  if(st==='ng'&&S.notes[id]){n?n.textContent=S.notes[id]
+    :el.querySelector('.grow').insertAdjacentHTML('beforeend',`<div class="ngnote">${H(S.notes[id])}</div>`)}
+  else if(n) n.remove();
+  const bar=$('.bar .info');
+  if(bar){const devs=await API.devices(S.deptId,S.catName);
+    bar.innerHTML=`<b>${devs.filter(x=>S.checks[x.id]).length}/${devs.length}</b> 台已勾选`}
+}
+
+/* =========================================================================
+   异常明细 / 签字明细（周签与月签下钻查看）
+   ========================================================================= */
+async function ngList(deptId,from,to){
+  const recs=await API.recordsRange(from,to,deptId);
+  const devs=DB.get('devices',[]).filter(x=>x.deptId===deptId);
+  const dm=new Map(devs.map(d=>[d.id,d]));
+  const out=[];
+  recs.sort((a,b)=>b.date<a.date?-1:1).forEach(r=>{
+    Object.entries(r.checks||{}).forEach(([id,v])=>{
+      if(v!=='ng')return;const d=dm.get(id);
+      out.push({date:r.date,code:d?d.code:id,name:d?(d.model||d.name):'',cat:d?d.catName:'',
+        loc:d?d.location:'',note:(r.notes||{})[id]||'异常',by:r.inspectorName||'',
+        signed:!!r.sign,signer:r.sign?r.sign.name:''});
+    });
+  });
+  return out;
+}
+window.showNg=async(deptId,from,to,title)=>{
+  const list=await ngList(deptId,from,to);
+  const d=await API.dept(deptId);
+  const body=list.length?list.map(x=>`<div class="dtl"><div class="dot"></div><div class="grow">
+      <div class="h"><span class="mono">${H(x.code)}</span> · ${H(x.cat)}</div>
+      <div class="m">${H(x.note)}</div>
+      <div class="t">${dLab(x.date)}${x.loc?' · '+H(x.loc):''} · 巡检 ${H(x.by)}${x.signed?` · 已由 ${H(x.signer)} 日签`:' · <span style="color:var(--warn)">当日未签</span>'}</div>
+    </div></div>`).join('')
+    :`<div class="empty">${svg('ok')}<div>该时段没有异常记录</div></div>`;
+  sheet(`<h3>异常明细 · ${list.length} 台次</h3>
+    <div class="d">${H(d.name)} · ${H(title)}</div>
+    <div class="card" style="box-shadow:inset 0 0 0 1px var(--line);max-height:56vh;overflow-y:auto">${body}</div>
+    <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">关闭</button>`);
+};
+/* 查看该周期内所有签字（含别人签的） */
+window.showSigns=async(deptId,kind,key)=>{
+  const d=await API.dept(deptId);let rows=[],title='';
+  if(kind==='week'){
+    title=wkLab(key);
+    const recs=await API.recordsRange(key,addDay(key,6),deptId);
+    rows=wkDays(key).filter(x=>x<=today()).map(dt=>{
+      const r=recs.find(x=>x.date===dt);
+      return {lab:dLab(dt),lv:'日签',s:r&&r.sign?r.sign:null};
+    });
+    const ws=await API.weekSign(deptId,key);
+    rows.push({lab:'本周汇总',lv:'周签',s:ws?ws.sign:null});
+  }else{
+    title=moLab(key);
+    const wks=wksOfMonth(key);
+    const all=await API.weekSigns(deptId);
+    rows=wks.map(w=>{const x=all.find(y=>y.week===w);return {lab:wkLab(w),lv:'周签',s:x?x.sign:null}});
+    const ms=await API.monthSign(deptId,key);
+    rows.push({lab:'本月汇总',lv:'月签',s:ms?ms.sign:null});
+  }
+  const body=rows.map(x=>`<div class="signrow">
+      ${x.s?`<img src="${x.s.dataUrl}" alt="签名">`:`<div style="width:64px;text-align:center;color:var(--faint);font-size:12px">未签</div>`}
+      <div class="grow"><div class="h" style="font-size:13.5px">${H(x.lab)} <span class="pill ${x.s?'p-ok':'p-bad'}" style="margin-left:4px">${x.lv}</span></div>
+      <div class="t">${x.s?`${H(x.s.name)}${x.s.title?'（'+H(x.s.title)+'）':''} · ${H(x.s.at)}`:'尚未签字'}</div>
+      ${x.s&&x.s.opinion?`<div class="m">意见：${H(x.s.opinion)}</div>`:''}</div>
+    </div>`).join('');
+  sheet(`<h3>签字明细</h3><div class="d">${H(d.name)} · ${H(title)}</div>
+    <div class="card" style="box-shadow:inset 0 0 0 1px var(--line);max-height:58vh;overflow-y:auto">${body}</div>
+    <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">关闭</button>`);
+};
+
+/* =========================================================================
+   周详情（科室）
+   ========================================================================= */
+async function viewWeek(){
+  const d=await API.dept(S.deptId||S.me.deptId);
+  const st=await weekState(d.id,S.week);
+  const recs=await API.recordsRange(S.week,addDay(S.week,6),d.id);
+  const rows=wkDays(S.week).map(dt=>{
+    const r=recs.find(x=>x.date===dt);
+    const v=r?Object.values(r.checks||{}):[];
+    const ng=v.filter(x=>x==='ng').length;
+    const fut=dt>today();
+    return `<button class="card" style="display:block;width:100%;text-align:left" ${r?`onclick="openRec('${d.id}','${dt}')"`:''}>
+      <div class="row"><div class="grow">
+      <div class="tt" style="font-size:14.5px">${dLab(dt)}</div>
+      <div class="st">${fut?'未开始':v.length?`巡检 ${v.length} 台${ng?` · <span style="color:var(--bad)">异常 ${ng}</span>`:''}`:'无记录'}</div></div>
+      ${fut?`<span class="pill p-no">—</span>`:r&&r.sign?`<span class="pill p-ok">${H(r.sign.name)} 已签</span>`:`<span class="pill p-bad">未日签</span>`}
+      ${r?svg('chev','chev'):''}</div></button>`}).join('');
+  const cs=[st.ready?'done':'now', st.locked?'done':st.ready?'now':'', ''];
+  let bar;
+  if(st.locked) bar=`<div class="bar"><div class="info"><b>已周签</b><br>${H(st.ws.sign.name)} · ${H(st.ws.at)}</div>
+    <button class="btn" onclick="viewSignOf('week')">查看签名</button></div>`;
+  else if(!st.started) bar=`<div class="bar"><div class="info">这一周还没开始<br>不能提前签字</div></div>`;
+  else if(!st.ready) bar=`<div class="bar"><div class="info">还有 <b>${st.miss.length}</b> 天没有日签<br>等巡检员补签后才能周签</div>
+    <button class="btn" disabled>周签</button></div>`;
+  else bar=`<div class="bar"><div class="info">本周日签已齐<br>核对后签字确认</div>
+    <button class="btn pri lg" onclick="goSign('week')">周签</button></div>`;
+  return header('周确认',`${d.name} · ${wkLab(S.week)}`,`go('home')`)+
+  `<main class="pad-bar">
+    ${chain('week',cs)}
+    <div class="stat" style="margin:14px 0">
+      <div><div class="n">${st.checked}</div><div class="l">巡检台次</div></div>
+      <button class="tap" onclick="showSigns('${d.id}','week','${S.week}')">
+        <div class="n" style="color:var(--ok)">${st.signed.length}/${st.days.length}</div><div class="l">日签完成</div></button>
+      <button class="tap" onclick="showNg('${d.id}','${S.week}','${addDay(S.week,6)}','${wkLab(S.week)}')">
+        <div class="n" style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</div><div class="l">异常台次</div></button>
+    </div>
+    <div class="hint">点上方「日签完成 / 异常台次」可查看签字与异常明细</div>
+    <div class="sec">本周每日情况</div><div class="list">${rows}</div>
+  </main>`+bar;
+}
+
+/* =========================================================================
+   月详情（设备科）
+   ========================================================================= */
+async function viewMonth(){
+  const d=await API.dept(S.deptId);
+  const st=await monthState(d.id,S.month);
+  const signs=await API.weekSigns(d.id);
+  const rows=st.weeks.map(w=>{
+    const ws=signs.find(x=>x.week===w);
+    return `<button class="card" style="display:block;width:100%;text-align:left" onclick="showNg('${d.id}','${w}','${addDay(w,6)}','${wkLab(w)}')">
+      <div class="row"><div class="grow">
+      <div class="tt" style="font-size:14.5px">${wkLab(w)}</div>
+      <div class="st">${ws?`巡检 ${ws.stat?ws.stat.checked:'—'} 台次${ws.stat&&ws.stat.ng?` · <span style="color:var(--bad)">异常 ${ws.stat.ng}</span>`:''}`:'尚未周签'}</div></div>
+      ${ws?`<span class="pill p-ok">${H(ws.sign.name)} 已签</span>`:`<span class="pill p-bad">未周签</span>`}
+      ${svg('chev','chev')}</div></button>`}).join('');
+  const cs=['done', st.ready?'done':'now', st.locked?'done':st.ready?'now':''];
+  let bar;
+  if(st.locked) bar=`<div class="bar"><div class="info"><b>已月签</b><br>${H(st.ms.sign.name)} · ${H(st.ms.at)}</div>
+    <button class="btn" onclick="viewSignOf('month')">查看签名</button></div>`;
+  else if(!st.started) bar=`<div class="bar"><div class="info">这个月还没开始<br>不能提前签字</div></div>`;
+  else if(!st.ready) bar=`<div class="bar"><div class="info">还有 <b>${st.miss.length}</b> 周没有周签<br>等科室签字后才能月签</div>
+    <button class="btn" disabled>月签</button></div>`;
+  else bar=`<div class="bar"><div class="info">本月周签已齐<br>核对后签字确认</div>
+    <button class="btn pri lg" onclick="goSign('month')">月签</button></div>`;
+  return header('月确认',`${d.name} · ${moLab(S.month)}`,`go('home')`)+
+  `<main class="pad-bar">
+    ${chain('month',cs)}
+    <div class="stat" style="margin:14px 0">
+      <div><div class="n">${st.checked}</div><div class="l">巡检台次</div></div>
+      <button class="tap" onclick="showSigns('${d.id}','month','${S.month}')">
+        <div class="n" style="color:var(--ok)">${st.signedWeeks}/${st.weeks.length}</div><div class="l">周签完成</div></button>
+      <button class="tap" onclick="showNg('${d.id}','${S.month}-01','${S.month}-31','${moLab(S.month)}')">
+        <div class="n" style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</div><div class="l">异常台次</div></button>
+    </div>
+    <div class="hint">点上方「周签完成 / 异常台次」可查看签字与异常明细</div>
+    <div class="sec">本月各周</div><div class="list">${rows||`<div class="empty">${svg('cal')}<div>本月还没有已开始的周</div></div>`}</div>
+  </main>`+bar;
+}
+
+/* =========================================================================
+   签字页（日/周/月共用）
+   ========================================================================= */
+let SIG={ctx:null,drawn:false,cv:null};
+let SIGNER={name:'',title:''}, SIGN_MEMBERS=[];
+window.pickSigner=()=>{
+  const its=SIGN_MEMBERS.map((m,i)=>`<button class="opt ${SIGNER.name===m.name?'on':''}" onclick="chooseSigner(${i})">
+    <div class="grow"><div>${H(m.name)}</div>${m.title?`<div class="sub">${H(m.title)}</div>`:''}</div>
+    ${svg('check','ck')}</button>`).join('');
+  sheet(`<h3>选择确认人</h3><div class="d">签字后会记录到本次确认单上</div>
+    <div>${its}</div>
+    <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">取消</button>`);
+};
+window.chooseSigner=i=>{const m=SIGN_MEMBERS[i];SIGNER={name:m.name,title:m.title||''};closeSheet();render()};
+async function viewSignPage(){
+  const k=S.signKind;
+  const d=await API.dept(S.deptId||S.me.deptId);
+  let title,sub,members,sum;
+  if(k==='day'){
+    const total=await API.devCount(d.id);
+    const v=Object.values(S.checks);
+    title='日签 · 巡检确认';sub=`${d.name} · ${dLab(S.date)}`;
+    members=[{name:S.me.displayName,title:'巡检员'}];
+    sum=`<div class="kv"><span>应巡检</span><b>${total} 台</b></div>
+      <div class="kv"><span>已巡检</span><b>${v.length} 台</b></div>
+      <div class="kv"><span>正常</span><b style="color:var(--ok)">${v.filter(x=>x==='ok').length} 台</b></div>
+      <div class="kv"><span>异常</span><b style="color:${v.filter(x=>x==='ng').length?'var(--bad)':'inherit'}">${v.filter(x=>x==='ng').length} 台</b></div>`;
+  }else if(k==='week'){
+    const st=await weekState(d.id,S.week);
+    title='周签 · 科室确认';sub=`${d.name} · ${wkLab(S.week)}`;
+    members=await API.members(d.id);
+    sum=`<div class="kv"><span>本周日签</span><b>${st.signed.length}/${st.days.length} 天</b></div>
+      <div class="kv"><span>巡检台次</span><b>${st.checked}</b></div>
+      <div class="kv"><span>异常台次</span><b style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</b></div>`;
+  }else{
+    const st=await monthState(d.id,S.month);
+    title='月签 · 设备科确认';sub=`${d.name} · ${moLab(S.month)}`;
+    members=[{name:'设备科',title:'设备科'}];
+    sum=`<div class="kv"><span>本月周签</span><b>${st.signedWeeks}/${st.weeks.length} 周</b></div>
+      <div class="kv"><span>日签天数</span><b>${st.dsign} 天</b></div>
+      <div class="kv"><span>巡检台次</span><b>${st.checked}</b></div>
+      <div class="kv"><span>异常台次</span><b style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</b></div>`;
+  }
+  SIGN_MEMBERS=members;
+  if(members.length===1&&!SIGNER.name) SIGNER={name:members[0].name,title:members[0].title||''};
+  const backTo=k==='day'?'dept':k==='week'?'week':'month';
+  return header(title,sub,`S.view='${backTo}';render()`)+
+  `<main class="pad-bar">
+    <div class="card" style="margin-bottom:14px">${sum}</div>
+    <div class="fld"><label class="lb">确认人<i>*</i></label>
+      <button class="pick ${SIGNER.name?'':'ph'}" id="signer" onclick="pickSigner()">
+        <span class="grow">${SIGNER.name?H(SIGNER.name)+(SIGNER.title?`（${H(SIGNER.title)}）`:''):'请选择确认人'}</span>
+        ${svg('chevdown')}</button></div>
+    <div class="fld"><label class="lb">手写签名<i>*</i></label>
+      <div class="sig-wrap blank" id="sigwrap"><canvas id="sigpad"></canvas><div class="sig-line"></div></div>
+      <div class="row" style="margin-top:9px;justify-content:flex-end"><button class="btn gho" onclick="clearSig()">清除重写</button></div></div>
+    <div class="fld"><label class="lb">意见（可不填）</label>
+      <textarea class="in" id="opinion" style="min-height:64px" placeholder="如有需要可补充说明"></textarea></div>
+  </main>
+  <div class="bar"><div class="info warnmsg">${svg('lock')}
+      <div><b>签字即锁定</b>提交后本${k==='day'?'日':k==='week'?'周':'月'}记录不可再修改</div></div>
+    <button class="btn pri lg" onclick="submitSign()">确认签字</button></div>`;
+}
+function initSig(){
+  const cv=$('#sigpad');if(!cv)return;const wrap=$('#sigwrap');
+  const R=()=>Math.min(window.devicePixelRatio||1,2.5);
+  /* 按当前真实 CSS 尺寸建立画布坐标系；已有笔迹会等比保留 */
+  const setup=(keep)=>{
+    const w=cv.clientWidth,h=cv.clientHeight,r=R();
+    if(!w||!h)return false;
+    const nw=Math.round(w*r),nh=Math.round(h*r);
+    if(cv.width===nw&&cv.height===nh)return true;
+    let old=null;
+    if(keep&&cv.width&&SIG.drawn){try{old=document.createElement('canvas');
+      old.width=cv.width;old.height=cv.height;old.getContext('2d').drawImage(cv,0,0)}catch(e){old=null}}
+    cv.width=nw;cv.height=nh;
+    const ctx=cv.getContext('2d');ctx.setTransform(r,0,0,r,0,0);
+    ctx.lineWidth=2.6;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#152220';
+    if(old)try{ctx.drawImage(old,0,0,w,h)}catch(e){}
+    SIG.ctx=ctx;SIG.cv=cv;
+    return true;
+  };
+  SIG={ctx:null,drawn:false,cv,setup};
+  /* 关键：等布局与字体稳定后再定尺寸，否则画笔坐标会整体偏移 */
+  const boot=()=>{if(!setup(false))return;};
+  requestAnimationFrame(()=>requestAnimationFrame(boot));
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>setup(true));
+  setTimeout(()=>setup(true),260);
+  /* 容器尺寸再变化（字体回流、旋屏、键盘收起）也自动跟随 */
+  if(window.ResizeObserver){
+    try{SIG.ro&&SIG.ro.disconnect()}catch(e){}
+    SIG.ro=new ResizeObserver(()=>setup(true));SIG.ro.observe(cv);
+  }
+  window.addEventListener('orientationchange',()=>setTimeout(()=>setup(true),300));
+
+  let go=false,lx=0,ly=0;
+  const pos=e=>{const b=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;
+    return [t.clientX-b.left,t.clientY-b.top]};
+  const st=e=>{
+    e.preventDefault();
+    setup(true);                       /* 落笔前再校一次，杜绝错位 */
+    if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+    go=true;[lx,ly]=pos(e);
+    if(!SIG.drawn){SIG.drawn=true;wrap.classList.remove('blank')}
+    SIG.ctx.beginPath();SIG.ctx.moveTo(lx,ly);SIG.ctx.lineTo(lx+.1,ly+.1);SIG.ctx.stroke();
+  };
+  const mv=e=>{if(!go||!SIG.ctx)return;e.preventDefault();const[x,y]=pos(e);
+    SIG.ctx.beginPath();SIG.ctx.moveTo(lx,ly);SIG.ctx.lineTo(x,y);SIG.ctx.stroke();lx=x;ly=y};
+  const en=()=>{go=false};
+  cv.addEventListener('touchstart',st,{passive:false});
+  cv.addEventListener('touchmove',mv,{passive:false});
+  cv.addEventListener('touchend',en);cv.addEventListener('touchcancel',en);
+  cv.addEventListener('mousedown',st);cv.addEventListener('mousemove',mv);
+  window.addEventListener('mouseup',en);
+}
+window.clearSig=()=>{if(!SIG.cv||!SIG.ctx)return;
+  SIG.ctx.save();SIG.ctx.setTransform(1,0,0,1,0,0);
+  SIG.ctx.clearRect(0,0,SIG.cv.width,SIG.cv.height);SIG.ctx.restore();
+  SIG.drawn=false;$('#sigwrap').classList.add('blank')};
+window.goSign=async k=>{
+  if(k==='day'){
+    await autosave();
+    const total=await API.devCount(S.deptId);
+    const rest=total-Object.keys(S.checks).length;
+    if(rest>0){sheet(`<h3>还有 ${rest} 台未勾选</h3>
+      <div class="d">未勾选的设备不计入本次巡检。确定现在签字吗？</div>
+      <div class="row" style="gap:10px;justify-content:flex-end">
+        <button class="btn" onclick="closeSheet()">继续巡检</button>
+        <button class="btn pri" onclick="closeSheet();S.signKind='day';S.view='sign';render()">仍要签字</button></div>`);return}
+  }
+  S.signKind=k;SIGNER={name:'',title:''};S.view='sign';render();
+};
+window.submitSign=async()=>{
+  if(!SIGNER.name) return toast('请选择确认人');
+  if(!SIG.drawn) return toast('请手写签名后再提交');
+  const name=SIGNER.name,title=SIGNER.title||'';
+  const sign={name,title,dataUrl:SIG.cv.toDataURL('image/png'),opinion:$('#opinion').value.trim()};
+  const d=S.deptId||S.me.deptId;
+  try{
+    if(S.signKind==='day'){await API.signDay(d,S.date,sign);toast('已日签');SIGNER={name:'',title:''};S.view='dept'}
+    else if(S.signKind==='week'){const st=await weekState(d,S.week);
+      if(!st.ready) throw new Error('还有日签未完成，不能周签');
+      await API.signWeek(d,S.week,sign,{checked:st.checked,ng:st.ng,days:st.signed.length});
+      toast('已周签');SIGNER={name:'',title:''};S.view='home';S.tab='home'}
+    else{const st=await monthState(d,S.month);
+      if(!st.ready) throw new Error('还有周签未完成，不能月签');
+      await API.signMonth(d,S.month,sign,{checked:st.checked,ng:st.ng,weeks:st.signedWeeks});
+      toast('已月签');SIGNER={name:'',title:''};S.view='home';S.tab='home'}
+    render();
+  }catch(e){toast(e.message)}
+};
+window.viewSignOf=async k=>{
+  const d=S.deptId||S.me.deptId;let s=null,ttl='';
+  if(k==='day'){const r=await API.record(d,S.date);s=r&&r.sign;ttl='日签'}
+  else if(k==='week'){const w=await API.weekSign(d,S.week);s=w&&w.sign;ttl='周签'}
+  else{const m=await API.monthSign(d,S.month);s=m&&m.sign;ttl='月签'}
+  if(!s)return;
+  sheet(`<h3>${ttl}记录</h3><div class="d">${H(s.name)}${s.title?'（'+H(s.title)+'）':''} · ${H(s.at)}</div>
+    <div class="sig-done"><img src="${s.dataUrl}" alt="签名"></div>
+    ${s.opinion?`<div class="card" style="margin-top:12px;box-shadow:inset 0 0 0 1px var(--line)">
+      <div class="st" style="margin:0">意见：${H(s.opinion)}</div></div>`:''}
+    <button class="btn blk" style="margin-top:16px" onclick="closeSheet()">关闭</button>`);
+};
+
+/* =========================================================================
+   记录
+   ========================================================================= */
+async function viewRecords(){
+  const depts=await API.depts(S.me);const ids=depts.map(d=>d.id);
+  const dn=id=>(depts.find(d=>d.id===id)||{}).name||'';
+  const recs=DB.get('records',[]).filter(r=>ids.includes(r.deptId))
+    .sort((a,b)=>b.date<a.date?-1:1).slice(0,150);
+  const by={};recs.forEach(r=>{(by[r.date]=by[r.date]||[]).push(r)});
+  const blocks=Object.keys(by).sort().reverse().map(date=>{
+    const its=by[date].map(r=>{const v=Object.values(r.checks||{});
+      const ng=v.filter(x=>x==='ng').length;
+      return `<button class="card" style="display:block;width:100%;text-align:left" onclick="openRec('${r.deptId}','${r.date}')">
+        <div class="row"><div class="grow"><div class="tt">${H(dn(r.deptId))}</div>
+        <div class="st">巡检 ${v.length} 台${ng?` · <span style="color:var(--bad)">异常 ${ng}</span>`:''}</div></div>
+        ${r.sign?`<span class="pill p-ok">${H(r.sign.name)} 已签</span>`:`<span class="pill p-bad">未日签</span>`}
+        ${svg('chev','chev')}</div></button>`}).join('');
+    return `<div class="sec">${dLab(date)}</div><div class="list">${its}</div>`}).join('');
+  const dbar=HD==='d'?`<div class="dbar"><b>巡检记录</b><span>共 ${recs.length} 条</span></div>`:'';
+  return (HD==='d'?'':header('巡检记录',HD==='0'?null:`最近 ${recs.length} 条`,null,null,{icon:'list',tone:'lite',cap:`共 ${recs.length} 条`}))+
+    `<main class="pad-tab${HD==='d'?' dtop':''}">${dbar}${blocks||`<div class="empty">${svg('file')}<div>还没有巡检记录</div></div>`}</main>`+tabbar();
+}
+window.openRec=async(deptId,date)=>{
+  const rec=await API.record(deptId,date);if(!rec)return;
+  const d=await API.dept(deptId);
+  const devs=DB.get('devices',[]).filter(x=>x.deptId===deptId);
+  const ng=Object.entries(rec.checks||{}).filter(([,v])=>v==='ng').map(([id])=>{
+    const dv=devs.find(x=>x.id===id);
+    return `<div class="kv"><span>${H(dv?dv.code:'')}</span><b style="color:var(--bad)">${H(rec.notes[id]||'异常')}</b></div>`}).join('');
+  const v=Object.values(rec.checks||{});
+  sheet(`<h3>${H(d.name)}</h3><div class="d">${dLab(date)}</div>
+    <div class="card" style="box-shadow:inset 0 0 0 1px var(--line)">
+      <div class="kv"><span>巡检台数</span><b>${v.length}</b></div>
+      <div class="kv"><span>正常</span><b style="color:var(--ok)">${v.filter(x=>x==='ok').length}</b></div>
+      <div class="kv"><span>异常</span><b style="color:${v.filter(x=>x==='ng').length?'var(--bad)':'inherit'}">${v.filter(x=>x==='ng').length}</b></div>
+      <div class="kv"><span>巡检员</span><b>${H(rec.inspectorName||'—')}</b></div></div>
+    ${ng?`<div class="sec">异常明细</div><div class="card" style="box-shadow:inset 0 0 0 1px var(--line)">${ng}</div>`:''}
+    ${rec.sign?`<div class="sec">日签</div><div class="sig-done"><img src="${rec.sign.dataUrl}" alt="签名">
+      <div class="st" style="margin-top:8px">${H(rec.sign.name)} · ${H(rec.sign.at)}</div></div>`
+      :`<div class="lock" style="margin-top:14px">该日尚未日签</div>`}
+    <button class="btn blk" style="margin-top:16px" onclick="closeSheet()">关闭</button>`);
+};
+
+/* =========================================================================
+   我的签字记录（本人签过的日/周/月签，按时间倒序）
+   ========================================================================= */
+let MYSIGN_CACHE={};
+async function mySigns(){
+  /* 「我的签字记录」= 本账号职责范围内提交过的签字。
+     科室是共用账号、签字人从名单选，所以按「账号管辖范围 + 本层级」筛，而不是按姓名匹配。 */
+  const me=S.me,out=[],dn=id=>(DB.get('depts',[]).find(d=>d.id===id)||{}).name||'';
+  const scope=(await API.depts(me)).map(d=>d.id);
+  if(me.role==='inspector'){
+    DB.get('records',[]).forEach(r=>{if(r.sign&&scope.includes(r.deptId))
+      out.push({kind:'日签',lab:dLab(r.date),dept:dn(r.deptId),sign:r.sign,at:r.sign.at,
+        stat:`巡检 ${Object.keys(r.checks||{}).length} 台`,
+        ng:Object.values(r.checks||{}).filter(x=>x==='ng').length})});
+  }else if(me.role==='dept'){
+    DB.get('weeksigns',[]).forEach(w=>{if(scope.includes(w.deptId))
+      out.push({kind:'周签',lab:wkLab(w.week),dept:dn(w.deptId),sign:w.sign,at:w.at,
+        stat:`巡检 ${w.stat?w.stat.checked:'—'} 台次`,ng:w.stat?w.stat.ng:0})});
+  }else{
+    DB.get('monthsigns',[]).forEach(m=>
+      out.push({kind:'月签',lab:moLab(m.month),dept:dn(m.deptId),sign:m.sign,at:m.at,
+        stat:`巡检 ${m.stat?m.stat.checked:'—'} 台次`,ng:m.stat?m.stat.ng:0}));
+  }
+  return out.sort((a,b)=>b.at<a.at?-1:1);
+}
+async function viewMySigns(){
+  const list=await mySigns();
+  const K={'日签':'p-br','周签':'p-ok','月签':'p-go'};
+  const by={};list.forEach(x=>{const m=String(x.at).slice(0,7);(by[m]=by[m]||[]).push(x)});
+  MYSIGN_CACHE=by;
+  const blocks=Object.keys(by).sort().reverse().map(m=>{
+    const its=by[m].map((x,i)=>`<button class="card" style="display:block;width:100%;text-align:left"
+        onclick="viewOneSign('${m}',${i})">
+      <div class="row"><div class="grow">
+        <div class="tt" style="font-size:15px">${H(x.dept)} · ${H(x.lab)}</div>
+        <div class="st">${H(x.stat)}${x.ng?` · <span style="color:var(--bad)">异常 ${x.ng}</span>`:''} · ${H(x.at)}</div></div>
+        <span class="pill ${K[x.kind]||'p-br'}">${x.kind}</span>${svg('chev','chev')}</div></button>`).join('');
+    return `<div class="sec">${+m.slice(5,7)}月</div><div class="list">${its}</div>`;
+  }).join('');
+  const kindName={inspector:'日签',dept:'周签',equip:'月签'}[S.me.role];
+  return header('我的签字记录',`${kindName} · 共 ${list.length} 次`,`go('me')`)+
+    `<main class="pad-tab">${blocks||`<div class="empty">${svg('pen')}<div>还没有签字记录</div></div>`}</main>`+tabbar();
+}
+window.viewOneSign=(m,i)=>{
+  const x=(MYSIGN_CACHE[m]||[])[i];if(!x)return;
+  sheet(`<h3>${H(x.kind)} · ${H(x.lab)}</h3><div class="d">${H(x.dept)} · ${H(x.at)}</div>
+    <div class="sig-done"><img src="${x.sign.dataUrl}" alt="签名">
+      <div class="st" style="margin-top:8px">${H(x.sign.name)}${x.sign.title?'（'+H(x.sign.title)+'）':''}</div></div>
+    <div class="card" style="margin-top:12px;box-shadow:inset 0 0 0 1px var(--line)">
+      <div class="kv"><span>覆盖范围</span><b>${H(x.stat)}</b></div>
+      <div class="kv"><span>异常</span><b style="color:${x.ng?'var(--bad)':'inherit'}">${x.ng} 台次</b></div>
+      ${x.sign.opinion?`<div class="kv"><span>意见</span><b>${H(x.sign.opinion)}</b></div>`:''}</div>
+    <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">关闭</button>`);
+};
+
+/* =========================================================================
+   我的（所有角色都有，含退出）
+   ========================================================================= */
+async function viewMe(){
+  const rn={inspector:'巡检员 · 日签',dept:'科室确认人 · 周签',equip:'设备科 · 月签'}[S.me.role];
+  const myDepts=await API.depts(S.me);
+  const scope=S.me.role==='equip'?'全院所有科室'
+    :S.me.role==='dept'?'仅本科室'
+    :`${myDepts.length} 个科室（后台配置）`;
+  const remind={inspector:'每天早上提醒昨天及更早未签字的巡检',
+    dept:'每周一早上提醒上一周未签字的记录',
+    equip:'每月 1 日提醒上一个月未签字的记录'}[S.me.role];
+  const d=S.me.deptId?await API.dept(S.me.deptId):null;
+  return (HD==='d'?'':header('我的',null,null,null,{icon:'user',cap:rn.split(' · ')[0]}))+
+  `<main class="pad-tab${HD==='d'?' dtop':''}">
+    <div class="card${HD==='d'?' mecard':''}" style="text-align:center;padding:26px 16px">
+      ${HD==='d'?'<div class="dht2">我的</div>':''}
+      <div class="logo" style="margin:0 auto 14px">${svg('user')}</div>
+      <div class="tt" style="font-size:19px">${H(S.me.displayName)}</div>
+      <div class="st">${rn}${d?' · '+H(d.name):''}</div></div>
+    <button class="card" style="display:block;width:100%;text-align:left" onclick="go('mysigns')">
+      <div class="row"><div class="grow"><div class="tt">我的签字记录</div>
+        <div class="st">查看自己签过的日签 / 周签 / 月签</div></div>
+        ${svg('hist')}${svg('chev','chev')}</div></button>
+    <div class="card">
+      <div class="kv"><span>账号</span><b class="mono">${H(S.me.username)}</b></div>
+      <div class="kv"><span>签字层级</span><b>${rn}</b></div>
+      <div class="kv"><span>可见范围</span><b>${scope}</b></div>
+      ${d?`<div class="kv"><span>所属科室</span><b>${H(d.name)}</b></div>`:''}
+      ${S.me.role==='inspector'?`<div class="kv" style="display:block"><span>负责科室</span>
+        <div class="scope">${myDepts.map(x=>`<span>${H(x.name)}</span>`).join('')||'<span style="background:var(--line2);color:var(--faint)">未配置</span>'}</div></div>`:''}
+      <div class="kv"><span>提醒规则</span><b style="font-weight:400;font-size:13px;color:var(--muted)">${remind}</b></div></div>
+    <div class="card" style="background:var(--brand-l);box-shadow:none">
+      <div class="st" style="margin:0;color:var(--brand-d);line-height:1.75">
+        <b>签字顺序</b>：巡检员日签 → 科室周签 → 设备科月签，上一级签完下一级才能签。<br>
+        可以补签过去的日期，但不能提前签还没开始的周期。</div></div>
+    <div class="card" style="background:#F7FAF9;box-shadow:inset 0 0 0 1px var(--line)">
+      <div class="st" style="margin:0;line-height:1.75">把本页面「添加到主屏幕」即可像 App 一样打开。<br>
+        iPhone：Safari 分享 → 添加到主屏幕；安卓：浏览器菜单 → 添加到主屏幕</div></div>
+    <button class="btn blk" style="margin-top:14px;color:var(--bad)" onclick="doLogout()">${svg('out')} 退出登录</button>
+  </main>`+tabbar();
+}
+window.doLogout=()=>sheet(`<h3>退出登录</h3><div class="d">退出后需要重新输入账号密码。</div>
+  <div class="row" style="gap:10px;justify-content:flex-end"><button class="btn" onclick="closeSheet()">取消</button>
+  <button class="btn pri" onclick="reallyLogout()">退出</button></div>`);
+window.reallyLogout=async()=>{await API.logout();S.me=null;LOGIN.mode='list';LOGIN.show=false;closeSheet();render()};
+
+/* =========================================================================
+   路由
+   ========================================================================= */
+window.go=k=>{if(k==='home'){S.tab='home';S.view='home';S.date=today()}
+  else if(k==='mysigns'){S.tab='me';S.view='mysigns'}else{S.tab=k;S.view=k}render()};
+window.openDept=id=>{S.deptId=id;S.view='dept';render()};
+window.openCat=n=>{S.catName=n;S.view='cat';render()};
+window.openWeek=w=>{S.week=w;S.deptId=S.me.deptId;S.view='week';render()};
+window.openMonth=id=>{S.deptId=id;S.view='month';render()};
+
+async function render(){
+  const app=$('#app');
+  if(!S.me){app.innerHTML=await viewLogin();return}
+  let h='';
+  switch(S.view){
+    case 'dept': h=await viewDept();break;
+    case 'cat':  h=await viewCat();break;
+    case 'week': h=await viewWeek();break;
+    case 'month':h=await viewMonth();break;
+    case 'sign': h=await viewSignPage();break;
+    case 'records':h=await viewRecords();break;
+    case 'me':   h=await viewMe();break;
+    case 'mysigns': h=await viewMySigns();break;
+    default:
+      h=S.me.role==='inspector'?await viewInspector()
+       :S.me.role==='dept'?await viewDeptHome():await viewEquipHome();
+  }
+  app.innerHTML=h;window.scrollTo(0,0);
+  if(S.view==='sign') requestAnimationFrame(()=>initSig());
+  if(!S.me&&LOGIN.mode==='form') setTimeout(()=>refreshLock(LOGIN.user),40);
+  const hd=$('#hd');
+  if(hd){const on=()=>hd.classList.toggle('sc',window.scrollY>4);window.onscroll=on;on()}
+}
+
+/* 演示用的手写签名图（一段简笔签名） */
+const SIGDEMO='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(
+'<svg xmlns="http://www.w3.org/2000/svg" width="220" height="70"><path d="M16 48c10-26 18-30 22-12s10 20 16 4 12-24 18-6 10 18 16 2 12-16 18-2 12 16 20 6 14-18 22-10" fill="none" stroke="#18181B" stroke-width="2.4" stroke-linecap="round"/></svg>')));
+
+/* =========================================================================
+   演示数据（正式环境由 Excel 导入 + 后端下发）
+   ------------------------------------------------------------------------
+   刻意留出未签项，让三种提醒都能真实触发：
+   · 日签：昨天 3 个科室、前天 1 个科室未日签  → 巡检员每天早上提醒
+   · 周签：上周 2 个科室未周签                → 科室每周一提醒
+   · 月签：上月 3 个科室未月签                → 设备科每月初提醒
+   ========================================================================= */
+function seed(){
+  if(DB.get('depts',null)) return;
+  const DEPTS=[
+    ['重症医学科','ICU',[['监护仪',14],['呼吸机',8],['微量注射泵',22],['输液泵',16],['除颤仪',2]]],
+    ['急诊科','JZ',[['监护仪',10],['除颤仪',3],['心电图机',4],['输液泵',12],['洗胃机',2]]],
+    ['心血管内科','XN',[['监护仪',8],['心电图机',5],['除颤仪',2],['动态心电记录仪',6]]],
+    ['呼吸内科','HX',[['呼吸机',5],['制氧机',9],['雾化器',12],['肺功能仪',2]]],
+    ['普通外科','PW',[['监护仪',6],['输液泵',10],['电动吸引器',4]]],
+    ['手术室','SS',[['麻醉机',8],['高频电刀',8],['监护仪',10],['无影灯',8]]],
+    ['妇产科','FC',[['胎心监护仪',7],['婴儿辐射保暖台',4],['监护仪',5]]],
+    ['儿科','EK',[['婴儿培养箱',6],['蓝光治疗仪',4],['雾化器',8],['监护仪',4]]],
+    ['康复医学科','KF',[['中频治疗仪',10],['超声波治疗仪',5],['牵引床',4]]],
+    ['检验科','JY',[['生化分析仪',3],['血细胞分析仪',3],['离心机',6]]]
+  ];
+  const CAB={'监护仪':'JHY','呼吸机':'HXJ','微量注射泵':'WLB','输液泵':'SYB','除颤仪':'CCY','心电图机':'XDT',
+    '洗胃机':'XWJ','动态心电记录仪':'DTX','制氧机':'ZYJ','雾化器':'WHQ','肺功能仪':'FGN','电动吸引器':'DXQ',
+    '麻醉机':'MZJ','高频电刀':'GPD','无影灯':'WYD','胎心监护仪':'TXJ','婴儿辐射保暖台':'BNT','婴儿培养箱':'PYX',
+    '蓝光治疗仪':'LGY','中频治疗仪':'ZPY','超声波治疗仪':'CSB','牵引床':'QYC','生化分析仪':'SHY',
+    '血细胞分析仪':'XXB','离心机':'LXJ'};
+  const BR={'监护仪':['迈瑞 uMEC12','飞利浦 MX450'],'呼吸机':['迈瑞 SV300','德尔格 Savina'],
+    '微量注射泵':['浙大医疗 WZ-50C6'],'输液泵':['迈瑞 SK-600II'],'除颤仪':['飞利浦 HeartStart'],
+    '心电图机':['光电 ECG-2150'],'麻醉机':['迈瑞 WATO EX-65'],'高频电刀':['威力 ForceTriad']};
+  const NM=['张敏','李慧','王芳','陈静','刘洋','赵霞','孙婷','周颖','吴倩','郑莉','冯敏','许燕'];
+  const TT=['护士长','主管护师','设备管理员'];
+  const NG=['显示屏偶发闪烁，已通知厂家','电池续航明显下降，申请更换','报警音量偏小，待厂家调试',
+    '外壳有磨损，不影响使用','管路老化，已联系更换','按键偶尔失灵，观察中'];
+
+  const depts=[],devices=[],members=[],users=[];
+  DEPTS.forEach(([name,code,cats],di)=>{
+    const id='d_'+code.toLowerCase();
+    depts.push({id,name,code,sort:di,status:'on'});
+    cats.forEach(([cn,n])=>{for(let i=1;i<=n;i++){
+      const bl=BR[cn]||[cn];
+      devices.push({id:uid('dev_'),deptId:id,catName:cn,
+        code:`PD-${code}-${CAB[cn]||'QT'}-${pad(i)}`,name:cn,model:bl[i%bl.length],
+        location:`${(i%3)+1}号区 ${pad((i%9)+1)}床`,status:'in_use'})}});
+    for(let i=0;i<3;i++) members.push({id:uid('mem_'),deptId:id,name:NM[(di*3+i)%NM.length],
+      title:TT[i%TT.length],status:'on'});
+    users.push({id:'u_'+code.toLowerCase(),username:code.toLowerCase(),password:'123456',
+      displayName:name,role:'dept',deptId:id,status:'on'});
+  });
+  /* 巡检员由后台配置负责科室：正常一人一科室，也支持一人多科室 */
+  users.push({id:'u_gh01',username:'gh01',password:'123456',displayName:'王建国',role:'inspector',
+    deptId:null,deptIds:['d_icu','d_jz'],status:'on'});              // 多科室：重症 + 急诊
+  users.push({id:'u_gh02',username:'gh02',password:'123456',displayName:'李强',role:'inspector',
+    deptId:null,deptIds:['d_xn'],status:'on'});                       // 单科室：心血管内科
+  users.push({id:'u_sbk',username:'sbk',password:'123456',displayName:'设备科',role:'equip',deptId:null,status:'on'});
+  /* 演示：后台已禁用的账号（如人员离职/调岗），登录时应提示联系设备科 */
+  users.push({id:'u_gh03',username:'gh03',password:'123456',displayName:'李明（已离职）',role:'inspector',
+    deptId:null,deptIds:['d_hx'],status:'off'});
+
+  /* ---------- 历史巡检记录 ---------- */
+  const t=today();
+  const NO_DAY={};                      // 刻意不日签的 (date -> [deptIdx])
+  NO_DAY[addDay(t,-1)]=[1,2,4];          // 昨天 3 个科室未日签（含 gh01、gh02 各自负责的科室）
+  NO_DAY[addDay(t,-2)]=[3];              // 前天 1 个科室未日签
+  const NO_WEEK=[2,5];                   // 上周未周签的科室
+  const NO_MONTH=[0,3,6];                // 上月未月签的科室
+
+  /* 科室 → 负责巡检员（与上面的 deptIds 配置保持一致） */
+  const INSP_MAP={d_icu:{id:'u_gh01',name:'王建国'},d_jz:{id:'u_gh01',name:'王建国'},
+                  d_xn:{id:'u_gh02',name:'李强'}};
+  const INSP_OF=id=>INSP_MAP[id]||{id:'u_gh01',name:'王建国'};
+  const recs=[],wsigns=[],msigns=[];
+  const lastWeek=addDay(wkOf(t),-7), lastMonth=prevMonth(moOf(t));
+  const byDept={};depts.forEach(d=>byDept[d.id]=devices.filter(x=>x.deptId===d.id));
+
+  /* 历史起点对齐到「上月第一个周一」，避免出现半截周导致边界月份永远签不齐 */
+  const startW=wksOfMonth(lastMonth)[0]||addDay(wkOf(t),-28);
+  const dayList=[];for(let d=startW;d<t;d=addDay(d,1))dayList.push(d);
+  for(const date of dayList){
+    const i=Math.round((D(t)-D(date))/864e5);
+    depts.forEach((d,di)=>{
+      const skip=(NO_DAY[date]||[]).includes(di);
+      const ds=byDept[d.id];
+      const checks={},notes={};
+      ds.forEach((dv,k)=>{
+        // 每天约 1.5% 概率异常
+        const bad=((i*7+k*13+di*3)%67)===0;
+        checks[dv.id]=bad?'ng':'ok';
+        if(bad) notes[dv.id]=NG[(i+k)%NG.length];
+      });
+      const r={id:uid('rec_'),deptId:d.id,date,checks,notes,
+        inspectorId:INSP_OF(d.id).id,inspectorName:INSP_OF(d.id).name,createdAt:date+' 09:12',
+        sign:skip?null:{name:INSP_OF(d.id).name,title:'巡检员',dataUrl:SIGDEMO,
+          opinion:'',at:date+' '+pad(9+(di%3))+':'+pad(20+(di*4)%40)}};
+      recs.push(r);
+    });
+  }
+  DB.set('records',recs);
+
+  /* ---------- 周签：除上周指定科室外全签 ---------- */
+  const weeksSeen=new Set();
+  recs.forEach(r=>weeksSeen.add(wkOf(r.date)));
+  [...weeksSeen].sort().forEach(w=>{
+    if(addDay(w,6)>=t) return;                       // 未结束的周不签
+    depts.forEach((d,di)=>{
+      if(w===lastWeek&&NO_WEEK.includes(di)) return; // 刻意留白
+      const rs=recs.filter(x=>x.deptId===d.id&&x.date>=w&&x.date<=addDay(w,6));
+      if(rs.some(x=>!x.sign)) return;                // 日签不全则无法周签
+      let ck=0,ng=0;rs.forEach(x=>{const v=Object.values(x.checks);ck+=v.length;ng+=v.filter(y=>y==='ng').length});
+      const m=members.filter(x=>x.deptId===d.id)[0];
+      wsigns.push({id:uid('wk_'),deptId:d.id,week:w,
+        sign:{name:m.name,title:m.title,dataUrl:SIGDEMO,opinion:'',at:addDay(w,7)+' 09:'+pad(10+di*3)},
+        stat:{checked:ck,ng,days:rs.length},at:addDay(w,7)+' 09:'+pad(10+di*3)});
+    });
+  });
+  DB.set('weeksigns',wsigns);
+
+  /* ---------- 月签：上月除指定科室外全签 ---------- */
+  depts.forEach((d,di)=>{
+    if(NO_MONTH.includes(di)) return;
+    const wks=wksOfMonth(lastMonth);
+    if(!wks.length) return;
+    if(wks.some(w=>!wsigns.find(x=>x.deptId===d.id&&x.week===w))) return;
+    const rs=recs.filter(x=>x.deptId===d.id&&x.date.slice(0,7)===lastMonth);
+    let ck=0,ng=0;rs.forEach(x=>{const v=Object.values(x.checks);ck+=v.length;ng+=v.filter(y=>y==='ng').length});
+    msigns.push({id:uid('mo_'),deptId:d.id,month:lastMonth,
+      sign:{name:'设备科',title:'设备科',dataUrl:SIGDEMO,opinion:'本月设备运行正常',at:lastMonth+'-05 10:'+pad(10+di*2)},
+      stat:{checked:ck,ng,weeks:wks.length},at:lastMonth+'-05 10:'+pad(10+di*2)});
+  });
+  DB.set('monthsigns',msigns);
+
+  /* ---------- 今天：部分科室已巡检 ---------- */
+  depts.slice(0,3).forEach((d,di)=>{
+    const ds=byDept[d.id],checks={},notes={};
+    ds.slice(0,Math.ceil(ds.length*(di===0?1:0.5))).forEach((dv,k)=>{checks[dv.id]='ok'});
+    recs.push({id:uid('rec_'),deptId:d.id,date:t,checks,notes,
+      inspectorId:INSP_OF(d.id).id,inspectorName:INSP_OF(d.id).name,createdAt:t+' 08:40',sign:null});
+  });
+  DB.set('records',recs);
+
+  DB.set('depts',depts);DB.set('devices',devices);DB.set('members',members);DB.set('users',users);
+}
+
+/* ---------- 方案切换器（预览专用，选定后整块移除） ---------- */
+function buildHDSwitch(){
+  const sw=document.createElement('div');sw.id='hdsw';
+  const NAMES={'0':'原版',a:'A',b:'B',c:'C',d:'D'};
+  sw.innerHTML='<div class="t">头部方案</div>'+Object.keys(NAMES).map(k=>
+    `<button data-k="${k}">${NAMES[k]}</button>`).join('');
+  sw.addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b)return;
+    HD=b.dataset.k;localStorage.setItem('insp:hdstyle',HD);
+    applyHD();mark();render();
+  });
+  const mark=()=>[...sw.querySelectorAll('button')].forEach(b=>b.classList.toggle('on',b.dataset.k===HD));
+  document.body.appendChild(sw);mark();
+}
+
+(async()=>{seed();applyHD();buildHDSwitch();S.me=await API.me();
+  if(!S.me){const k=await API.takeKicked();if(k&&k.reason==='disabled')LOGIN.kick=k.username;}
+  if(S.me&&S.me.role==='dept')S.deptId=S.me.deptId;render();})();
+</script>
+</body>
+</html>
