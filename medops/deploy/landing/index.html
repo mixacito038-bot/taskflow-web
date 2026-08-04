@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="theme-color" content="#0F554D">
+<title>设备管理平台</title>
+<style>
+  /* 统一入口页：自包含单文件，无任何外部资源 */
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :root{
+    --green:#0F554D; --green-deep:#0B423C; --green-soft:#E7F1EF;
+    --ink:#1C2B29; --muted:#5F736F; --line:#DCE7E4;
+  }
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:#F3F7F6; color:var(--ink);
+    display:flex; flex-direction:column; min-height:100vh;
+  }
+  .hero{
+    background:linear-gradient(160deg,var(--green) 0%,var(--green-deep) 100%);
+    color:#fff; padding:48px 20px 96px; text-align:center; position:relative;
+  }
+  .hero .logo{
+    width:64px;height:64px;margin:0 auto 16px;border-radius:18px;
+    background:rgba(255,255,255,.12); display:flex;align-items:center;justify-content:center;
+  }
+  .hero h1{font-size:26px;font-weight:700;letter-spacing:2px}
+  .hero p{margin-top:10px;font-size:14px;opacity:.75;letter-spacing:1px}
+  .cards{
+    width:min(760px,calc(100% - 32px)); margin:-56px auto 0;
+    display:grid; grid-template-columns:1fr 1fr; gap:16px;
+  }
+  @media (max-width:560px){ .cards{grid-template-columns:1fr} }
+  .card{
+    background:#fff; border:1px solid var(--line); border-radius:16px;
+    padding:28px 24px; text-decoration:none; color:var(--ink);
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    box-shadow:0 6px 20px rgba(15,85,77,.08);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .card:hover{transform:translateY(-3px); box-shadow:0 12px 28px rgba(15,85,77,.14)}
+  .card .icon{
+    width:72px;height:72px;border-radius:20px;background:var(--green-soft);
+    display:flex;align-items:center;justify-content:center;margin-bottom:16px;
+  }
+  .card h2{font-size:19px;font-weight:700}
+  .card .sub{margin-top:8px;font-size:13px;color:var(--muted);line-height:1.7}
+  .card .go{
+    margin-top:18px;font-size:14px;font-weight:600;color:var(--green);
+    display:flex;align-items:center;gap:6px;
+  }
+  .foot{margin:36px 0 28px;text-align:center}
+  .foot a{
+    font-size:13px;color:var(--muted);text-decoration:none;
+    border-bottom:1px dashed var(--line);padding-bottom:2px;
+  }
+  .foot a:hover{color:var(--green);border-color:var(--green)}
+  .copy{margin-top:14px;font-size:12px;color:#9AACA8}
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div class="logo">
+      <!-- 医疗十字 -->
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3z" fill="#fff"/>
+      </svg>
+    </div>
+    <h1>设备管理平台</h1>
+    <p>急救设备巡检 · 资产盘点 · 统一入口</p>
+  </header>
+
+  <main class="cards">
+    <a class="card" href="/xunjian/">
+      <div class="icon">
+        <!-- 手机 -->
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="7" y="2.5" width="10" height="19" rx="2.5" stroke="#0F554D" stroke-width="1.8"/>
+          <path d="M10.5 5h3" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round"/>
+          <circle cx="12" cy="18" r="1.1" fill="#0F554D"/>
+        </svg>
+      </div>
+      <h2>急救设备巡检</h2>
+      <p class="sub">手机扫码巡检、电子签名<br>日检 / 周签 / 月签</p>
+      <span class="go">进入巡检
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </a>
+
+    <a class="card" href="/pandian/">
+      <div class="icon">
+        <!-- 电脑 -->
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="3" y="4.5" width="18" height="12" rx="2" stroke="#0F554D" stroke-width="1.8"/>
+          <path d="M9 20h6M12 16.5V20" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>资产盘点系统</h2>
+      <p class="sub">全院资产台账、盘点核对<br>多端云同步</p>
+      <span class="go">进入盘点
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </a>
+  </main>
+
+  <div class="foot">
+    <a href="/admin/">巡检管理后台（护士长 / 设备科）</a>
+    <div class="copy">设备科 · 内部系统</div>
+  </div>
+</body>
+</html>

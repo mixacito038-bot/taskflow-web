@@ -355,7 +355,7 @@ const LOGO='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAuIAAACQBAMAAAC/uBPvAA
    -------------------------------------------------------------------------
    三级递进签字：巡检员日签 → 科室周签 → 设备科月签
    上一级签完，下一级才解锁；可随时补签，但不能提前签（周期未开始）
-   数据层收敛在 API 对象，接后端时只需把各方法换成 fetch
+   数据层收敛在 API 对象，已接后端（接口契约见 docs/api-contract.md）
    ========================================================================= */
 
 /* ---------- 基础工具 ---------- */
@@ -365,7 +365,7 @@ const pad=n=>String(n).padStart(2,'0');
 const D=s=>new Date(String(s).replace(/-/g,'/')+' 00:00:00');
 const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const addDay=(s,n)=>{const d=D(s);d.setDate(d.getDate()+n);return fmt(d)};
-const today=()=>fmt(new Date());
+const today=()=>SRV.date||fmt(new Date());   /* 服务端日期优先，未同步时本地兜底 */
 const nowT=()=>{const d=new Date();return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const stamp=()=>`${today()} ${nowT()}`;
 const uid=p=>p+Math.random().toString(36).slice(2,10);
@@ -415,204 +415,204 @@ const ICON={
 const svg=(k,c='')=>`<svg class="${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
 
 /* =========================================================================
-   API 层 —— 换后端时只改这里
+   API 层 —— 全部走后端接口（契约见 docs/api-contract.md）
    ========================================================================= */
-const LOCK_N=5, LOCK_MIN=5;        /* 密码连错 5 次冻结，5/10/15… 递增，不设上限 */
-const PROBE_N=8, PROBE_MIN=2;      /* 同一设备连试 8 个不存在的账号 → 冷却 2 分钟，防字典遍历 */
+const API_BASE=window.API_BASE||'/api';
 const HOSP='上海市浦东新区周浦医院';
+
+/* 本地只存登录态相关：insp:devid / insp:saved / insp:session / insp:hdstyle */
 const DB={
   get(k,d){try{const v=localStorage.getItem('insp:'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
-  set(k,v){try{localStorage.setItem('insp:'+k,JSON.stringify(v))}catch(e){}}
+  set(k,v){try{localStorage.setItem('insp:'+k,JSON.stringify(v))}catch(e){}},
+  del(k){try{localStorage.removeItem('insp:'+k)}catch(e){}}
 };
+/* 清理旧演示版遗留：业务数据不再落 localStorage；旧版 saved 存过密码，改存 refreshToken */
+(function(){
+  const keep=['insp:devid','insp:saved','insp:session','insp:hdstyle'];
+  for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);
+    if(k&&k.indexOf('insp:')===0&&!keep.includes(k))localStorage.removeItem(k)}
+  const sv=DB.get('saved',[]);
+  if(sv.some(x=>x&&x.cred!==undefined))
+    DB.set('saved',sv.map(x=>({username:x.username,displayName:x.displayName,role:x.role,
+      refreshToken:x.refreshToken||'',at:x.at||''})));
+})();
+
+/* 设备标识：首次生成后固定，登录 / refresh 都带 X-Device-Id */
+function devid(){
+  let v=localStorage.getItem('insp:devid');
+  if(!v){v=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():uid('dev-')+Date.now().toString(36);
+    localStorage.setItem('insp:devid',v)}
+  return v;
+}
+const session=()=>DB.get('session',null);
+const setSession=d=>DB.set('session',{accessToken:d.accessToken,refreshToken:d.refreshToken,user:d.user});
+function updSavedToken(username,rt){
+  const all=DB.get('saved',[]),a=all.find(x=>x.username===username);
+  if(a){a.refreshToken=rt;DB.set('saved',all)}
+}
+
+/* 服务端时间（登录后同步、进入首页刷新；today() 未同步时才用本机时间兜底） */
+const SRV={date:null,week:null,month:null};
+async function syncTime(){
+  try{const t=await req('/time');SRV.date=t.date;SRV.week=t.week;SRV.month=t.month}catch(e){}
+}
+
+let KICKED=null;       /* 会话被禁用踢出时记下账号，登录页提示用 */
+let REFRESHING=null;   /* refresh 并发去重，避免同一个旧 token 被重复轮换 */
+
+function onKicked(){
+  const s=session();
+  KICKED={username:(s&&s.user&&s.user.username)||'',reason:'disabled'};
+  DB.del('session');
+  if(S.me){S.me=null;LOGIN.kick=KICKED.username;LOGIN.mode='list';
+    render();toast('账户已被禁用，请联系设备科',2600)}
+}
+function onAuthLost(){
+  DB.del('session');
+  if(S.me){S.me=null;LOGIN.mode='list';render();toast('登录已过期，请重新登录',2400)}
+}
+/* 统一请求：Bearer + X-Device-Id + cookie；401 → refresh 轮换后重试一次 */
+async function req(path,opt={},retried){
+  const s=session(),headers={'X-Device-Id':devid()};
+  if(opt.body!==undefined)headers['Content-Type']='application/json';
+  if(s&&s.accessToken&&opt.auth!==false)headers.Authorization='Bearer '+s.accessToken;
+  let res;
+  try{
+    res=await fetch(API_BASE+path,{method:opt.method||'GET',headers,credentials:'include',
+      body:opt.body!==undefined?JSON.stringify(opt.body):undefined});
+  }catch(x){const e=new Error('网络异常，请稍后再试');e.code='NETWORK';throw e}
+  let data=null;try{data=await res.json()}catch(x){}
+  if(res.ok)return data;
+  const er=(data&&data.error)||{code:'ERR',message:'请求失败（'+res.status+'）'};
+  if(er.code==='KICKED'&&opt.auth!==false)onKicked();
+  else if(res.status===401&&opt.auth!==false&&!retried){
+    if(s&&s.refreshToken&&await refreshSession())return req(path,opt,true);
+    onAuthLost();
+  }
+  const e=new Error(er.message||'请求失败');
+  e.code=er.code;e.status=res.status;e.retryAfter=er.retryAfter;
+  throw e;
+}
+function refreshSession(){
+  if(!REFRESHING)REFRESHING=(async()=>{
+    const s=session();if(!s||!s.refreshToken)return false;
+    try{
+      const d=await req('/auth/refresh',{method:'POST',body:{refreshToken:s.refreshToken},auth:false});
+      setSession(d);updSavedToken(d.user.username,d.refreshToken);
+      return true;
+    }catch(e){if(e.code==='KICKED')onKicked();return false}
+  })().finally(()=>{REFRESHING=null});
+  return REFRESHING;
+}
+
+/* 设备清单按科室缓存（台账在会话内不变，避免勾选时反复拉取） */
+const DEVCACHE=new Map();
+function devList(deptId){
+  if(!DEVCACHE.has(deptId)){
+    const p=req('/devices?deptId='+encodeURIComponent(deptId))
+      .catch(e=>{DEVCACHE.delete(deptId);throw e});
+    DEVCACHE.set(deptId,p);
+  }
+  return DEVCACHE.get(deptId);
+}
+
 const API={
   /* ---------- 登录态 ---------- */
   async login(u,p){
     const un=String(u||'').trim();
-    if(!un) throw new Error('请输入账号');
-    /* ① 设备级探测冷却：防止拿字典遍历账号名 */
-    const pb=await API.probeState();
-    if(pb.cooling) throw new Error(`尝试过于频繁，请 ${pb.leftText}后再试`);
-    /* ② 账号是否冻结 */
-    const lk=await API.lockOf(un);
-    if(lk.locked) throw new Error(`账号已冻结，请 ${lk.leftText}后再试`);
-    /* ③ 账号是否存在 —— 不存在就没必要判密码，也不计入该账号的冻结 */
-    const me=DB.get('users',[]).find(x=>x.username===un);
-    if(!me){
-      const st=await API.addProbe();
-      throw new Error(st.cooling
-        ? `连续输入了 ${PROBE_N} 个不存在的账号，请 ${PROBE_MIN} 分钟后再试`
-        : '该账号不存在，请核对后重试');
-    }
-    /* ④ 账号被后台禁用 —— 不判密码、不计冻结、不计探测，直接告知去向 */
-    if(me.status==='off'){ await API.clearProbe();
-      throw new Error('您的账户已被禁用，请联系设备科'); }
-    /* ⑤ 账号正常 → 才校验密码，错了才累计冻结 */
-    if(!p) throw new Error('请输入密码');
-    if(me.password!==p){
-      const st=await API.addFail(un);
-      if(st.locked) throw new Error(`密码连续输错 ${LOCK_N} 次，账号冻结 ${st.mins} 分钟`);
-      throw new Error(`密码不对，还可尝试 ${LOCK_N-st.fails} 次`);
-    }
-    await API.clearFail(un); await API.clearProbe();
-    DB.set('session',{userId:me.id,at:stamp()});
-    return me;
+    if(!un)throw new Error('请输入账号');
+    if(!p)throw new Error('请输入密码');
+    const d=await req('/auth/login',{method:'POST',body:{username:un,password:p},auth:false});
+    setSession(d);DEVCACHE.clear();
+    return d.user;
   },
-
-  /* 登录前置状态：账号输入变化时调用，用于实时刷新冻结提示与按钮可用性
-     接后端时对应 GET /auth/login-state?username=xxx
-     刻意不返回「账号是否存在」，避免通过该接口枚举账号 */
+  /* 一键登录：用保存的 refreshToken 换新 token 对（轮换后回写 saved） */
+  async loginByToken(refreshToken){
+    const d=await req('/auth/refresh',{method:'POST',body:{refreshToken},auth:false});
+    setSession(d);DEVCACHE.clear();updSavedToken(d.user.username,d.refreshToken);
+    return d.user;
+  },
+  /* GET /auth/login-state → {frozen,retryAfter,disabled} */
   async loginState(un){
     un=String(un||'').trim();
-    const pb=await API.probeState();
-    if(pb.cooling) return {locked:true,leftText:pb.leftText,reason:'probe',
-      msg:`尝试过于频繁，请 ${pb.leftText}后再试`};
-    if(!un) return {locked:false};
-    const lk=await API.lockOf(un);
-    return lk.locked?{locked:true,leftText:lk.leftText,reason:'lock',
-      msg:`账号已冻结，请 ${lk.leftText}后再试`}:{locked:false};
+    if(!un)return {frozen:false,disabled:false};
+    try{return await req('/auth/login-state?username='+encodeURIComponent(un),{auth:false})}
+    catch(e){return {frozen:false,disabled:false}}
   },
-
-  /* 仅用于「本机已保存账号」的状态展示，不用于任意账号探测 */
-  async isDisabled(un){
-    const u=DB.get('users',[]).find(x=>x.username===String(un||'').trim());
-    return !!(u&&u.status==='off');
-  },
-
-  /* 设备级探测计数（不存在的账号） */
-  async probeState(){
-    const o=DB.get('probe',{fails:0,until:0});
-    if(!o.until) return {cooling:false,fails:o.fails||0};
-    const left=o.until-Date.now();
-    if(left<=0){DB.set('probe',{fails:0,until:0});return {cooling:false,fails:0}}
-    const tot=Math.ceil(left/1000),mm=Math.floor(tot/60),ss=tot%60;
-    return {cooling:true,left,leftText:mm>0?`${mm} 分 ${pad(ss)} 秒`:`${ss} 秒`};
-  },
-  async addProbe(){
-    const o=DB.get('probe',{fails:0,until:0});
-    o.fails=(o.fails||0)+1;
-    let cooling=false;
-    if(o.fails>=PROBE_N){o.until=Date.now()+PROBE_MIN*60000;o.fails=0;cooling=true}
-    DB.set('probe',o);return {cooling,fails:o.fails};
-  },
-  async clearProbe(){DB.set('probe',{fails:0,until:0})},
   async me(){
-    const s=DB.get('session',null);if(!s)return null;
-    const u=DB.get('users',[]).find(x=>x.id===s.userId);
-    /* 后台禁用后，下次进入立即失效（接后端时对应接口返回 403 → 同样踢回登录） */
-    if(!u||u.status==='off'){
-      localStorage.removeItem('insp:session');
-      if(u) DB.set('kicked',{username:u.username,reason:'disabled',at:stamp()});
-      return null;
-    }
-    return u;
+    if(!session())return null;
+    try{return await req('/auth/me')}catch(e){return null}
   },
-  async takeKicked(){const k=DB.get('kicked',null);if(k)localStorage.removeItem('insp:kicked');return k},
-  async logout(){localStorage.removeItem('insp:session')},
+  async takeKicked(){const k=KICKED;KICKED=null;return k},
+  async logout(){
+    const s=session();
+    try{await req('/auth/logout',{method:'POST',body:{refreshToken:(s&&s.refreshToken)||''}})}catch(e){}
+    DB.del('session');DEVCACHE.clear();
+  },
 
-  /* ---------- 失败次数与冻结（递增：5/10/15… 不设上限） ---------- */
-  async lockOf(un){
-    const all=DB.get('lock',{}),o=all[un];
-    if(!o||!o.until) return {locked:false,fails:(o&&o.fails)||0};
-    const left=o.until-Date.now();
-    if(left<=0){o.until=0;o.fails=0;all[un]=o;DB.set('lock',all);return {locked:false,fails:0}}
-    const tot=Math.ceil(left/1000),mm=Math.floor(tot/60),ss=tot%60;
-    return {locked:true,left,leftText:mm>0?`${mm} 分 ${pad(ss)} 秒`:`${ss} 秒`,fails:o.fails||0,round:o.round||0};
-  },
-  async addFail(un){
-    const all=DB.get('lock',{}),o=all[un]||{fails:0,round:0,until:0};
-    o.fails=(o.fails||0)+1;
-    let locked=false,mins=0;
-    if(o.fails>=LOCK_N){
-      o.round=(o.round||0)+1;            // 第几轮触发，冻结时长递增
-      mins=LOCK_MIN*o.round;
-      o.until=Date.now()+mins*60000;o.fails=0;locked=true;
-    }
-    all[un]=o;DB.set('lock',all);
-    return {locked,mins,fails:o.fails,round:o.round};
-  },
-  async clearFail(un){const all=DB.get('lock',{});delete all[un];DB.set('lock',all)},
-
-  /* ---------- 记住的账号（下次一键登录） ---------- */
-  /* 演示阶段本地保存凭据；接后端后应改为保存 refreshToken，不落密码 */
+  /* ---------- 记住的账号（只存 refreshToken，不落密码） ---------- */
   async savedAccounts(){return DB.get('saved',[])},
-  async saveAccount(me,pwd){
-    const all=DB.get('saved',[]).filter(x=>x.username!==me.username);
-    all.unshift({username:me.username,displayName:me.displayName,role:me.role,
-      cred:btoa(unescape(encodeURIComponent(pwd))),at:stamp()});
+  async saveAccount(user){
+    const s=session();
+    const all=DB.get('saved',[]).filter(x=>x.username!==user.username);
+    all.unshift({username:user.username,displayName:user.displayName,role:user.role,
+      refreshToken:(s&&s.refreshToken)||'',at:stamp()});
     DB.set('saved',all.slice(0,5));
-  },
-  async credOf(un){
-    const a=DB.get('saved',[]).find(x=>x.username===un);
-    if(!a)return '';try{return decodeURIComponent(escape(atob(a.cred)))}catch(e){return ''}
   },
   async forgetAccount(un){DB.set('saved',DB.get('saved',[]).filter(x=>x.username!==un))},
 
-  /* ---------- 数据范围（后台按角色配置） ----------
-     inspector：按 deptIds 配置，可一人多科室
-     dept：仅本科室   equip：全院                     */
-  async depts(me){
-    const all=DB.get('depts',[]).filter(d=>d.status!=='off');
-    if(!me) return all;
-    if(me.role==='dept') return all.filter(d=>d.id===me.deptId);
-    if(me.role==='inspector'){
-      const ids=Array.isArray(me.deptIds)?me.deptIds:(me.deptId?[me.deptId]:[]);
-      return ids.length?all.filter(d=>ids.includes(d.id)):[];
-    }
-    return all;
-  },
-  async dept(id){return DB.get('depts',[]).find(d=>d.id===id)||null},
-  async members(deptId){return DB.get('members',[]).filter(m=>m.deptId===deptId&&m.status!=='off')},
+  /* ---------- 时间源 ---------- */
+  async time(){return req('/time')},
+
+  /* ---------- 数据范围（服务端已按角色过滤，off 科室前端忽略） ---------- */
+  async depts(){return (await req('/depts')).filter(d=>d.status!=='off')},
+  async dept(id){try{return await req('/depts/'+encodeURIComponent(id))}catch(e){return null}},
+  async members(deptId){return (await req('/members?deptId='+encodeURIComponent(deptId))).filter(m=>m.status!=='off')},
+  async allDevices(deptId){return devList(deptId)},
   async cats(deptId){
-    const ds=DB.get('devices',[]).filter(d=>d.deptId===deptId&&d.status==='in_use');
+    const ds=(await devList(deptId)).filter(d=>d.status==='in_use');
     const map=new Map();
     ds.forEach(d=>{const c=map.get(d.catName)||{name:d.catName,devices:[]};c.devices.push(d);map.set(d.catName,c)});
     return [...map.values()].sort((a,b)=>b.devices.length-a.devices.length);
   },
-  async devices(deptId,cat){return DB.get('devices',[]).filter(d=>d.deptId===deptId&&d.catName===cat&&d.status==='in_use').sort((a,b)=>a.code.localeCompare(b.code))},
-  async devCount(deptId){return DB.get('devices',[]).filter(d=>d.deptId===deptId&&d.status==='in_use').length},
+  async devices(deptId,cat){return (await devList(deptId)).filter(d=>d.catName===cat&&d.status==='in_use').sort((a,b)=>a.code.localeCompare(b.code))},
+  async devCount(deptId){return (await devList(deptId)).filter(d=>d.status==='in_use').length},
 
-  /* 日巡检 + 日签 */
-  async record(deptId,date){return DB.get('records',[]).find(r=>r.deptId===deptId&&r.date===date)||null},
-  async recordsRange(from,to,deptId){
-    return DB.get('records',[]).filter(r=>r.date>=from&&r.date<=to&&(!deptId||r.deptId===deptId));
+  /* ---------- 日巡检 + 日签 ---------- */
+  /* 单日记录走列表端点查询：无记录返回 null，不产生 404 控制台噪音 */
+  async record(deptId,date){
+    const l=await req('/records?from='+date+'&to='+date+'&deptId='+encodeURIComponent(deptId));
+    return l[0]||null;
   },
-  async saveChecks(deptId,date,checks,notes,me){
-    const all=DB.get('records',[]);
-    let r=all.find(x=>x.deptId===deptId&&x.date===date);
-    if(!r){r={id:uid('rec_'),deptId,date,checks:{},notes:{},sign:null,createdAt:stamp()};all.push(r)}
-    r.checks=checks;r.notes=notes;r.inspectorId=r.inspectorId||me.id;
-    r.inspectorName=r.inspectorName||me.displayName;r.updatedAt=stamp();
-    DB.set('records',all);return r;
+  async recordsRange(from,to,deptId){
+    return req('/records?from='+from+'&to='+to+(deptId?'&deptId='+encodeURIComponent(deptId):''));
+  },
+  async saveChecks(deptId,date,checks,notes){
+    return req('/records/'+encodeURIComponent(deptId)+'/'+date,{method:'PUT',body:{checks,notes}});
   },
   async signDay(deptId,date,sign){
-    if(date>today()) throw new Error('还没到这一天，不能提前签字');
-    const all=DB.get('records',[]);const r=all.find(x=>x.deptId===deptId&&x.date===date);
-    if(!r||!Object.keys(r.checks||{}).length) throw new Error('还没有巡检记录，请先勾选设备');
-    r.sign={...sign,at:stamp()};DB.set('records',all);return r;
+    return req('/records/'+encodeURIComponent(deptId)+'/'+date+'/sign',{method:'POST',body:sign});
   },
 
-  /* 周签 */
-  async weekSign(deptId,week){return DB.get('weeksigns',[]).find(x=>x.deptId===deptId&&x.week===week)||null},
-  async weekSigns(deptId){return DB.get('weeksigns',[]).filter(x=>!deptId||x.deptId===deptId)},
-  async signWeek(deptId,week,sign,stat){
-    if(week>today()) throw new Error('这一周还没开始，不能提前签字');
-    const all=DB.get('weeksigns',[]);
-    if(all.find(x=>x.deptId===deptId&&x.week===week)) throw new Error('本周已签字');
-    const rec={id:uid('wk_'),deptId,week,sign:{...sign,at:stamp()},stat,at:stamp()};
-    all.push(rec);DB.set('weeksigns',all);return rec;
+  /* ---------- 周签 ---------- */
+  async weekSign(deptId,week){
+    const l=await req('/weeksigns?deptId='+encodeURIComponent(deptId)+'&from='+week+'&to='+week);
+    return l[0]||null;
   },
-  /* 月签 */
-  async monthSign(deptId,month){return DB.get('monthsigns',[]).find(x=>x.deptId===deptId&&x.month===month)||null},
-  async monthSigns(){return DB.get('monthsigns',[])},
-  async signMonth(deptId,month,sign,stat){
-    if(month>moOf(today())) throw new Error('这个月还没开始，不能提前签字');
-    const all=DB.get('monthsigns',[]);
-    if(all.find(x=>x.deptId===deptId&&x.month===month)) throw new Error('本月已签字');
-    const rec={id:uid('mo_'),deptId,month,sign:{...sign,at:stamp()},stat,at:stamp()};
-    all.push(rec);DB.set('monthsigns',all);return rec;
+  async weekSigns(deptId){return req('/weeksigns'+(deptId?'?deptId='+encodeURIComponent(deptId):''))},
+  async signWeek(deptId,week,sign){
+    return req('/weeksigns/'+encodeURIComponent(deptId)+'/'+week+'/sign',{method:'POST',body:sign});
+  },
+  /* ---------- 月签 ---------- */
+  async monthSign(deptId,month){
+    const l=await req('/monthsigns?deptId='+encodeURIComponent(deptId)+'&year='+month.slice(0,4));
+    return l.find(x=>x.month===month)||null;
+  },
+  async monthSigns(){return req('/monthsigns')},
+  async signMonth(deptId,month,sign){
+    return req('/monthsigns/'+encodeURIComponent(deptId)+'/'+month+'/sign',{method:'POST',body:sign});
   }
 };
-
 /* =========================================================================
    递进关系判定
    ========================================================================= */
@@ -763,22 +763,23 @@ window.jump=(type,deptId,key)=>{
 /* =========================================================================
    登录
    ========================================================================= */
-let LOGIN={mode:'list',user:'',show:false,tick:null,dt:null,kick:''};
+let LOGIN={mode:'list',user:'',show:false,tick:null,dt:null,kick:'',until:0};
+const leftText=sec=>{sec=Math.max(0,Math.ceil(sec||0));const mm=Math.floor(sec/60),ss=sec%60;
+  return mm>0?`${mm} 分 ${pad(ss)} 秒`:`${ss} 秒`};
 async function viewLogin(){
   const saved=await API.savedAccounts();
   const RN={inspector:'巡检员 · 日签',dept:'科室 · 周签',equip:'设备科 · 月签'};
   /* 有已保存账号且未主动切换 → 显示一键登录列表 */
   if(saved.length&&LOGIN.mode==='list'){
     const rows=await Promise.all(saved.map(async a=>{
-      const lk=await API.lockOf(a.username);
-      const off=await API.isDisabled(a.username);
-      const stop=off||lk.locked;
+      const st=await API.loginState(a.username);
+      const stop=st.disabled||st.frozen;
       return `<div class="acct ${stop?'lk':''}">
         <button class="grow" style="text-align:left;display:block;min-width:0" ${stop?'':`onclick="quickLogin('${a.username}')"`}>
-          <div class="tt">${H(a.displayName)}${off?' <span class="pill p-bad" style="margin-left:4px">已禁用</span>':''}</div>
+          <div class="tt">${H(a.displayName)}${st.disabled?' <span class="pill p-bad" style="margin-left:4px">已禁用</span>':''}</div>
           <div class="st"><span class="mono">${H(a.username)}</span> · ${RN[a.role]||''}</div>
-          ${off?`<div class="st" style="color:var(--bad)">账户已被禁用，请联系设备科</div>`
-               :lk.locked?`<div class="st" style="color:var(--bad)">已冻结，${H(lk.leftText)}后可用</div>`:''}
+          ${st.disabled?`<div class="st" style="color:var(--bad)">账户已被禁用，请联系设备科</div>`
+               :st.frozen?`<div class="st" style="color:var(--bad)">已冻结，${leftText(st.retryAfter)}后可用</div>`:''}
         </button>
         <button class="xbtn" onclick="forget('${a.username}')" aria-label="移除">${svg('close')}</button>
       </div>`;
@@ -792,7 +793,10 @@ async function viewLogin(){
       <button class="btn blk" style="margin-top:14px" onclick="LOGIN.mode='form';LOGIN.user='';render()">使用其他账号</button>
     </div>`;
   }
-  const lk=await API.loginState(LOGIN.user);
+  const st=await API.loginState(LOGIN.user);
+  const locked=st.frozen||st.disabled;
+  const msg=st.disabled?'账户已被禁用，请联系设备科'
+    :st.frozen?`账号已冻结，请 ${leftText(st.retryAfter)}后再试`:'';
   const kick=LOGIN.kick;
   return `<div class="login">
     <img class="hosplogo" src="${LOGO}" alt="${HOSP}">
@@ -805,17 +809,10 @@ async function viewLogin(){
         <button class="eye" onclick="toggleEye()" aria-label="显示密码">${svg(LOGIN.show?'eyeoff':'eye')}</button></div></div>
     <label class="rem"><input type="checkbox" id="lr" checked><span>记住此账号，下次一键登录</span></label>
     ${kick?`<div class="lockmsg" style="margin-bottom:12px">账户「${H(kick)}」已被禁用，请联系设备科</div>`:''}
-    <div id="lockmsg" class="lockmsg ${lk.locked?'':'hide'}">${lk.locked?H(lk.msg):''}</div>
-    <button class="btn pri lg blk" id="lbtn" onclick="doLogin()" ${lk.locked?'disabled':''}>登录</button>
-    ${saved.length?`<button class="btn blk" style="margin-top:10px" onclick="LOGIN.mode='list';render()">返回账号列表</button>`:''}
-    <div class="demo"><b>演示账号</b>（密码均为 123456）<br>
-      日签·巡检员 <button onclick="fill('gh01')">gh01</button>（2 个科室）/ <button onclick="fill('gh02')">gh02</button>（1 个科室）<br>
-      周签·科室 <button onclick="fill('icu')">icu</button> / <button onclick="fill('jz')">jz</button><br>
-      月签·设备科 <button onclick="fill('sbk')">sbk</button><br>
-      已禁用示例 <button onclick="fill('gh03')">gh03</button><br>
-      <span style="color:var(--faint)">连续输错 ${LOCK_N} 次将冻结 ${LOCK_MIN} 分钟，再次触发依次延长</span></div></div>`;
+    <div id="lockmsg" class="lockmsg ${locked?'':'hide'}">${locked?H(msg):''}</div>
+    <button class="btn pri lg blk" id="lbtn" onclick="doLogin()" ${locked?'disabled':''}>登录</button>
+    ${saved.length?`<button class="btn blk" style="margin-top:10px" onclick="LOGIN.mode='list';render()">返回账号列表</button>`:''}</div>`;
 }
-window.fill=u=>{$('#lu').value=u;$('#lp').value='123456';onAcct(u)};
 window.toggleEye=()=>{
   const i=$('#lp'),v=i.value,p=i.selectionStart;
   LOGIN.show=!LOGIN.show;LOGIN.user=$('#lu').value;
@@ -829,28 +826,39 @@ window.forget=async u=>{
   if(!(await API.savedAccounts()).length) LOGIN.mode='form';
   render();toast('已移除该账号');
 };
+/* 一键登录：refreshToken 换新对；失效则转密码输入 */
 window.quickLogin=async u=>{
-  const p=await API.credOf(u);
-  if(!p){LOGIN.mode='form';LOGIN.user=u;render();return toast('请输入密码')}
-  await tryLogin(u,p,false);
+  const a=(await API.savedAccounts()).find(x=>x.username===u);
+  if(!a||!a.refreshToken){LOGIN.mode='form';LOGIN.user=u;render();return toast('请输入密码')}
+  try{
+    S.me=await API.loginByToken(a.refreshToken);
+    await afterLogin();
+  }catch(e){
+    if(e.code==='KICKED'){LOGIN.kick=u;render();return toast('您的账户已被禁用，请联系设备科',2600)}
+    LOGIN.mode='form';LOGIN.user=u;render();toast('登录已过期，请重新输入密码',2400);
+  }
 };
 window.doLogin=async()=>{
   const u=$('#lu').value,p=$('#lp').value;
   LOGIN.user=u;
   await tryLogin(u,p,$('#lr')&&$('#lr').checked);
 };
+async function afterLogin(){
+  LOGIN.mode='list';LOGIN.show=false;LOGIN.kick='';stopTick();
+  await syncTime();
+  S.tab='home';S.view='home';S.deptId=S.me.deptId||null;
+  S.date=today();S.week=SRV.week||wkOf(today());S.month=SRV.month||moOf(today());
+  render();toast('欢迎，'+S.me.displayName);
+}
 async function tryLogin(u,p,remember){
   try{
     S.me=await API.login(u,p);
-    if(remember) await API.saveAccount(S.me,p);
-    LOGIN.mode='list';LOGIN.show=false;LOGIN.kick='';stopTick();
-    S.tab='home';S.view='home';S.deptId=S.me.deptId||null;S.date=today();
-    S.week=wkOf(today());S.month=moOf(today());
-    render();toast('欢迎，'+S.me.displayName);
+    if(remember) await API.saveAccount(S.me);
+    await afterLogin();
   }catch(e){
     toast(e.message,2600);
     if(LOGIN.mode==='list'){LOGIN.mode='form';render()}
-    /* 账号冻结或设备冷却，都按「当前输入框里的账号」刷新提示与按钮 */
+    /* 冻结 / 冷却等状态按「当前输入框里的账号」刷新提示与按钮 */
     setTimeout(()=>refreshLock(LOGIN.user),60);
   }
 }
@@ -859,31 +867,39 @@ async function tryLogin(u,p,remember){
 window.onAcct=v=>{
   LOGIN.user=String(v||'').trim();
   clearTimeout(LOGIN.dt);
-  LOGIN.dt=setTimeout(()=>refreshLock(LOGIN.user),350);   /* 防抖，接后端后也不会高频打接口 */
+  LOGIN.dt=setTimeout(()=>refreshLock(LOGIN.user),350);   /* 防抖，避免高频打接口 */
 };
 async function refreshLock(un){
   stopTick();
   const el=$('#lockmsg'),btn=$('#lbtn');
   if(!el||!btn)return;
   const st=await API.loginState(un);
-  if(st.locked){
-    el.classList.remove('hide');el.textContent=st.msg;btn.disabled=true;
-    startTick(un,st.reason);
+  if(un!==LOGIN.user)return;                 /* 输入已变化，本次结果作废 */
+  if(st.disabled){
+    el.classList.remove('hide');el.textContent='账户已被禁用，请联系设备科';btn.disabled=true;
+  }else if(st.frozen){
+    LOGIN.until=Date.now()+(st.retryAfter||0)*1000;
+    paintFrozen();btn.disabled=true;startTick(un);
   }else{
     el.classList.add('hide');el.textContent='';btn.disabled=false;
   }
 }
-/* 倒计时绑定发起时的账号；账号一变立即停并重算 */
-function startTick(u,reason){
+function paintFrozen(){
+  const el=$('#lockmsg');if(!el)return;
+  el.classList.remove('hide');
+  el.textContent=`账号已冻结，请 ${leftText((LOGIN.until-Date.now())/1000)}后再试`;
+}
+/* 冻结倒计时在本地跑（login-state 有限流，不能逐秒打接口），到点解锁 */
+function startTick(u){
   stopTick();
-  LOGIN.tick=setInterval(async()=>{
+  LOGIN.tick=setInterval(()=>{
     const el=$('#lockmsg'),btn=$('#lbtn');
     if(!el){stopTick();return}
-    if(reason==='lock'&&LOGIN.user!==u){stopTick();refreshLock(LOGIN.user);return}
-    const st=await API.loginState(u);
-    if(st.locked){el.classList.remove('hide');el.textContent=st.msg;if(btn)btn.disabled=true}
-    else{el.classList.add('hide');el.textContent='';if(btn)btn.disabled=false;stopTick();
-      toast(reason==='probe'?'已可重新尝试':'冻结已解除，可以重新登录')}
+    if(LOGIN.user!==u){stopTick();refreshLock(LOGIN.user);return}
+    if(Date.now()>=LOGIN.until){
+      stopTick();el.classList.add('hide');el.textContent='';if(btn)btn.disabled=false;
+      toast('冻结已解除，可以重新登录');
+    }else paintFrozen();
   },1000);
 }
 function stopTick(){if(LOGIN.tick){clearInterval(LOGIN.tick);LOGIN.tick=null}}
@@ -1197,7 +1213,7 @@ async function patchDev(id){
    ========================================================================= */
 async function ngList(deptId,from,to){
   const recs=await API.recordsRange(from,to,deptId);
-  const devs=DB.get('devices',[]).filter(x=>x.deptId===deptId);
+  const devs=await API.allDevices(deptId);
   const dm=new Map(devs.map(d=>[d.id,d]));
   const out=[];
   recs.sort((a,b)=>b.date<a.date?-1:1).forEach(r=>{
@@ -1245,7 +1261,7 @@ window.showSigns=async(deptId,kind,key)=>{
     rows.push({lab:'本月汇总',lv:'月签',s:ms?ms.sign:null});
   }
   const body=rows.map(x=>`<div class="signrow">
-      ${x.s?`<img src="${x.s.dataUrl}" alt="签名">`:`<div style="width:64px;text-align:center;color:var(--faint);font-size:12px">未签</div>`}
+      ${x.s?`<img src="${x.s.url}" alt="签名">`:`<div style="width:64px;text-align:center;color:var(--faint);font-size:12px">未签</div>`}
       <div class="grow"><div class="h" style="font-size:13.5px">${H(x.lab)} <span class="pill ${x.s?'p-ok':'p-bad'}" style="margin-left:4px">${x.lv}</span></div>
       <div class="t">${x.s?`${H(x.s.name)}${x.s.title?'（'+H(x.s.title)+'）':''} · ${H(x.s.at)}`:'尚未签字'}</div>
       ${x.s&&x.s.opinion?`<div class="m">意见：${H(x.s.opinion)}</div>`:''}</div>
@@ -1494,7 +1510,7 @@ window.viewSignOf=async k=>{
   else{const m=await API.monthSign(d,S.month);s=m&&m.sign;ttl='月签'}
   if(!s)return;
   sheet(`<h3>${ttl}记录</h3><div class="d">${H(s.name)}${s.title?'（'+H(s.title)+'）':''} · ${H(s.at)}</div>
-    <div class="sig-done"><img src="${s.dataUrl}" alt="签名"></div>
+    <div class="sig-done"><img src="${s.url}" alt="签名"></div>
     ${s.opinion?`<div class="card" style="margin-top:12px;box-shadow:inset 0 0 0 1px var(--line)">
       <div class="st" style="margin:0">意见：${H(s.opinion)}</div></div>`:''}
     <button class="btn blk" style="margin-top:16px" onclick="closeSheet()">关闭</button>`);
@@ -1506,7 +1522,8 @@ window.viewSignOf=async k=>{
 async function viewRecords(){
   const depts=await API.depts(S.me);const ids=depts.map(d=>d.id);
   const dn=id=>(depts.find(d=>d.id===id)||{}).name||'';
-  const recs=DB.get('records',[]).filter(r=>ids.includes(r.deptId))
+  const recs=(await API.recordsRange(addDay(today(),-120),today()))
+    .filter(r=>ids.includes(r.deptId))
     .sort((a,b)=>b.date<a.date?-1:1).slice(0,150);
   const by={};recs.forEach(r=>{(by[r.date]=by[r.date]||[]).push(r)});
   const blocks=Object.keys(by).sort().reverse().map(date=>{
@@ -1524,7 +1541,7 @@ async function viewRecords(){
 window.openRec=async(deptId,date)=>{
   const rec=await API.record(deptId,date);if(!rec)return;
   const d=await API.dept(deptId);
-  const devs=DB.get('devices',[]).filter(x=>x.deptId===deptId);
+  const devs=await API.allDevices(deptId);
   const ng=Object.entries(rec.checks||{}).filter(([,v])=>v==='ng').map(([id])=>{
     const dv=devs.find(x=>x.id===id);
     return `<div class="kv"><span>${H(dv?dv.code:'')}</span><b style="color:var(--bad)">${H(rec.notes[id]||'异常')}</b></div>`}).join('');
@@ -1536,7 +1553,7 @@ window.openRec=async(deptId,date)=>{
       <div class="kv"><span>异常</span><b style="color:${v.filter(x=>x==='ng').length?'var(--bad)':'inherit'}">${v.filter(x=>x==='ng').length}</b></div>
       <div class="kv"><span>巡检员</span><b>${H(rec.inspectorName||'—')}</b></div></div>
     ${ng?`<div class="sec">异常明细</div><div class="card" style="box-shadow:inset 0 0 0 1px var(--line)">${ng}</div>`:''}
-    ${rec.sign?`<div class="sec">日签</div><div class="sig-done"><img src="${rec.sign.dataUrl}" alt="签名">
+    ${rec.sign?`<div class="sec">日签</div><div class="sig-done"><img src="${rec.sign.url}" alt="签名">
       <div class="st" style="margin-top:8px">${H(rec.sign.name)} · ${H(rec.sign.at)}</div></div>`
       :`<div class="lock" style="margin-top:14px">该日尚未日签</div>`}
     <button class="btn blk" style="margin-top:16px" onclick="closeSheet()">关闭</button>`);
@@ -1549,19 +1566,21 @@ let MYSIGN_CACHE={};
 async function mySigns(){
   /* 「我的签字记录」= 本账号职责范围内提交过的签字。
      科室是共用账号、签字人从名单选，所以按「账号管辖范围 + 本层级」筛，而不是按姓名匹配。 */
-  const me=S.me,out=[],dn=id=>(DB.get('depts',[]).find(d=>d.id===id)||{}).name||'';
-  const scope=(await API.depts(me)).map(d=>d.id);
+  const me=S.me,out=[];
+  const depts=await API.depts(me);
+  const dn=id=>(depts.find(d=>d.id===id)||{}).name||'';
+  const scope=depts.map(d=>d.id);
   if(me.role==='inspector'){
-    DB.get('records',[]).forEach(r=>{if(r.sign&&scope.includes(r.deptId))
+    (await API.recordsRange(addDay(today(),-366),today())).forEach(r=>{if(r.sign&&scope.includes(r.deptId))
       out.push({kind:'日签',lab:dLab(r.date),dept:dn(r.deptId),sign:r.sign,at:r.sign.at,
         stat:`巡检 ${Object.keys(r.checks||{}).length} 台`,
         ng:Object.values(r.checks||{}).filter(x=>x==='ng').length})});
   }else if(me.role==='dept'){
-    DB.get('weeksigns',[]).forEach(w=>{if(scope.includes(w.deptId))
+    (await API.weekSigns(me.deptId)).forEach(w=>
       out.push({kind:'周签',lab:wkLab(w.week),dept:dn(w.deptId),sign:w.sign,at:w.at,
-        stat:`巡检 ${w.stat?w.stat.checked:'—'} 台次`,ng:w.stat?w.stat.ng:0})});
+        stat:`巡检 ${w.stat?w.stat.checked:'—'} 台次`,ng:w.stat?w.stat.ng:0}));
   }else{
-    DB.get('monthsigns',[]).forEach(m=>
+    (await API.monthSigns()).forEach(m=>
       out.push({kind:'月签',lab:moLab(m.month),dept:dn(m.deptId),sign:m.sign,at:m.at,
         stat:`巡检 ${m.stat?m.stat.checked:'—'} 台次`,ng:m.stat?m.stat.ng:0}));
   }
@@ -1588,7 +1607,7 @@ async function viewMySigns(){
 window.viewOneSign=(m,i)=>{
   const x=(MYSIGN_CACHE[m]||[])[i];if(!x)return;
   sheet(`<h3>${H(x.kind)} · ${H(x.lab)}</h3><div class="d">${H(x.dept)} · ${H(x.at)}</div>
-    <div class="sig-done"><img src="${x.sign.dataUrl}" alt="签名">
+    <div class="sig-done"><img src="${x.sign.url}" alt="签名">
       <div class="st" style="margin-top:8px">${H(x.sign.name)}${x.sign.title?'（'+H(x.sign.title)+'）':''}</div></div>
     <div class="card" style="margin-top:12px;box-shadow:inset 0 0 0 1px var(--line)">
       <div class="kv"><span>覆盖范围</span><b>${H(x.stat)}</b></div>
@@ -1645,7 +1664,8 @@ window.reallyLogout=async()=>{await API.logout();S.me=null;LOGIN.mode='list';LOG
 /* =========================================================================
    路由
    ========================================================================= */
-window.go=k=>{if(k==='home'){S.tab='home';S.view='home';S.date=today()}
+window.go=async k=>{
+  if(k==='home'){S.tab='home';S.view='home';await syncTime();S.date=today()}
   else if(k==='mysigns'){S.tab='me';S.view='mysigns'}else{S.tab=k;S.view=k}render()};
 window.openDept=id=>{S.deptId=id;S.view='dept';render()};
 window.openCat=n=>{S.catName=n;S.view='cat';render()};
@@ -1654,7 +1674,12 @@ window.openMonth=id=>{S.deptId=id;S.view='month';render()};
 
 async function render(){
   const app=$('#app');
-  if(!S.me){app.innerHTML=await viewLogin();return}
+  if(!S.me){
+    app.innerHTML=await viewLogin();
+    /* 表单模式下渲染后刷新一次冻结/禁用状态（含倒计时启动） */
+    if(LOGIN.mode==='form')setTimeout(()=>refreshLock(LOGIN.user),40);
+    return;
+  }
   let h='';
   switch(S.view){
     case 'dept': h=await viewDept();break;
@@ -1671,161 +1696,20 @@ async function render(){
   }
   app.innerHTML=h;window.scrollTo(0,0);
   if(S.view==='sign') requestAnimationFrame(()=>initSig());
-  if(!S.me&&LOGIN.mode==='form') setTimeout(()=>refreshLock(LOGIN.user),40);
   const hd=$('#hd');
   if(hd){const on=()=>hd.classList.toggle('sc',window.scrollY>4);window.onscroll=on;on()}
 }
 
-/* 演示用的手写签名图（一段简笔签名） */
-const SIGDEMO='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(
-'<svg xmlns="http://www.w3.org/2000/svg" width="220" height="70"><path d="M16 48c10-26 18-30 22-12s10 20 16 4 12-24 18-6 10 18 16 2 12-16 18-2 12 16 20 6 14-18 22-10" fill="none" stroke="#18181B" stroke-width="2.4" stroke-linecap="round"/></svg>')));
-
-/* =========================================================================
-   演示数据（正式环境由 Excel 导入 + 后端下发）
-   ------------------------------------------------------------------------
-   刻意留出未签项，让三种提醒都能真实触发：
-   · 日签：昨天 3 个科室、前天 1 个科室未日签  → 巡检员每天早上提醒
-   · 周签：上周 2 个科室未周签                → 科室每周一提醒
-   · 月签：上月 3 个科室未月签                → 设备科每月初提醒
-   ========================================================================= */
-function seed(){
-  if(DB.get('depts',null)) return;
-  const DEPTS=[
-    ['重症医学科','ICU',[['监护仪',14],['呼吸机',8],['微量注射泵',22],['输液泵',16],['除颤仪',2]]],
-    ['急诊科','JZ',[['监护仪',10],['除颤仪',3],['心电图机',4],['输液泵',12],['洗胃机',2]]],
-    ['心血管内科','XN',[['监护仪',8],['心电图机',5],['除颤仪',2],['动态心电记录仪',6]]],
-    ['呼吸内科','HX',[['呼吸机',5],['制氧机',9],['雾化器',12],['肺功能仪',2]]],
-    ['普通外科','PW',[['监护仪',6],['输液泵',10],['电动吸引器',4]]],
-    ['手术室','SS',[['麻醉机',8],['高频电刀',8],['监护仪',10],['无影灯',8]]],
-    ['妇产科','FC',[['胎心监护仪',7],['婴儿辐射保暖台',4],['监护仪',5]]],
-    ['儿科','EK',[['婴儿培养箱',6],['蓝光治疗仪',4],['雾化器',8],['监护仪',4]]],
-    ['康复医学科','KF',[['中频治疗仪',10],['超声波治疗仪',5],['牵引床',4]]],
-    ['检验科','JY',[['生化分析仪',3],['血细胞分析仪',3],['离心机',6]]]
-  ];
-  const CAB={'监护仪':'JHY','呼吸机':'HXJ','微量注射泵':'WLB','输液泵':'SYB','除颤仪':'CCY','心电图机':'XDT',
-    '洗胃机':'XWJ','动态心电记录仪':'DTX','制氧机':'ZYJ','雾化器':'WHQ','肺功能仪':'FGN','电动吸引器':'DXQ',
-    '麻醉机':'MZJ','高频电刀':'GPD','无影灯':'WYD','胎心监护仪':'TXJ','婴儿辐射保暖台':'BNT','婴儿培养箱':'PYX',
-    '蓝光治疗仪':'LGY','中频治疗仪':'ZPY','超声波治疗仪':'CSB','牵引床':'QYC','生化分析仪':'SHY',
-    '血细胞分析仪':'XXB','离心机':'LXJ'};
-  const BR={'监护仪':['迈瑞 uMEC12','飞利浦 MX450'],'呼吸机':['迈瑞 SV300','德尔格 Savina'],
-    '微量注射泵':['浙大医疗 WZ-50C6'],'输液泵':['迈瑞 SK-600II'],'除颤仪':['飞利浦 HeartStart'],
-    '心电图机':['光电 ECG-2150'],'麻醉机':['迈瑞 WATO EX-65'],'高频电刀':['威力 ForceTriad']};
-  const NM=['张敏','李慧','王芳','陈静','刘洋','赵霞','孙婷','周颖','吴倩','郑莉','冯敏','许燕'];
-  const TT=['护士长','主管护师','设备管理员'];
-  const NG=['显示屏偶发闪烁，已通知厂家','电池续航明显下降，申请更换','报警音量偏小，待厂家调试',
-    '外壳有磨损，不影响使用','管路老化，已联系更换','按键偶尔失灵，观察中'];
-
-  const depts=[],devices=[],members=[],users=[];
-  DEPTS.forEach(([name,code,cats],di)=>{
-    const id='d_'+code.toLowerCase();
-    depts.push({id,name,code,sort:di,status:'on'});
-    cats.forEach(([cn,n])=>{for(let i=1;i<=n;i++){
-      const bl=BR[cn]||[cn];
-      devices.push({id:uid('dev_'),deptId:id,catName:cn,
-        code:`PD-${code}-${CAB[cn]||'QT'}-${pad(i)}`,name:cn,model:bl[i%bl.length],
-        location:`${(i%3)+1}号区 ${pad((i%9)+1)}床`,status:'in_use'})}});
-    for(let i=0;i<3;i++) members.push({id:uid('mem_'),deptId:id,name:NM[(di*3+i)%NM.length],
-      title:TT[i%TT.length],status:'on'});
-    users.push({id:'u_'+code.toLowerCase(),username:code.toLowerCase(),password:'123456',
-      displayName:name,role:'dept',deptId:id,status:'on'});
-  });
-  /* 巡检员由后台配置负责科室：正常一人一科室，也支持一人多科室 */
-  users.push({id:'u_gh01',username:'gh01',password:'123456',displayName:'王建国',role:'inspector',
-    deptId:null,deptIds:['d_icu','d_jz'],status:'on'});              // 多科室：重症 + 急诊
-  users.push({id:'u_gh02',username:'gh02',password:'123456',displayName:'李强',role:'inspector',
-    deptId:null,deptIds:['d_xn'],status:'on'});                       // 单科室：心血管内科
-  users.push({id:'u_sbk',username:'sbk',password:'123456',displayName:'设备科',role:'equip',deptId:null,status:'on'});
-  /* 演示：后台已禁用的账号（如人员离职/调岗），登录时应提示联系设备科 */
-  users.push({id:'u_gh03',username:'gh03',password:'123456',displayName:'李明（已离职）',role:'inspector',
-    deptId:null,deptIds:['d_hx'],status:'off'});
-
-  /* ---------- 历史巡检记录 ---------- */
-  const t=today();
-  const NO_DAY={};                      // 刻意不日签的 (date -> [deptIdx])
-  NO_DAY[addDay(t,-1)]=[1,2,4];          // 昨天 3 个科室未日签（含 gh01、gh02 各自负责的科室）
-  NO_DAY[addDay(t,-2)]=[3];              // 前天 1 个科室未日签
-  const NO_WEEK=[2,5];                   // 上周未周签的科室
-  const NO_MONTH=[0,3,6];                // 上月未月签的科室
-
-  /* 科室 → 负责巡检员（与上面的 deptIds 配置保持一致） */
-  const INSP_MAP={d_icu:{id:'u_gh01',name:'王建国'},d_jz:{id:'u_gh01',name:'王建国'},
-                  d_xn:{id:'u_gh02',name:'李强'}};
-  const INSP_OF=id=>INSP_MAP[id]||{id:'u_gh01',name:'王建国'};
-  const recs=[],wsigns=[],msigns=[];
-  const lastWeek=addDay(wkOf(t),-7), lastMonth=prevMonth(moOf(t));
-  const byDept={};depts.forEach(d=>byDept[d.id]=devices.filter(x=>x.deptId===d.id));
-
-  /* 历史起点对齐到「上月第一个周一」，避免出现半截周导致边界月份永远签不齐 */
-  const startW=wksOfMonth(lastMonth)[0]||addDay(wkOf(t),-28);
-  const dayList=[];for(let d=startW;d<t;d=addDay(d,1))dayList.push(d);
-  for(const date of dayList){
-    const i=Math.round((D(t)-D(date))/864e5);
-    depts.forEach((d,di)=>{
-      const skip=(NO_DAY[date]||[]).includes(di);
-      const ds=byDept[d.id];
-      const checks={},notes={};
-      ds.forEach((dv,k)=>{
-        // 每天约 1.5% 概率异常
-        const bad=((i*7+k*13+di*3)%67)===0;
-        checks[dv.id]=bad?'ng':'ok';
-        if(bad) notes[dv.id]=NG[(i+k)%NG.length];
-      });
-      const r={id:uid('rec_'),deptId:d.id,date,checks,notes,
-        inspectorId:INSP_OF(d.id).id,inspectorName:INSP_OF(d.id).name,createdAt:date+' 09:12',
-        sign:skip?null:{name:INSP_OF(d.id).name,title:'巡检员',dataUrl:SIGDEMO,
-          opinion:'',at:date+' '+pad(9+(di%3))+':'+pad(20+(di*4)%40)}};
-      recs.push(r);
-    });
+(async()=>{
+  S.me=await API.me();
+  if(!S.me){const k=await API.takeKicked();if(k&&k.reason==='disabled')LOGIN.kick=k.username}
+  if(S.me){
+    await syncTime();
+    S.date=today();S.week=SRV.week||wkOf(today());S.month=SRV.month||moOf(today());
+    if(S.me.role==='dept')S.deptId=S.me.deptId;
   }
-  DB.set('records',recs);
-
-  /* ---------- 周签：除上周指定科室外全签 ---------- */
-  const weeksSeen=new Set();
-  recs.forEach(r=>weeksSeen.add(wkOf(r.date)));
-  [...weeksSeen].sort().forEach(w=>{
-    if(addDay(w,6)>=t) return;                       // 未结束的周不签
-    depts.forEach((d,di)=>{
-      if(w===lastWeek&&NO_WEEK.includes(di)) return; // 刻意留白
-      const rs=recs.filter(x=>x.deptId===d.id&&x.date>=w&&x.date<=addDay(w,6));
-      if(rs.some(x=>!x.sign)) return;                // 日签不全则无法周签
-      let ck=0,ng=0;rs.forEach(x=>{const v=Object.values(x.checks);ck+=v.length;ng+=v.filter(y=>y==='ng').length});
-      const m=members.filter(x=>x.deptId===d.id)[0];
-      wsigns.push({id:uid('wk_'),deptId:d.id,week:w,
-        sign:{name:m.name,title:m.title,dataUrl:SIGDEMO,opinion:'',at:addDay(w,7)+' 09:'+pad(10+di*3)},
-        stat:{checked:ck,ng,days:rs.length},at:addDay(w,7)+' 09:'+pad(10+di*3)});
-    });
-  });
-  DB.set('weeksigns',wsigns);
-
-  /* ---------- 月签：上月除指定科室外全签 ---------- */
-  depts.forEach((d,di)=>{
-    if(NO_MONTH.includes(di)) return;
-    const wks=wksOfMonth(lastMonth);
-    if(!wks.length) return;
-    if(wks.some(w=>!wsigns.find(x=>x.deptId===d.id&&x.week===w))) return;
-    const rs=recs.filter(x=>x.deptId===d.id&&x.date.slice(0,7)===lastMonth);
-    let ck=0,ng=0;rs.forEach(x=>{const v=Object.values(x.checks);ck+=v.length;ng+=v.filter(y=>y==='ng').length});
-    msigns.push({id:uid('mo_'),deptId:d.id,month:lastMonth,
-      sign:{name:'设备科',title:'设备科',dataUrl:SIGDEMO,opinion:'本月设备运行正常',at:lastMonth+'-05 10:'+pad(10+di*2)},
-      stat:{checked:ck,ng,weeks:wks.length},at:lastMonth+'-05 10:'+pad(10+di*2)});
-  });
-  DB.set('monthsigns',msigns);
-
-  /* ---------- 今天：部分科室已巡检 ---------- */
-  depts.slice(0,3).forEach((d,di)=>{
-    const ds=byDept[d.id],checks={},notes={};
-    ds.slice(0,Math.ceil(ds.length*(di===0?1:0.5))).forEach((dv,k)=>{checks[dv.id]='ok'});
-    recs.push({id:uid('rec_'),deptId:d.id,date:t,checks,notes,
-      inspectorId:INSP_OF(d.id).id,inspectorName:INSP_OF(d.id).name,createdAt:t+' 08:40',sign:null});
-  });
-  DB.set('records',recs);
-
-  DB.set('depts',depts);DB.set('devices',devices);DB.set('members',members);DB.set('users',users);
-}
-
-(async()=>{seed();S.me=await API.me();
-  if(!S.me){const k=await API.takeKicked();if(k&&k.reason==='disabled')LOGIN.kick=k.username;}
-  if(S.me&&S.me.role==='dept')S.deptId=S.me.deptId;render();})();
+  render();
+})();
 </script>
 </body>
 </html>

@@ -1,3 +1,3 @@
 node_modules/
-dist/
+# dist/ 提交入库：服务器免构建直接部署
 *.local

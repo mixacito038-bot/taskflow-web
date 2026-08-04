@@ -1,0 +1,56 @@
+# 急救设备巡检 + 资产盘点 · 生产部署编排
+# 首次部署：阅读 docs/部署手册.md 后执行 scripts/first-run.sh
+name: medops
+
+services:
+  api:
+    build: ../server
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      DATA_DIR: /data
+      JWT_SECRET: ${JWT_SECRET:?请在 deploy/.env 中设置 JWT_SECRET（可执行 scripts/first-run.sh 自动生成）}
+    volumes:
+      # 数据（SQLite 库/签名图/附件/每日备份）放在 medops 目录之外，升级替换代码不影响数据
+      - ../../data:/data
+    # 不映射宿主端口：仅供 web(nginx) 反代访问
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ../h5:/srv/xunjian:ro          # 巡检 H5（单文件，改动后直接生效）
+      - ../admin/dist:/srv/admin:ro    # 巡检管理后台（改 admin 源码后需 npm run build）
+      - ../ams/dist:/srv/pandian:ro    # 资产盘点注入版（改 shim 后需 node tools/inject-shim.js）
+      - ./landing:/srv/landing:ro      # 统一入口页
+      - certs:/etc/letsencrypt:ro
+      - acme:/var/www/certbot:ro
+    # 每 6 小时 reload 一次，让 certbot 续期后的新证书生效
+    command: >-
+      sh -c "while :; do sleep 6h & wait $$!; nginx -s reload; done & exec nginx -g 'daemon off;'"
+
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - certs:/etc/letsencrypt
+      - acme:/var/www/certbot
+    # 每 12 小时尝试续期一次（webroot 模式，验证文件由 nginx 80 口提供）
+    entrypoint: >-
+      sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $$!; done"
+
+volumes:
+  certs:
+  acme:
