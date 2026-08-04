@@ -902,6 +902,7 @@ function parsePath(s) { return String(s || "").split(",").filter(x => x !== "").
 function hasPath(s) { return String(s || "").split(",").filter(x => x !== "").length > 0; }
 function toggleSubtask(id, spath) {
   const t = tasks.find(x => x.id === id); if (!t) return;
+  if (!hasPath(spath)) return;   // 空路径防御（review nit：防 findSubtaskByPath 返回 {node:null} 后 TypeError）
   const hit = findSubtaskByPath(t, parsePath(spath));
   if (hit) { hit.node.done = !hit.node.done; Store.save(tasks); render(); openDetail(id); }
 }
@@ -915,6 +916,7 @@ function addSubtask(id) {
 // 在指定子任务节点下追加子级（F-003 多层）；深度 ≥32 拒绝（review should-fix：防超深链保存后 reload 被 normSubtasks 静默截断）
 function addSubtaskTo(id, spath) {
   const t = tasks.find(x => x.id === id); if (!t) return;
+  if (!hasPath(spath)) return;   // 空路径防御（review nit：与 delSubtask 同款）
   const hit = findSubtaskByPath(t, parsePath(spath));
   if (!hit) return;
   const depth = parsePath(spath).length;
