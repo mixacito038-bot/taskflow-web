@@ -900,7 +900,8 @@ function delChecklist(id, idx) {
 // trim 过滤空白段（security_review informational：Number(" ")=0 会误命中第一个子任务，仅手工篡改 DOM 可达）
 function parsePath(s) { return String(s || "").split(",").map(x => x.trim()).filter(x => x !== "").map(Number); }
 // 空路径防御：DOM 被篡改为空 data-spath 时防 splice(-1) 误删（review nit）
-function hasPath(s) { return String(s || "").split(",").filter(x => x !== "").length > 0; }
+// 复用 parsePath 保持口径一致（review should-fix：hasPath 未 trim 时 " " 穿过守卫仍可 splice(-1) 误删）
+function hasPath(s) { return parsePath(s).length > 0; }
 function toggleSubtask(id, spath) {
   const t = tasks.find(x => x.id === id); if (!t) return;
   if (!hasPath(spath)) return;   // 空路径防御（review nit：防 findSubtaskByPath 返回 {node:null} 后 TypeError）
