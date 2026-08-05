@@ -1,11 +1,11 @@
-# 本地试跑 / 内网纯 HTTP 部署（无域名、无证书、无 certbot）
-# 用法：cd medops/deploy/local && docker compose up -d
-# 访问：http://localhost:8080/   （内网服务器上换成 http://服务器IP:8080/）
+# 局域网 / 本机部署编排（无域名、无证书、纯 HTTP）
+# 首次部署：在本目录执行 setup.sh（Mac/Linux）或双击 一键部署.bat（Windows）
 #
-# 与生产版 ../docker-compose.yml 的差别：
-#   · 去掉 certbot 容器与证书卷（本地/内网无法做公网验证）
-#   · nginx 只监听 80（映射到宿主 8080），不跳转 HTTPS
-#   · JWT_SECRET 用固定占位值——**仅限本地试跑**；内网正式使用请改成随机长串
+# 与公网版 ../docker-compose.yml 的差别：
+#   · 去掉 certbot 容器与证书卷（内网无法做公网域名验证）
+#   · nginx 只监听 80，不跳转 HTTPS、不发 HSTS
+#   · 其余（后端镜像、数据卷、健康检查、自动重启）完全一致
+name: medops-lan
 
 services:
   api:
@@ -14,22 +14,30 @@ services:
     environment:
       TZ: Asia/Shanghai
       DATA_DIR: /data
-      JWT_SECRET: ${JWT_SECRET:-local-trial-only-change-me-before-real-use}
+      JWT_SECRET: ${JWT_SECRET:?缺少 JWT_SECRET。请先运行 setup.sh（Mac/Linux）或 一键部署.bat（Windows）生成配置}
     volumes:
-      - ../../data-docker:/data
-    expose:
-      - "3000"
+      # 数据放在 medops 目录之外：升级换代码时不影响数据
+      - ../../../data:/data
+    # 不映射宿主端口：只供 nginx 内部访问
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   web:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "${WEB_PORT:-8080}:80"
+      # 默认 80，浏览器直接输 IP 即可；被占用时在 .env 里改 WEB_PORT
+      - "${WEB_PORT:-80}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ../landing:/srv/landing:ro
-      - ../../h5:/srv/xunjian:ro
-      - ../../admin/dist:/srv/admin:ro
-      - ../../ams/dist:/srv/pandian:ro
+      - ../landing:/srv/landing:ro        # 统一入口页
+      - ../../h5:/srv/xunjian:ro          # 巡检 H5（单文件，改完直接生效）
+      - ../../admin/dist:/srv/admin:ro    # 管理后台构建产物
+      - ../../ams/dist:/srv/pandian:ro    # 资产盘点注入版

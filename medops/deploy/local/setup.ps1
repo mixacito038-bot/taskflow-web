@@ -1,0 +1,115 @@
+# 局域网部署一键脚本（Windows）
+# 请通过双击同目录的「一键部署.bat」运行，或在 PowerShell 中执行：
+#   powershell -ExecutionPolicy Bypass -File setup.ps1
+
+$ErrorActionPreference = 'Stop'
+$OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
+Set-Location -Path $PSScriptRoot
+
+function Say  { param($m) Write-Host ""; Write-Host "==== $m ====" -ForegroundColor Cyan }
+function Fail { param($m) Write-Host ""; Write-Host "!! 出错：$m" -ForegroundColor Red; Write-Host ""; Read-Host "按回车键关闭"; exit 1 }
+
+# ---- 0. 环境检查 ----
+try { docker version --format '{{.Server.Version}}' *> $null } catch { Fail "Docker 没有在运行。请先启动 Docker Desktop，等右下角鲸鱼图标不再转动后重试。" }
+if ($LASTEXITCODE -ne 0) { Fail "Docker 没有在运行。请先启动 Docker Desktop，等右下角鲸鱼图标不再转动后重试。" }
+
+# ---- 1. 生成 .env ----
+Say "第 1 步：准备配置"
+if (-not (Test-Path .env)) {
+    Copy-Item .env.example .env
+    $bytes = New-Object byte[] 48
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $secret = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    (Get-Content .env) -replace '^JWT_SECRET=.*', "JWT_SECRET=$secret" |
+        Set-Content .env -Encoding ASCII
+    Write-Host "已生成随机密钥并写入 .env"
+} else {
+    Write-Host ".env 已存在，沿用现有配置（如需重新生成，删除 .env 后重跑）"
+}
+
+$webPort = '80'
+foreach ($line in Get-Content .env) {
+    if ($line -match '^\s*WEB_PORT\s*=\s*(\d+)') { $webPort = $Matches[1] }
+}
+
+# ---- 2. 数据目录 ----
+Say "第 2 步：创建数据目录"
+$dataDir = Join-Path $PSScriptRoot '..\..\..\data'
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+Write-Host ("数据目录：" + (Resolve-Path $dataDir).Path)
+Write-Host "（数据库、签名图、附件、每日备份都在这里；备份就是复制这个文件夹）"
+
+# ---- 3. 构建并启动后端 ----
+Say "第 3 步：构建并启动后端（首次需 3～5 分钟，请耐心等）"
+docker compose up -d --build api
+if ($LASTEXITCODE -ne 0) { Fail "后端构建失败，请把上方红色报错截图发我" }
+
+Write-Host -NoNewline "等待后端就绪"
+$healthy = $false
+for ($i = 0; $i -lt 60; $i++) {
+    $cid = (docker compose ps -q api) 2>$null
+    if ($cid) {
+        $st = (docker inspect --format '{{.State.Health.Status}}' $cid) 2>$null
+        if ($st -eq 'healthy') { $healthy = $true; break }
+    }
+    Write-Host -NoNewline "."
+    Start-Sleep -Seconds 2
+}
+Write-Host ""
+if (-not $healthy) { Fail "后端未就绪，请执行 docker compose logs api 查看日志" }
+Write-Host "后端已就绪"
+
+# ---- 4. 管理员账号 ----
+Say "第 4 步：创建管理员账号（已存在则重置密码）"
+$adminUser = Read-Host "管理员账号（建议 admin）"
+if ([string]::IsNullOrWhiteSpace($adminUser)) { Fail "账号不能为空" }
+$sec  = Read-Host "管理员密码（至少 6 位，输入时不显示）" -AsSecureString
+$pass = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+          [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+if ($pass.Length -lt 6) { Fail "密码至少 6 位" }
+docker compose run --rm api node src/scripts/create-admin.js $adminUser $pass
+if ($LASTEXITCODE -ne 0) { Fail "创建管理员失败，请把上方报错截图发我" }
+
+# ---- 5. 启动网页服务 ----
+Say "第 5 步：启动网页服务"
+docker compose up -d
+if ($LASTEXITCODE -ne 0) { Fail "网页服务启动失败。若提示端口被占用，请在 .env 里把 WEB_PORT 改成 8080 后重跑" }
+
+# ---- 6. 放行防火墙 ----
+Say "第 6 步：放行 Windows 防火墙（让手机和其他电脑能访问）"
+$ruleName = "急救巡检系统 HTTP $webPort"
+try {
+    if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP `
+            -LocalPort $webPort -Action Allow -Profile Private, Domain | Out-Null
+        Write-Host "已添加防火墙放行规则：$ruleName"
+    } else {
+        Write-Host "防火墙规则已存在，跳过"
+    }
+} catch {
+    Write-Host "自动放行失败（需要管理员权限）。" -ForegroundColor Yellow
+    Write-Host "如果手机打不开，请右键本脚本选「以管理员身份运行」，或手动在 Windows 防火墙放行 $webPort 端口。" -ForegroundColor Yellow
+}
+
+# ---- 7. 访问地址 ----
+$ip = (Get-NetIPAddress -AddressFamily IPv4 |
+       Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+       Sort-Object -Property InterfaceMetric |
+       Select-Object -First 1 -ExpandProperty IPAddress)
+if (-not $ip) { $ip = '本机IP' }
+$suffix = if ($webPort -eq '80') { '' } else { ":$webPort" }
+
+Say "部署完成"
+Write-Host "在这台电脑上访问：     http://localhost$suffix/"
+Write-Host "同一局域网的手机/电脑： http://$ip$suffix/" -ForegroundColor Green
+Write-Host ""
+Write-Host "  巡检 H5    http://$ip$suffix/xunjian/    （手机扫码用）"
+Write-Host "  管理后台   http://$ip$suffix/admin/      （用刚创建的管理员登录）"
+Write-Host "  资产盘点   http://$ip$suffix/pandian/"
+Write-Host ""
+Write-Host "⚠ 请把这台电脑的 IP 固定下来（路由器里设静态 IP 或 DHCP 保留），"
+Write-Host "  否则重启后 IP 变了，贴出去的二维码就失效了。"
+Write-Host ""
+Write-Host "下一步：按 docs\数据初始化.md 建科室、导设备、开账号。"
+Write-Host ""
+Read-Host "按回车键关闭"

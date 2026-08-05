@@ -1,4 +1,11 @@
-
-# 本地试跑产生的数据目录
+# 本地试跑 / 部署产生的数据目录（数据库、签名图、附件、备份）
 medops/data-local/
 medops/data-docker/
+/data/
+
+# 部署配置：含 JWT_SECRET 密钥，绝不入库、绝不外发
+medops/deploy/.env
+medops/deploy/local/.env
+
+# 依赖
+node_modules/
