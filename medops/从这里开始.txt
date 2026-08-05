@@ -16,23 +16,30 @@
   停止：命令行窗口按 Ctrl + C
 
 
-想正式部署到一台电脑上给全院用（Docker）？
---> 看 docs/局域网电脑部署指南.md
-
-  Windows：进 deploy\local，右键「一键部署.bat」→ 以管理员身份运行
-  Mac / Linux：终端里执行
-      cd ~/medops/deploy/local
+想正式部署到一台电脑上给全院用？两条路，功能完全一样，选一条即可
+------------------------------------
+【A】只装 Node.js（轻、简单，Mac 推荐）
+  --> 看 docs/Mac-Node部署指南.md
+      cd ~/medops/deploy/nodejs
       bash setup.sh
 
-  注意：Mac 上 .bat 文件是给 Windows 用的，双击没反应属正常，请用上面的命令。
-  注意：Mac 请把 medops 放在个人文件夹下（~/medops），放 /opt 会挂载失败。
+【B】用 Docker（多一层隔离，Windows 推荐）
+  --> 看 docs/局域网电脑部署指南.md
+      Windows：进 deploy\local，右键「一键部署.bat」→ 以管理员身份运行
+      Mac / Linux：cd ~/medops/deploy/local && bash setup.sh
+
+两套用的是同一个 data 文件夹，以后想换过去，停掉服务直接换，数据不用动。
+
+注意：Mac 上 .bat 是给 Windows 用的，双击没反应属正常。
+注意：Mac 请把 medops 放在个人文件夹下（~/medops）；Docker 方案放 /opt 会挂载失败。
 
 
 文件夹里都是什么
 ------------------------------------
 docs/           全部说明文档（先看这里）
   本地试跑指南.md      在自己电脑上快速试跑 ← 先看这个
-  局域网电脑部署指南.md 装到一台电脑当服务器，全院共用 ← Docker 部署看这份
+  Mac-Node部署指南.md   Mac 上正式部署，只装 Node.js ← 不想装 Docker 看这份
+  局域网电脑部署指南.md 用 Docker 正式部署，全院共用
   上线前检查清单.md    正式上线前逐条打勾
   部署手册.md          部署到腾讯云（公网）
   内网部署方案.md      内网部署的网络/证书/时间同步方案
@@ -47,8 +54,9 @@ h5/             手机端巡检页面（扫码打开）
 ams/            资产盘点系统 + 云同步壳
   original/       你的原始文件（一个字节未改）
   dist/           注入同步壳后的可部署版本
-deploy/         部署配置（Docker、nginx）
-  local/          局域网/本机部署（纯 HTTP，含一键部署脚本）
+deploy/         部署配置
+  nodejs/         Node 方案（不用 Docker，含开机自启与管理脚本）
+  local/          Docker 方案（局域网纯 HTTP，含一键部署脚本）
 
 
 四个访问地址

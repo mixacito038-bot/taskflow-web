@@ -3,9 +3,10 @@ medops/data-local/
 medops/data-docker/
 /data/
 
-# 部署配置：含 JWT_SECRET 密钥，绝不入库、绝不外发
+# 部署配置：含密钥或本机路径，绝不入库、绝不外发
 medops/deploy/.env
 medops/deploy/local/.env
+medops/deploy/nodejs/config.env
 
 # 依赖
 node_modules/
