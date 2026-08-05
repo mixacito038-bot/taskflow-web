@@ -16,6 +16,18 @@
   停止：命令行窗口按 Ctrl + C
 
 
+想正式部署到一台电脑上给全院用（Docker）？
+--> 看 docs/局域网电脑部署指南.md
+
+  Windows：进 deploy\local，右键「一键部署.bat」→ 以管理员身份运行
+  Mac / Linux：终端里执行
+      cd ~/medops/deploy/local
+      bash setup.sh
+
+  注意：Mac 上 .bat 文件是给 Windows 用的，双击没反应属正常，请用上面的命令。
+  注意：Mac 请把 medops 放在个人文件夹下（~/medops），放 /opt 会挂载失败。
+
+
 文件夹里都是什么
 ------------------------------------
 docs/           全部说明文档（先看这里）

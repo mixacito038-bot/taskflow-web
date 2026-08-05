@@ -66,8 +66,19 @@ say "第 5 步：启动网页服务"
 docker compose up -d
 
 # ---- 6. 提示访问地址 ----
+# 依次尝试：Linux 的 hostname -I → macOS 按默认路由取网卡（网线/Wi-Fi 都适用）→ macOS 常见网卡兜底
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-[ -n "${IP}" ] || IP=$(ipconfig getifaddr en0 2>/dev/null || echo "本机IP")
+if [ -z "${IP}" ] && command -v route >/dev/null 2>&1; then
+  DEF_IF=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+  [ -n "${DEF_IF}" ] && IP=$(ipconfig getifaddr "${DEF_IF}" 2>/dev/null || true)
+fi
+if [ -z "${IP}" ] && command -v ipconfig >/dev/null 2>&1; then
+  for i in en0 en1 en2 en3 en4 en5; do
+    IP=$(ipconfig getifaddr "$i" 2>/dev/null || true)
+    [ -n "${IP}" ] && break
+  done
+fi
+[ -n "${IP}" ] || IP="本机IP"
 SUFFIX=""; [ "${WEB_PORT}" != "80" ] && SUFFIX=":${WEB_PORT}"
 
 say "部署完成"
