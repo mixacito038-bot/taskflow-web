@@ -79,9 +79,11 @@ function startApi() {
   probeApi();
 }
 
+let probeTimer = null;
 function probeApi() {
+  if (probeTimer) clearInterval(probeTimer);      // 上一轮探测若还在跑，先收掉，避免多轮叠加
   const t = setInterval(() => {
-    if (stopping || !child) return clearInterval(t);
+    if (stopping || !child || probeTimer !== t) return clearInterval(t);
     const q = http.get({ host: '127.0.0.1', port: API_PORT, path: '/api/health', timeout: 1500 }, r => {
       r.resume();
       if (r.statusCode === 200 && !apiReady) { apiReady = true; log('INFO', '后端已就绪'); clearInterval(t); }
