@@ -34,7 +34,10 @@ import {
   LogOut,
   Menu,
   Minus,
+  MonitorPlay,
+  Pause,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   Save,
@@ -77,6 +80,7 @@ import {
   DeviceStatus,
   ModuleHeight,
   ModuleSize,
+  cloneDevicesForHospital,
   costFactors,
   dataSources as initialDataSources,
   initialCostEntries,
@@ -91,6 +95,7 @@ import {
 import {
   CategoryPerformancePanel,
   DimensionOverview,
+  HospitalComparePanel,
   MetricGovernanceCenter,
   QualityExperiencePanel,
   ReliabilityPanel,
@@ -116,7 +121,7 @@ import {
 import CloudOperationsCenter from "./CloudOperationsCenter";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
-import { DATA_WORKBENCH_ENTRY_CLICKS } from "./data-workbench-model";
+import { DATA_WORKBENCH_ENTRY_CLICKS, buildBusinessTemplateCsv, templateFields } from "./data-workbench-model";
 import ConfigurableAnalyticsCanvas from "./ConfigurableAnalyticsCanvas";
 import type { MetricDefinition as ConfigurableMetric, VisualizationDefinition as ConfigurableVisualization } from "./analytics-semantic-layer";
 import { usePublishedDataset } from "./published-data-client";
@@ -243,22 +248,6 @@ function displayCloudTime(value: string) {
 
 function cloneDevices() {
   return initialDevices.map((device) => ({ ...device, cost: { ...device.cost } }));
-}
-
-function cloneDevicesForHospital(hospitalId: string) {
-  const profile = hospitalId === "hosp-east"
-    ? { revenue: 0.74, cost: 0.71, volume: 0.72, utilization: -5 }
-    : hospitalId === "hosp-specialty"
-      ? { revenue: 0.58, cost: 0.61, volume: 0.56, utilization: -9 }
-      : { revenue: 1, cost: 1, volume: 1, utilization: 0 };
-  return cloneDevices().map((device) => ({
-    ...device,
-    revenue: Math.round(device.revenue * profile.revenue),
-    serviceVolume: Math.round(device.serviceVolume * profile.volume),
-    utilization: Math.max(35, Math.min(98, device.utilization + profile.utilization)),
-    forecastPayback: Number((device.forecastPayback / Math.max(profile.revenue, 0.4)).toFixed(1)),
-    cost: Object.fromEntries(Object.entries(device.cost).map(([key, value]) => [key, Math.round(value * profile.cost)])) as Device["cost"],
-  }));
 }
 
 function initialDeviceStore() {
@@ -451,6 +440,10 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [costDeviceId, setCostDeviceId] = useState(initialDevices[0].id);
   const [draggingModule, setDraggingModule] = useState<string | null>(null);
   const [layoutEditing, setLayoutEditing] = useState(false);
+  const [projectionMode, setProjectionMode] = useState(false);
+  const [projectionPaused, setProjectionPaused] = useState(false);
+  const projectionIndexRef = useRef(0);
+  const deepLinkHandled = useRef(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState(initialDevices[0].id);
   const [notifications, setNotificationsLocal] = useDemoState<PlatformNotification[]>("equip-benefit-notifications-v1", initialNotifications, demoMode);
   const [dataWorkbenchUnlocked, setDataWorkbenchUnlocked] = useState(false);
@@ -1273,6 +1266,71 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setActiveHospitalIdLocal(accessibleHospitals[0].id);
   }, [accessibleHospitals, activeHospitalId, setActiveHospitalIdLocal]);
 
+  useEffect(() => {
+    // 深链解析：设备档案二维码可携带 ?device=<id>（可选 ?view=<安全视图>）直达单机分析。
+    if (deepLinkHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const deviceParam = params.get("device");
+    const viewParam = params.get("view");
+    if (!deviceParam && !viewParam) {
+      deepLinkHandled.current = true;
+      return;
+    }
+    if (deviceParam && !devices.length) return;
+    deepLinkHandled.current = true;
+    const safeViews: View[] = ["cockpit", "analysis", "equipment", "detail"];
+    const timer = window.setTimeout(() => {
+      if (deviceParam && devices.some((device) => device.id === deviceParam)) {
+        setSelectedDeviceId(deviceParam);
+        setView("detail");
+      } else if (viewParam && safeViews.includes(viewParam as View)) {
+        setView(viewParam as View);
+      }
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [devices]);
+
+  useEffect(() => {
+    if (!projectionMode) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setProjectionMode(false);
+      setProjectionPaused(false);
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [projectionMode]);
+
+  useEffect(() => {
+    if (!projectionMode || projectionPaused) return;
+    const timer = window.setInterval(() => {
+      const moduleNodes = document.querySelectorAll<HTMLElement>(".projection-mode .dashboard-grid > .module");
+      if (!moduleNodes.length) return;
+      projectionIndexRef.current = (projectionIndexRef.current + 1) % moduleNodes.length;
+      moduleNodes[projectionIndexRef.current]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [projectionMode, projectionPaused]);
+
+  function enterProjectionMode() {
+    setProjectionMode(true);
+    setProjectionPaused(false);
+    projectionIndexRef.current = 0;
+    setHeaderPanel(null);
+    setMobileNavOpen(false);
+    setLayoutEditing(false);
+    setDraggingModule(null);
+    void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  }
+
+  function exitProjectionMode() {
+    setProjectionMode(false);
+    setProjectionPaused(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }
+
   const departmentOptions = useMemo(() => ["全部科室", ...Array.from(new Set(devices.map((device) => device.department)))], [devices]);
 
   const safeContentZoom = contentZoomLevels.includes(contentZoom) ? contentZoom : 1.1;
@@ -1688,6 +1746,34 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     notify("固定成本已保存，驾驶舱同步刷新");
   }
 
+  function exportCostEntriesCsv() {
+    if (!costEntries.length) {
+      notify("当前医院暂无成本记录");
+      return;
+    }
+    const fields = templateFields("cost_detail");
+    const rows = costEntries.map((entry) => {
+      const record: Record<string, string> = {
+        recordType: "cost",
+        deviceId: entry.deviceId,
+        period: entry.period,
+        costType: entry.type,
+        amount: entry.amount.toFixed(2),
+        sourceRecordId: entry.id,
+        department: entry.owner,
+      };
+      return fields.map((field) => `"${(record[field.code] ?? "").replaceAll('"', '""')}"`).join(",");
+    });
+    const csv = `${buildBusinessTemplateCsv("cost_detail")}${rows.join("\r\n")}\r\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${activeHospital?.shortName ?? "医院"}-成本明细-cost_detail-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    notify(`已导出 ${costEntries.length} 条成本明细，符合 cost_detail 模板口径`);
+  }
+
   function moveModule(id: string, direction: -1 | 1) {
     setModules((current) => {
       const index = current.findIndex((module) => module.id === id);
@@ -1798,6 +1884,22 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
     if (module.id === "category") {
       return <CategoryPerformancePanel devices={filteredDevices} onSelect={openDeviceDetail} />;
+    }
+
+    if (module.id === "hospital-compare") {
+      return (
+        <HospitalComparePanel
+          hospitals={accessibleHospitals.map((hospital) => ({
+            id: hospital.id,
+            name: hospital.name,
+            shortName: hospital.shortName,
+            level: hospital.level,
+            region: hospital.region,
+          }))}
+          activeHospitalId={effectiveHospitalId}
+          onSwitchHospital={switchHospital}
+        />
+      );
     }
 
     if (module.id === "trend") {
@@ -2045,7 +2147,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   }
 
   return (
-    <div className={`platform theme-${theme} density-${density}`}>
+    <div className={`platform theme-${theme} density-${density}${projectionMode ? " projection-mode" : ""}`}>
       <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
         <div className="brand" role="button" tabIndex={0} aria-label="勇虹医疗品牌区" onClick={(event) => brandClick(event.timeStamp)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") brandClick(event.timeStamp); }}>
           {/* The supplied wordmark is already optimized and must retain its exact transparent canvas. */}
@@ -2172,6 +2274,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                   <p>统一观察经济效益、使用效率、临床质量、患者体验和设备保障，并按角色呈现管理重点。</p>
                 </div>
                 <div className="heading-actions">
+                  <button className="secondary-button" onClick={enterProjectionMode}><MonitorPlay size={17} />投屏模式</button>
                   {hasPermission("member.manage") && (sessionState !== "verified" || publishedData.publication) && visibleModules.length ? (
                     <button className={layoutEditing ? "primary-button" : "secondary-button"} onClick={toggleLayoutEditing}>
                       {layoutEditing ? <Check size={17} /> : <Pencil size={17} />}
@@ -2331,6 +2434,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               onLabor={addLabor}
               onConsumable={addConsumable}
               onFixed={saveFixedCosts}
+              onExport={exportCostEntriesCsv}
             />
           ) : null}
 
@@ -2518,6 +2622,20 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         </div>
       ) : null}
 
+      {projectionMode ? (
+        <div className="projection-overlay" role="toolbar" aria-label="投屏控制条">
+          <span className="projection-title"><MonitorPlay size={16} />{activeHospital?.name ?? "医院"}</span>
+          <span className="projection-meta">{period} · 效益驾驶舱投屏</span>
+          <div className="projection-actions">
+            <button type="button" onClick={() => setProjectionPaused((current) => !current)}>
+              {projectionPaused ? <Play size={15} /> : <Pause size={15} />}
+              {projectionPaused ? "继续轮播" : "暂停轮播"}
+            </button>
+            <button type="button" className="projection-exit" onClick={exitProjectionMode}><X size={15} />退出投屏</button>
+          </div>
+        </div>
+      ) : null}
+
       {toast ? <div className="toast"><Check size={17} />{toast}</div> : null}
     </div>
   );
@@ -2595,6 +2713,7 @@ function CostManagement({
   onLabor,
   onConsumable,
   onFixed,
+  onExport,
 }: {
   devices: Device[];
   entries: CostEntry[];
@@ -2606,6 +2725,7 @@ function CostManagement({
   onLabor: (event: FormEvent<HTMLFormElement>) => void;
   onConsumable: (event: FormEvent<HTMLFormElement>) => void;
   onFixed: (event: FormEvent<HTMLFormElement>) => void;
+  onExport: () => void;
 }) {
   const laborTotal = devices.reduce((sum, device) => sum + device.cost.labor, 0);
   const materialTotal = devices.reduce((sum, device) => sum + device.cost.consumables, 0);
@@ -2615,7 +2735,10 @@ function CostManagement({
     <>
       <div className="page-heading">
         <div><div className="eyebrow"><CircleDollarSign size={15} />全成本核算</div><h1>成本填报中心</h1><p>按设备、期间和成本项目填写人工、耗材及固定运行成本，并保留填报记录。</p></div>
-        <span className="page-badge"><CheckCircle2 size={16} />2026-V1.3 口径</span>
+        <div className="heading-actions">
+          <button className="secondary-button" onClick={onExport}><Download size={17} />导出成本明细文件</button>
+          <span className="page-badge"><CheckCircle2 size={16} />2026-V1.3 口径</span>
+        </div>
       </div>
       <div className="admin-stats cost-stats">
         <div><span>人工成本</span><strong>{currency.format(laborTotal)}</strong><small>万元 / 年</small></div>
@@ -2675,6 +2798,7 @@ function CostManagement({
         <div className="table-scroll">
           <table className="data-table"><thead><tr><th>类型</th><th>归属设备</th><th>项目</th><th>计算明细</th><th>期间</th><th className="num">金额(万元)</th><th>责任科室</th><th>填报时间</th></tr></thead><tbody>{entries.map((entry) => <tr key={entry.id}><td><span className={`type-pill ${entry.type === "人工" ? "labor" : "material"}`}>{entry.type}</span></td><td>{entry.deviceName}</td><td>{entry.item}</td><td>{entry.detail}</td><td>{entry.period}</td><td className="num">{entry.amount.toFixed(2)}</td><td>{entry.owner}</td><td>{entry.createdAt}</td></tr>)}</tbody></table>
         </div>
+        <p className="cost-export-note"><FileSpreadsheet size={14} />导出文件符合数据准备中心 cost_detail 模板，可直接导入走正式发布流程。</p>
       </Panel>
     </>
   );

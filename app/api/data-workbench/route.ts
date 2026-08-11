@@ -45,12 +45,14 @@ import {
 import {
   createDatasetSnapshot,
   deletePipelineObject,
+  getDataPipelineBucket,
   recordsToNdjson,
   sha256Hex,
   snapshotInHospital,
   snapshotRecords,
   stableStringify,
 } from "../../../db/data-workbench-pipeline";
+import { publishSampleDataset, SamplePublishError } from "../../../db/sample-dataset-publisher";
 import {
   applyFieldMapping,
   expandExamActivityForPublish,
@@ -1558,6 +1560,22 @@ export async function POST(request: Request) {
       await db.insert(dataReviewEvents).values({ hospitalId, resourceType: "publish", resourceId: id, decision: "submit", actorAccountId: access.account.id, comment: `回滚申请：${reason}` });
       await lineage(hospitalId, access.account.id, { action: "publish_rollback_requested", resourceType: "publish", resourceId: id, fromStatus: target.status, toStatus: "draft", datasetVersion: `${target.seriesId}@${version}`, detailJson: stableStringify({ rollbackOfId: target.id, restoreFromPublishedSnapshotId: targetSnapshot.id, reason }) });
       return Response.json({ data: row, manifest }, { status: 201 });
+    }
+
+    if (payload.action === "publish_sample_dataset") {
+      // 示范数据一键正式发布：仅限具备发布权限的账号；医院已有正式发布版本时拒绝，防止覆盖真实数据。
+      const denied = requirePermission(access, "data.publish");
+      if (denied) return denied;
+      try {
+        const bucket = await getDataPipelineBucket();
+        const summary = await publishSampleDataset({ db, bucket, hospitalId, accountId: access.account.id });
+        return Response.json({ data: summary }, { status: 201 });
+      } catch (error) {
+        if (error instanceof SamplePublishError) {
+          return Response.json({ error: error.code }, { status: error.status });
+        }
+        throw error;
+      }
     }
 
     return Response.json({ error: "unsupported_action" }, { status: 400 });

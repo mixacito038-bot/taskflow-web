@@ -1,0 +1,32 @@
+.dossierGrid { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.qrBody { display: grid; justify-items: center; gap: 11px; text-align: center; }
+.qrImage { width: 164px; height: 164px; padding: 8px; background: #ffffff; border: 1px solid var(--border); border-radius: 12px; }
+.qrPending { width: 164px; height: 164px; display: flex; align-items: center; justify-content: center; padding: 12px; color: var(--muted); font-size: 12px; line-height: 1.5; border: 1px dashed var(--border-strong); border-radius: 12px; background: var(--surface-soft); }
+.qrMeta { margin: 0; width: 100%; display: grid; gap: 6px; }
+.qrMeta div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.qrMeta dt { color: var(--muted); }
+.qrMeta dd { margin: 0; font-weight: 650; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+.qrDownload { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 9px; color: var(--primary); background: var(--surface); font-size: 12px; font-weight: 650; text-decoration: none; }
+.qrDownload:hover { border-color: var(--primary); background: var(--primary-soft); }
+.timeline { margin: 0; padding: 0; list-style: none; display: grid; }
+.timeline li { position: relative; display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 12px; padding: 0 0 16px 20px; }
+.timeline li:last-child { padding-bottom: 0; }
+.timeline li::before { content: ""; position: absolute; left: 4px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.timeline li::after { content: ""; position: absolute; left: 8px; top: 18px; bottom: 0; width: 1px; background: var(--border); }
+.timeline li:last-child::after { display: none; }
+.timelineLabel { color: var(--muted); font-size: 12px; padding-top: 1px; }
+.timeline li > div { display: grid; gap: 3px; min-width: 0; }
+.timeline li strong { font-size: 13px; }
+.timeline li small { color: var(--muted); line-height: 1.55; }
+.timelineHint::before { background: var(--surface); border: 1px dashed var(--border-strong); box-shadow: none; width: 7px; height: 7px; }
+.hospitalCell { display: grid; gap: 3px; min-width: 190px; }
+.hospitalCell small { color: var(--muted); font-size: 11px; white-space: normal; }
+.activeRow td { background: var(--primary-soft); }
+.currentTag { margin-left: 7px; padding: 2px 8px; border-radius: 999px; font-style: normal; font-size: 11px; font-weight: 650; color: var(--primary); background: var(--primary-soft); border: 1px solid color-mix(in srgb, var(--primary) 26%, var(--border)); }
+.extremeChip { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-style: normal; font-size: 11px; font-weight: 650; vertical-align: 1px; }
+.chipHigh { color: var(--primary); background: var(--primary-soft); }
+.chipLow { color: var(--muted); background: var(--surface-soft); border: 1px solid var(--border); }
+@media (max-width: 980px) {
+  .dossierGrid { grid-template-columns: 1fr; }
+  .timeline li { grid-template-columns: 1fr; gap: 4px; }
+}

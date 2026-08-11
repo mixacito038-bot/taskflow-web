@@ -3397,6 +3397,26 @@ export default function DataWorkbench({
             <button onClick={() => setCorrectionOfId("")}>取消更正</button>
           </div>
         ) : null}
+        {!publishes.some((item) => item.status === "published") ? (
+          <div className={styles.capabilityNote}>
+            <Rocket size={18} />
+            <div>
+              <strong>本院尚无正式发布版本</strong>
+              <p>
+                可一键把示范数据包（设备台账 / 检查 / 收费 / 成本 / 利用五类文件）按完整治理链路
+                导入并直接发布为当前供数版本；全部批次和血缘都会带“示范数据包”标识，
+                已有正式发布版本的医院会被拒绝以防覆盖真实数据。
+              </p>
+            </div>
+            <button
+              disabled={!canPublish || Boolean(operation)}
+              onClick={() => void callAction("publish_sample_dataset", {}, "示范数据已完成正式发布，前台稍后自动刷新")
+                .then((result) => { if (result) retryResources(); })}
+            >
+              一键载入示范数据并正式发布
+            </button>
+          </div>
+        ) : null}
         <Panel
           title="发布影响预览"
           description="只显示批次、快照、行数与下游影响；不从 manifestJson 内嵌或读取记录行"

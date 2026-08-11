@@ -355,6 +355,23 @@ export function granularityForPeriod(period: string): TemplatePeriodGranularity 
   return null;
 }
 
+/** 以参照日期推导上一个自然月，并按既有期间口径输出“YYYY年M月”。 */
+export function previousMonthPeriod(reference: Date): string {
+  const previous = new Date(reference.getFullYear(), reference.getMonth() - 1, 1);
+  return `${previous.getFullYear()}年${previous.getMonth() + 1}月`;
+}
+
+/**
+ * 月度报告目标期间 = 上一个自然月；若候选期间不在可选期间列表内，
+ * 则收敛到列表中最新的月度期间，避免生造平台未提供的期间口径。
+ */
+export function resolveMonthlyReportPeriod(reference: Date, periodOptions: readonly string[]): string {
+  const candidate = previousMonthPeriod(reference);
+  const monthOptions = periodOptions.filter((option) => granularityForPeriod(option) === "month");
+  if (!monthOptions.length || monthOptions.includes(candidate)) return candidate;
+  return monthOptions[monthOptions.length - 1];
+}
+
 export const platformReportTemplates: readonly PlatformReportTemplate[] = [
   {
     id: "platform-comprehensive-benefit-v2",

@@ -5,6 +5,7 @@ import {
   Archive,
   BadgeCheck,
   BookOpen,
+  CalendarClock,
   Check,
   CheckCircle2,
   CircleAlert,
@@ -57,6 +58,7 @@ import {
   granularityForPeriod,
   getPlatformTemplate,
   platformReportTemplates,
+  resolveMonthlyReportPeriod,
   sourceRequirementCatalog,
   templateCategories,
   type PlatformReportTemplate,
@@ -65,6 +67,7 @@ import {
 } from "./report-template-catalog";
 import { HOSPITAL_METRIC_CATALOG_VERSION, hospitalMetricCatalog } from "./hospital-metric-catalog";
 import type { PublishedDatasetView } from "./published-data";
+import styles from "./BenefitReportCenter.module.css";
 
 type ReportTab = "preview" | "templates" | "config" | "quality" | "ledger" | "fields";
 type FrozenReportSnapshot = {
@@ -107,6 +110,7 @@ type CloudArtifactStoreResult = "stored" | "demo" | "unsaved" | "draft" | "issue
 const number = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
 const templateScopeLabels = { hospital: "全院", category: "设备品类", device: "单台设备" } as const;
 const templatePeriodLabels = { month: "月", quarter: "季", half_year: "半年", year: "年" } as const;
+const reportPeriodOptions = ["2026年6月", "2026年第二季度", "2026年上半年", "2026年度"];
 
 function periodCapability(period: string) {
   const labels = { month: "月度", quarter: "季度", half_year: "半年度", year: "年度" } as const;
@@ -153,6 +157,48 @@ function keepRuntimeValues(next: BenefitReportConfig, current: BenefitReportConf
 function nextHospitalTemplateVersion(version: string) {
   const match = version.match(/^(\d+)\.(\d+)$/);
   return match ? `${match[1]}.${Number(match[2]) + 1}` : "1.0";
+}
+
+function applyPublicationRules(
+  value: BenefitReportConfig,
+  publication: PublishedDatasetView["publication"] | undefined,
+): BenefitReportConfig {
+  if (!publication || (
+    value.commonRules.metricDefinitionVersion === publication.metricDefinitionVersion
+    && value.commonRules.visualizationVersion === publication.visualizationVersion
+    && value.commonRules.allocationRule === publication.allocationRule
+  )) return value;
+  return {
+    ...value,
+    commonRules: {
+      ...value.commonRules,
+      metricDefinitionVersion: publication.metricDefinitionVersion,
+      visualizationVersion: publication.visualizationVersion,
+      allocationRule: publication.allocationRule,
+    },
+  };
+}
+
+function supportsMonthlyHospitalReport(config: BenefitReportConfig) {
+  return config.template.supportedPeriods.includes("月度") && config.template.supportedScopes.includes("hospital");
+}
+
+/** 月度模板选择：本院默认 → 平台综合效益 → 本院首个已启用 → 平台首个月度模板；仅接受支持“月度 + 全院”的模板。 */
+function resolveMonthlyReportTemplate(hospitalTemplates: ReportTemplate[], targetPeriod: string) {
+  const hospitalDefault = hospitalTemplates.find((template) => template.isDefault);
+  if (hospitalDefault) {
+    const candidate = normalizeBenefitReportConfig(hospitalDefault.config, targetPeriod);
+    if (supportsMonthlyHospitalReport(candidate)) return { config: candidate, sourceLabel: `本院默认模板“${hospitalDefault.name}”` };
+  }
+  const comprehensive = platformReportTemplates.find((template) => template.categoryId === "comprehensive_benefit" && template.supportedPeriods.includes("month") && template.supportedScopes.includes("hospital"));
+  if (comprehensive) return { config: buildPlatformTemplateConfig(comprehensive, targetPeriod), sourceLabel: `平台模板“${comprehensive.name}”` };
+  const firstEnabled = hospitalTemplates
+    .map((template) => ({ template, config: normalizeBenefitReportConfig(template.config, targetPeriod) }))
+    .find((item) => supportsMonthlyHospitalReport(item.config));
+  if (firstEnabled) return { config: firstEnabled.config, sourceLabel: `本院模板“${firstEnabled.template.name}”` };
+  const monthlyPlatform = platformReportTemplates.find((template) => template.status === "active" && template.supportedPeriods.includes("month") && template.supportedScopes.includes("hospital"));
+  if (monthlyPlatform) return { config: buildPlatformTemplateConfig(monthlyPlatform, targetPeriod), sourceLabel: `平台模板“${monthlyPlatform.name}”` };
+  return null;
 }
 
 function workflowStep(status: ReportWorkflowStatus | "unsaved") {
@@ -376,23 +422,10 @@ export default function BenefitReportCenter({
   const [exporting, setExporting] = useState(false);
   const defaultAppliedHospital = useRef("");
 
-  const reportConfig = useMemo(() => {
-    const publication = publishedData?.publication;
-    if (!publication || (
-      config.commonRules.metricDefinitionVersion === publication.metricDefinitionVersion
-      && config.commonRules.visualizationVersion === publication.visualizationVersion
-      && config.commonRules.allocationRule === publication.allocationRule
-    )) return config;
-    return {
-      ...config,
-      commonRules: {
-        ...config.commonRules,
-        metricDefinitionVersion: publication.metricDefinitionVersion,
-        visualizationVersion: publication.visualizationVersion,
-        allocationRule: publication.allocationRule,
-      },
-    };
-  }, [config, publishedData?.publication]);
+  const reportConfig = useMemo(
+    () => applyPublicationRules(config, publishedData?.publication),
+    [config, publishedData?.publication],
+  );
 
   const liveModel = useMemo(
     () => buildBenefitReportModel(devices, hospital, reportConfig, dataSources, analysisProfiles, publishedData),
@@ -430,6 +463,7 @@ export default function BenefitReportCenter({
     () => platformReportTemplates.filter((template) => templateCategoryFilter === "all" || template.categoryId === templateCategoryFilter),
     [templateCategoryFilter],
   );
+  const monthlyTargetPeriod = useMemo(() => resolveMonthlyReportPeriod(new Date(), reportPeriodOptions), []);
 
   function sourceMatch(sourceId: TemplateSourceRequirementId) {
     const requirement = sourceRequirementCatalog.find((item) => item.id === sourceId);
@@ -525,49 +559,56 @@ export default function BenefitReportCenter({
     setEvents((current) => [{ id: `demo-${Date.now()}-${Math.random()}`, reportId, actor: viewerName, action, detail, createdAt: new Date().toISOString() }, ...current]);
   }
 
-  async function saveDraft(silent = false) {
+  async function saveDraft(silent = false, draftConfig?: BenefitReportConfig) {
     if (!canManage) { notify("当前角色没有报告编制权限"); return null; }
-    if (currentReport && currentReport.status !== "draft") { notify("已提交版本不可覆盖，请先新建修订版本"); return null; }
+    const baseReport = draftConfig ? null : currentReport;
+    if (!draftConfig && currentReport && currentReport.status !== "draft") { notify("已提交版本不可覆盖，请先新建修订版本"); return null; }
     setBusyAction("save");
     try {
-      const snapshot = frozenPublishedReportSnapshot(model, quality);
+      const effectiveConfig = draftConfig ? applyPublicationRules(draftConfig, publishedData?.publication) : reportConfig;
+      const effectiveModel = draftConfig
+        ? buildBenefitReportModel(devices, hospital, effectiveConfig, dataSources, analysisProfiles, publishedData)
+        : model;
+      const effectiveQuality = draftConfig ? buildReportQuality(effectiveModel) : quality;
+      const acknowledged = draftConfig ? false : warningAcknowledged;
+      const snapshot = frozenPublishedReportSnapshot(effectiveModel, effectiveQuality);
       if (serverPersistence) {
-        const result = await callReportApi({ action: "save_report", reportId: currentReport?.id, seriesId: currentReport?.seriesId, config: reportConfig, snapshot, qualityScore: quality.score, blockingCount: quality.blockers, warningCount: quality.warnings, warningAcknowledged });
+        const result = await callReportApi({ action: "save_report", reportId: baseReport?.id, seriesId: baseReport?.seriesId, config: effectiveConfig, snapshot, qualityScore: effectiveQuality.score, blockingCount: effectiveQuality.blockers, warningCount: effectiveQuality.warnings, warningAcknowledged: acknowledged });
         if (result.reportId) setCurrentReportId(result.reportId);
         if (!silent) notify("报告草稿已保存到医院台账");
-        return result.reportId ?? currentReport?.id ?? null;
+        return result.reportId ?? baseReport?.id ?? null;
       }
       const now = new Date().toISOString();
-      const reportId = currentReport?.id ?? `demo-report-${Date.now()}`;
-      const seriesId = currentReport?.seriesId ?? `demo-series-${Date.now()}`;
+      const reportId = baseReport?.id ?? `demo-report-${Date.now()}`;
+      const seriesId = baseReport?.seriesId ?? `demo-series-${Date.now()}`;
       const next: ReportRecordWithSnapshot = {
         id: reportId,
         hospitalId: hospital.id,
         seriesId,
-        version: currentReport?.version ?? 1,
+        version: baseReport?.version ?? 1,
         status: "draft",
-        title: reportConfig.title,
-        period: reportConfig.period,
-        scope: reportConfig.scope,
-        config: reportConfig,
+        title: effectiveConfig.title,
+        period: effectiveConfig.period,
+        scope: effectiveConfig.scope,
+        config: effectiveConfig,
         snapshotJson: snapshot,
-        qualityScore: quality.score,
-        blockingCount: quality.blockers,
-        warningCount: quality.warnings,
-        warningAcknowledged,
+        qualityScore: effectiveQuality.score,
+        blockingCount: effectiveQuality.blockers,
+        warningCount: effectiveQuality.warnings,
+        warningAcknowledged: acknowledged,
         reviewComment: "",
-        createdBy: currentReport?.createdBy ?? viewerName,
+        createdBy: baseReport?.createdBy ?? viewerName,
         reviewedBy: "",
         approvedBy: "",
         submittedAt: null,
         reviewedAt: null,
         issuedAt: null,
-        createdAt: currentReport?.createdAt ?? now,
+        createdAt: baseReport?.createdAt ?? now,
         updatedAt: now,
       };
       setReports((current) => [next, ...current.filter((report) => report.id !== reportId)]);
       setCurrentReportId(reportId);
-      addDemoEvent(reportId, currentReport ? "save_report" : "create_report", currentReport ? "更新报告草稿" : "创建报告草稿 V1");
+      addDemoEvent(reportId, baseReport ? "save_report" : "create_report", baseReport ? "更新报告草稿" : "创建报告草稿 V1");
       if (!silent) notify("演示草稿已保存；正式登录后会写入医院服务端台账");
       return reportId;
     } catch (error) {
@@ -794,6 +835,31 @@ export default function BenefitReportCenter({
     setTab("preview");
   }
 
+  async function generateMonthlyReport() {
+    if (!canManage) { notify("当前角色没有报告编制权限"); return; }
+    if (busyAction) return;
+    const targetPeriod = resolveMonthlyReportPeriod(new Date(), reportPeriodOptions);
+    const resolved = resolveMonthlyReportTemplate(templates, targetPeriod);
+    if (!resolved) { notify("当前没有支持“月度 + 全院”的模板，请先在模板库启用运营绩效等月度模板"); return; }
+    const existingDraft = reports.find((report) => report.status === "draft" && report.period === targetPeriod && report.config.template.code === resolved.config.template.code);
+    if (existingDraft) { openReport(existingDraft); notify("已存在本期草稿，已为你打开"); return; }
+    const draftConfig = normalizeBenefitReportConfig({
+      ...resolved.config,
+      title: `${hospital.shortName} ${targetPeriod} 设备效益月报`,
+      period: targetPeriod,
+      scope: "hospital",
+      deviceId: "",
+    }, targetPeriod);
+    setConfig(draftConfig);
+    setCurrentReportId("");
+    setWarningAcknowledged(false);
+    setReviewComment("");
+    onPeriodChange(targetPeriod);
+    setTab("config");
+    const reportId = await saveDraft(true, draftConfig);
+    if (reportId) notify(`已按${resolved.sourceLabel}生成 ${targetPeriod} 全院月报草稿，下一步：数据质检 → 提交复核 → 院级签发`);
+  }
+
   async function logExport(format: "docx" | "csv", artifactHash = "", fileName = "") {
     if (serverPersistence) {
       try { await callReportApi({ action: "log_export", reportId: currentReport?.id, exportFormat: format, artifactHash, fileName }); }
@@ -927,6 +993,23 @@ export default function BenefitReportCenter({
         <div className="heading-actions">{canManage ? <button className="secondary-button" disabled={!editable || busyAction === "save"} onClick={() => saveDraft()}><Save size={17} />{busyAction === "save" ? "保存中…" : "保存草稿"}</button> : null}<button className="secondary-button" onClick={() => setTab("templates")}><Archive size={17} />选择模板</button><button className="primary-button" disabled={exporting || !canExport} onClick={exportWord}><Download size={17} />{exporting ? "正在生成…" : currentReport?.status === "issued" ? "导出正式版" : "导出预览版"}</button></div>
       </div>
 
+      {canManage ? (
+        <section className={styles.monthlyLauncher} aria-label="一键月度报告">
+          <div className={styles.monthlyAction}>
+            <span><CalendarClock size={21} /></span>
+            <div>
+              <strong>一键生成月度报告</strong>
+              <small>目标期间 {monthlyTargetPeriod} · 自动选用本院默认或月度模板，按全院范围生成草稿并直接进入编制</small>
+            </div>
+            <button className="primary-button" disabled={Boolean(busyAction)} onClick={generateMonthlyReport}><CalendarClock size={16} />一键生成月度报告</button>
+          </div>
+          <div className={styles.monthlyRhythm}>
+            <Clock3 size={16} />
+            <span><strong>月报节奏</strong><small>建议每月 5 日前完成上月报告，签发后自动归档。</small></span>
+          </div>
+        </section>
+      ) : null}
+
       <section className="report-template-context" aria-label="当前医院与模板方案">
         <div><span>当前医院</span><strong>{hospital.name}</strong><small>{hospital.level} · {hospitalDefaultTemplate ? "已配置本院默认模板" : "使用平台模板，本院尚未设默认"}</small></div>
         <div><span>当前模板</span><strong>{config.template.name} <i>V{config.template.version}</i></strong><small>{config.template.categoryLabel} · {config.template.origin === "hospital" ? "医院适配" : "平台公共"}</small></div>
@@ -936,7 +1019,7 @@ export default function BenefitReportCenter({
       </section>
 
       <section className="report-command-bar" aria-label="报告生成条件">
-        <label><span>报告期间</span><select disabled={!editable} value={config.period} onChange={(event) => { updateConfig("period", event.target.value); onPeriodChange(event.target.value); }}><option disabled={!supportsPeriod(config, "2026年6月")}>2026年6月</option><option disabled={!supportsPeriod(config, "2026年第二季度")}>2026年第二季度</option><option disabled={!supportsPeriod(config, "2026年上半年")}>2026年上半年</option><option disabled={!supportsPeriod(config, "2026年度")}>2026年度</option></select></label>
+        <label><span>报告期间</span><select disabled={!editable} value={config.period} onChange={(event) => { updateConfig("period", event.target.value); onPeriodChange(event.target.value); }}>{reportPeriodOptions.map((option) => <option disabled={!supportsPeriod(config, option)} key={option}>{option}</option>)}</select></label>
         <label><span>生成范围</span><select disabled={!editable} value={config.scope} onChange={(event) => updateScope(event.target.value as BenefitReportConfig["scope"])}><option value="hospital" disabled={!config.template.supportedScopes.includes("hospital")}>全院重点设备</option><option value="category" disabled={!config.template.supportedScopes.includes("category")}>同品类设备</option><option value="device" disabled={!config.template.supportedScopes.includes("device")}>单台设备</option></select></label>
         {config.scope === "category" ? <label className="report-device-filter"><span>设备品类</span><select disabled={!editable} value={config.deviceCategory || deviceCategories[0] || ""} onChange={(event) => updateConfig("deviceCategory", event.target.value)}>{deviceCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select></label> : null}
         {config.scope === "device" ? <label className="report-device-filter"><span>分析设备</span><select disabled={!editable} value={config.deviceId || devices[0]?.id || ""} onChange={(event) => updateConfig("deviceId", event.target.value)}>{devices.map((device) => <option value={device.id} key={device.id}>{device.shortName}</option>)}</select></label> : null}

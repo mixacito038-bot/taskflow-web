@@ -759,6 +759,7 @@ export const initialModules: DashboardModule[] = [
   { id: "category", name: "品类经营与资源配置", description: "同类横比、收益排行与共享潜力", visible: true, size: "full" },
   { id: "alerts", name: "管理预警", description: "低使用率、亏损和回本延期提示", visible: true, size: "small" },
   { id: "table", name: "设备效益明细", description: "按单机查看收入、成本、服务量和状态", visible: true, size: "full" },
+  { id: "hospital-compare", name: "集团医院对比", description: "同集团医院核心效益指标横向对比", visible: false, size: "full" },
 ];
 
 export const initialCostEntries: CostEntry[] = [
@@ -794,6 +795,22 @@ export const dataSources: DataSource[] = [
 export const monthLabels = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
 export const revenueFactors = [0.8, 0.64, 0.96, 1, 1.04, 1.05, 1.1, 1.12, 1.05, 1.07, 1.06, 1.11];
 export const costFactors = [0.93, 0.9, 0.97, 1, 1.01, 1.02, 1.04, 1.05, 1.02, 1.03, 1.01, 1.02];
+
+export function cloneDevicesForHospital(hospitalId: string): Device[] {
+  const profile = hospitalId === "hosp-east"
+    ? { revenue: 0.74, cost: 0.71, volume: 0.72, utilization: -5 }
+    : hospitalId === "hosp-specialty"
+      ? { revenue: 0.58, cost: 0.61, volume: 0.56, utilization: -9 }
+      : { revenue: 1, cost: 1, volume: 1, utilization: 0 };
+  return initialDevices.map((device) => ({
+    ...device,
+    revenue: Math.round(device.revenue * profile.revenue),
+    serviceVolume: Math.round(device.serviceVolume * profile.volume),
+    utilization: Math.max(35, Math.min(98, device.utilization + profile.utilization)),
+    forecastPayback: Number((device.forecastPayback / Math.max(profile.revenue, 0.4)).toFixed(1)),
+    cost: Object.fromEntries(Object.entries(device.cost).map(([key, value]) => [key, Math.round(value * profile.cost)])) as Device["cost"],
+  }));
+}
 
 export function totalCost(device: Device) {
   return Object.values(device.cost).reduce((sum, value) => sum + value, 0);

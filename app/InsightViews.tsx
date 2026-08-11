@@ -1,17 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
 import {
   Activity,
   ArrowLeft,
   BarChart3,
+  Building2,
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
   Database,
+  Download,
   Gauge,
   HeartPulse,
+  History,
   Pencil,
+  QrCode,
   Search,
   ShieldCheck,
   Stethoscope,
@@ -33,10 +38,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Device, netBenefit, roi, totalCost } from "./mock-data";
+import { cloneDevicesForHospital, Device, netBenefit, roi, totalCost } from "./mock-data";
 import {
   auditCorrections,
   collectionPaths,
+  DeviceInsight,
   deviceInsights,
   dimensionMeta,
   DimensionId,
@@ -45,6 +51,7 @@ import {
   responsibilityMatrix,
 } from "./metric-definitions";
 import type { PublishedDatasetView } from "./published-data";
+import styles from "./DeviceDossier.module.css";
 
 const number = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
 
@@ -246,6 +253,53 @@ export function CategoryPerformancePanel({ devices, onSelect }: { devices: Devic
   );
 }
 
+function DeviceQrCard({ device }: { device: Device }) {
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    QRCode.toDataURL(`${window.location.origin}/?device=${device.id}`, { width: 220, margin: 1, errorCorrectionLevel: "M" })
+      .then((dataUrl) => { if (!cancelled) setQrDataUrl(dataUrl); })
+      .catch(() => { if (!cancelled) setQrDataUrl(""); });
+    return () => { cancelled = true; };
+  }, [device.id]);
+  return (
+    <section className="panel">
+      <div className="panel-heading"><div><h3>设备二维码</h3><p>扫码直达本设备档案（需登录并具备权限）。</p></div><QrCode size={19} /></div>
+      <div className={styles.qrBody}>
+        {qrDataUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className={styles.qrImage} src={qrDataUrl} alt={`${device.name} 档案二维码`} />
+        ) : <div className={styles.qrPending}>二维码在本机生成中，若长时间未出现请刷新页面。</div>}
+        <dl className={styles.qrMeta}><div><dt>设备编号</dt><dd>{device.id}</dd></div><div><dt>资产编号</dt><dd>{device.assetCode}</dd></div></dl>
+        {qrDataUrl ? <a className={styles.qrDownload} href={qrDataUrl} download={`${device.id}-二维码.png`}><Download size={15} />下载二维码</a> : null}
+      </div>
+    </section>
+  );
+}
+
+function DeviceTimeline({ device, profile }: { device: Device; profile: DeviceInsight }) {
+  const focusAction = profile.actions[0];
+  const reliabilityFacts = Number.isFinite(profile.availabilityRate) && Number.isFinite(profile.downtimeHours)
+    ? `可用率 ${profile.availabilityRate}% · 故障停机 ${profile.downtimeHours} 小时`
+    : "可用率与停机事实待接入";
+  const entries = [
+    { label: device.enabledDate, title: "采购启用", note: [`投资 ${number.format(device.investment)} 万元`, device.fundingSource, device.usefulLifeYears ? `折旧年限 ${device.usefulLifeYears} 年` : null].filter(Boolean).join(" · ") },
+    { label: "阶段", title: "运行使用", note: `本期服务量 ${number.format(device.serviceVolume)} ${device.serviceUnit} · 台账使用率 ${device.utilization}% · ${reliabilityFacts}` },
+    { label: "阶段", title: "维保状态", note: `${device.maintenanceStatus ?? "维保方式待录入"} · ${device.monitoringStatus ?? "监测接入情况待录入"}` },
+    { label: "阶段", title: "当前关注", note: `台账状态 ${device.status}${focusAction ? ` · ${focusAction.title}（${focusAction.owner} · 截止 ${focusAction.due} · ${focusAction.status}）` : profile.dataStatus === "unavailable" ? " · 行动建议将在洞察发布后生成" : " · 暂无待办行动建议"}` },
+  ];
+  return (
+    <section className="panel">
+      <div className="panel-heading"><div><h3>设备时间轴</h3><p>仅基于台账与已接入的洞察事实生成，未接入部分明确标注</p></div><History size={19} /></div>
+      <ol className={styles.timeline}>
+        {entries.map((entry) => <li key={entry.title}><span className={styles.timelineLabel}>{entry.label}</span><div><strong>{entry.title}</strong><small>{entry.note}</small></div></li>)}
+        <li className={styles.timelineHint}><span className={styles.timelineLabel}>提示</span><div><small>完整时间轴（验收/维修工单/调拨）将在维修与台账事实接入后自动补齐。</small></div></li>
+      </ol>
+    </section>
+  );
+}
+
 export function SingleEquipmentDetail({
   device,
   devices,
@@ -285,6 +339,10 @@ export function SingleEquipmentDetail({
           <div><span>台账全成本</span><strong>{number.format(totalCost(device))}万</strong><small>等待批次复核</small></div>
           <div><span>台账净收益</span><strong>{number.format(netBenefit(device))}万</strong><small>等待已发布事实重算</small></div>
           <div><span>设备使用率</span><strong>{device.utilization}%</strong><small>台账录入值</small></div>
+        </div>
+        <div className={styles.dossierGrid}>
+          <DeviceQrCard device={device} />
+          <DeviceTimeline device={device} profile={profile} />
         </div>
       </>
     );
@@ -402,6 +460,11 @@ export function SingleEquipmentDetail({
         </section>
       </div>
 
+      <div className={styles.dossierGrid}>
+        <DeviceQrCard device={device} />
+        <DeviceTimeline device={device} profile={profile} />
+      </div>
+
       <section className="panel lineage-panel">
         <div className="panel-heading"><div><h3>关键值来源与计算血缘</h3><p>同屏显示值、公式、系统来源与业务责任，便于复核</p></div><span className="chart-note">口径版本 2026-V2.0</span></div>
         <div className="table-scroll"><table className="data-table"><thead><tr><th>指标</th><th>当前值</th><th>计算方法</th><th>系统来源</th><th>业务确认</th></tr></thead><tbody>{sourceRows.map((row) => <tr key={row[0]}>{row.map((cell) => <td key={cell}>{cell}</td>)}</tr>)}</tbody></table></div>
@@ -445,5 +508,71 @@ export function MetricGovernanceCenter() {
         <div className="table-scroll"><table className="data-table"><thead><tr><th>部门/角色</th><th>需要提供</th><th>需要确认</th><th>建议频率</th></tr></thead><tbody>{responsibilityMatrix.map((row) => <tr key={row.department}><td><strong>{row.department}</strong></td><td>{row.provides}</td><td>{row.confirms}</td><td>{row.cadence}</td></tr>)}</tbody></table></div>
       </section>
     </>
+  );
+}
+
+function extremeChip(value: number, values: number[]) {
+  if (values.length < 2) return null;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  if (max === min) return null;
+  if (value === max) return <i className={`${styles.extremeChip} ${styles.chipHigh}`}>最高</i>;
+  if (value === min) return <i className={`${styles.extremeChip} ${styles.chipLow}`}>最低</i>;
+  return null;
+}
+
+export function HospitalComparePanel({ hospitals, activeHospitalId, onSwitchHospital }: {
+  hospitals: Array<{ id: string; name: string; shortName: string; level: string; region: string }>;
+  activeHospitalId: string;
+  onSwitchHospital: (hospitalId: string) => void;
+}) {
+  const rows = useMemo(() => hospitals.map((hospital) => {
+    const fleet = cloneDevicesForHospital(hospital.id);
+    return {
+      hospital,
+      deviceCount: fleet.length,
+      investment: fleet.reduce((sum, item) => sum + item.investment, 0),
+      revenue: fleet.reduce((sum, item) => sum + item.revenue, 0),
+      controllableCost: fleet.reduce((sum, item) => sum + totalCost(item) - item.cost.depreciation, 0),
+      net: fleet.reduce((sum, item) => sum + netBenefit(item), 0),
+      utilization: average(fleet.map((item) => item.utilization)),
+      attention: fleet.filter((item) => item.utilization < 55 || netBenefit(item) < 0).length,
+    };
+  }), [hospitals]);
+  if (!rows.length) return <section className="panel insight-unavailable"><Database size={22} /><div><h3>暂无可对比的医院</h3><p>请先在权限管理中配置医院并授予访问权限。</p></div></section>;
+  const columnValues = {
+    deviceCount: rows.map((row) => row.deviceCount),
+    investment: rows.map((row) => row.investment),
+    revenue: rows.map((row) => row.revenue),
+    controllableCost: rows.map((row) => row.controllableCost),
+    net: rows.map((row) => row.net),
+    utilization: rows.map((row) => row.utilization),
+    attention: rows.map((row) => row.attention),
+  };
+  return (
+    <section className="panel">
+      <div className="panel-heading"><div><h3>集团多院区对比</h3><p>对比基于各院当前工作区数据；接入各院正式发布数据后自动切换为已发布口径。</p></div><Building2 size={19} /></div>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead><tr><th>医院</th><th>台数（套）</th><th>总投资（万元）</th><th>年收入（万元）</th><th>可控成本合计（万元）</th><th>净收益（万元）</th><th>平均使用率</th><th>需关注台数</th><th>操作</th></tr></thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.hospital.id} className={row.hospital.id === activeHospitalId ? styles.activeRow : undefined}>
+                <td><div className={styles.hospitalCell}><strong>{row.hospital.shortName}{row.hospital.id === activeHospitalId ? <i className={styles.currentTag}>当前</i> : null}</strong><small>{row.hospital.name} · {row.hospital.level} · {row.hospital.region}</small></div></td>
+                <td>{row.deviceCount}{extremeChip(row.deviceCount, columnValues.deviceCount)}</td>
+                <td>{number.format(row.investment)}{extremeChip(row.investment, columnValues.investment)}</td>
+                <td>{number.format(row.revenue)}{extremeChip(row.revenue, columnValues.revenue)}</td>
+                <td>{number.format(row.controllableCost)}{extremeChip(row.controllableCost, columnValues.controllableCost)}</td>
+                <td>{number.format(row.net)}{extremeChip(row.net, columnValues.net)}</td>
+                <td>{row.utilization.toFixed(1)}%{extremeChip(row.utilization, columnValues.utilization)}</td>
+                <td>{row.attention}{extremeChip(row.attention, columnValues.attention)}</td>
+                <td><button className="secondary-button" onClick={() => onSwitchHospital(row.hospital.id)}>进入<ChevronRight size={14} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="definition-note"><Database size={15} /><span>可控成本＝全成本－折旧；需关注台数口径：使用率低于 55% 或净收益为负。</span></div>
+    </section>
   );
 }

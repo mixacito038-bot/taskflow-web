@@ -1379,6 +1379,13 @@ export const SAMPLE_DATA_ROW_COUNTS: Readonly<Record<string, number>> = {
   target_budget: 24,
 };
 
+/** 返回指定模板的示范数据行（按模板字段编码键控的字符串值），供服务端一键发布链路复用。 */
+export function buildSampleDataRows(templateCode: string): ReadonlyArray<Readonly<Record<string, string>>> {
+  const rows = sampleDataset()[templateCode];
+  if (!rows) throw new Error(`UNKNOWN_SAMPLE_TEMPLATE_${templateCode}`);
+  return rows;
+}
+
 export function buildSampleDataCsv(templateCode: string): SampleDataFile {
   const template = FILE_BUSINESS_TEMPLATES.find((item) => item.code === templateCode);
   const rows = sampleDataset()[templateCode];

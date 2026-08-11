@@ -3,6 +3,7 @@
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
 import {
   ArrowRight,
+  BellRing,
   Calculator,
   CheckCircle2,
   ChevronRight,
@@ -35,6 +36,8 @@ import {
 import { Device, netBenefit, roi, totalCost } from "./mock-data";
 import { insightFor } from "./metric-definitions";
 import type { PublishedDatasetView } from "./published-data";
+import { defaultAlertRules, evaluateAlertRules, validateAlertRule, type AlertRule, type DeviceAlert } from "./alert-rules";
+import alertStyles from "./ImprovementAlerts.module.css";
 
 export type ActionStatus = "待启动" | "进行中" | "已完成";
 export type Priority = "高" | "中" | "低";
@@ -235,6 +238,13 @@ const practiceCards = [
   },
 ];
 
+const alertThresholdBounds: Record<AlertRule["metric"], { min: number; max: number; step: number }> = {
+  utilization: { min: 0, max: 100, step: 1 },
+  forecastPayback: { min: 0, max: 30, step: 0.5 },
+  netBenefit: { min: -500, max: 500, step: 5 },
+  reliabilityScore: { min: 0, max: 100, step: 1 },
+};
+
 function targetTone(value: number, target: number, inverse = false) {
   const achieved = inverse ? value <= target : value >= target;
   const near = inverse ? value <= target * 1.2 : value >= target * 0.94;
@@ -301,6 +311,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
   const [availabilityLift, setAvailabilityLift] = useState(2);
   const [reviewingActionId, setReviewingActionId] = useState("");
   const [reviewDraft, setReviewDraft] = useState({ actualValue: "", actualBenefit: "", evidence: "", reviewDate: "2026-08-11" });
+  const [alertRules, setAlertRules] = useState<AlertRule[]>(() => defaultAlertRules.map((rule) => ({ ...rule })));
 
   const selectedDevice = devices.find((device) => device.id === selectedDeviceId) ?? devices[0];
   const insights = devices.map((device) => resolvedInsightFor(publishedData, device.id)).filter((item) => item.dataStatus !== "unavailable");
@@ -360,6 +371,12 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
     }
     return { device, insight, age, riskScore, recommendation, tone };
   }).sort((a, b) => b.riskScore - a.riskScore), [devices, publishedData]);
+
+  const deviceAlerts = useMemo(() => evaluateAlertRules(alertRules, devices, (deviceId) => {
+    const insight = resolvedInsightFor(publishedData, deviceId);
+    return insight.dataStatus === "unavailable" ? undefined : insight;
+  }), [alertRules, devices, publishedData]);
+  const enabledAlertRuleCount = alertRules.filter((rule) => rule.enabled).length;
 
   const completedActions = actions.filter((action) => action.status === "已完成");
   const activeActions = actions.filter((action) => action.status !== "已完成");
@@ -441,6 +458,50 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
     notify("改进行动已恢复为演示初始状态");
   }
 
+  function toggleAlertRule(ruleId: string) {
+    setAlertRules((current) => current.map((rule) => rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule));
+  }
+
+  function updateAlertThreshold(rule: AlertRule, rawValue: string) {
+    if (!rawValue.trim()) return;
+    const nextThreshold = Number(rawValue);
+    const errors = validateAlertRule({ ...rule, threshold: nextThreshold });
+    if (errors.length) {
+      notify(errors[0]);
+      return;
+    }
+    const bounds = alertThresholdBounds[rule.metric];
+    const bounded = Math.min(bounds.max, Math.max(bounds.min, nextThreshold));
+    setAlertRules((current) => current.map((item) => item.id === rule.id ? { ...item, threshold: bounded } : item));
+  }
+
+  function convertAlertToAction(alert: DeviceAlert) {
+    const actionId = `action-alert-${alert.ruleId}-${alert.deviceId}`;
+    if (actions.some((action) => action.id === actionId)) {
+      notify("该预警已有对应改进任务");
+      return;
+    }
+    const nextAction: ImprovementAction = {
+      id: actionId,
+      deviceId: alert.deviceId,
+      title: alert.suggestedAction.title,
+      issue: alert.message,
+      owner: alert.suggestedAction.owner,
+      dueDate: alert.severity === "high" ? "2026-09-15" : "2026-10-15",
+      expectedBenefit: 0,
+      status: "待启动",
+      priority: alert.severity === "high" ? "高" : "中",
+      progress: 0,
+      baselineValue: alert.currentValue,
+      targetValue: alert.threshold,
+      metricUnit: alert.unit,
+      evidence: "",
+      history: [{ at: new Date().toISOString(), status: "待启动", note: "由预警中心命中规则生成" }],
+    };
+    setActions((current) => [nextAction, ...current]);
+    notify("已生成改进任务，请指认负责人与期限");
+  }
+
   if (!selectedDevice || !scenario) return null;
 
   const scenarioBars = [
@@ -478,6 +539,74 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
       </section>
 
       <div className="section-heading compact-section-heading">
+        <div><h2>预警中心</h2><p>规则化监测使用率、回本、净收益与可靠性：命中即提示，并可一键转入下方改进行动闭环。</p></div>
+        <span className="chart-note">{enabledAlertRuleCount} 条规则启用 · 命中 {deviceAlerts.length} 条</span>
+      </div>
+      <section className={alertStyles.alertCenter} aria-label="预警中心">
+        <section className="panel">
+          <div className="panel-heading">
+            <div><h3>预警规则配置</h3><p>调整阈值即时重算右侧预警；高/中严重度对应改进任务的高/中优先级。</p></div>
+          </div>
+          <ul className={alertStyles.ruleList}>
+            {alertRules.map((rule) => {
+              const bounds = alertThresholdBounds[rule.metric];
+              return (
+                <li key={rule.id} className={alertStyles.ruleRow} data-enabled={rule.enabled}>
+                  <label className={alertStyles.ruleToggle}>
+                    <input type="checkbox" checked={rule.enabled} onChange={() => toggleAlertRule(rule.id)} />
+                    <span>{rule.name}</span>
+                  </label>
+                  <span className={`status-pill ${rule.severity === "high" ? "danger" : "warning"}`}>{rule.severity === "high" ? "高" : "中"}</span>
+                  <label className={alertStyles.ruleThreshold}>
+                    <span>{rule.operator === "lt" ? "低于" : "高于"}</span>
+                    <input
+                      type="number"
+                      min={bounds.min}
+                      max={bounds.max}
+                      step={bounds.step}
+                      value={rule.threshold}
+                      onChange={(event) => updateAlertThreshold(rule, event.target.value)}
+                      aria-label={`${rule.name}阈值`}
+                    />
+                    <span>{rule.unit}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <p className={alertStyles.rulePersistNote}>规则暂存当前会话，正式版本随医院配置下发。</p>
+        </section>
+        <section className="panel">
+          <div className="panel-heading">
+            <div><h3>实时预警清单</h3><p>按严重度与偏离幅度排序；无洞察事实的设备不参与可靠性评分预警，不做估算代替。</p></div>
+            <span className="chart-note"><BellRing size={13} /> 命中 {deviceAlerts.length} 条</span>
+          </div>
+          {devices.length === 0 ? (
+            <p className={alertStyles.alertEmpty}>暂无可评估设备</p>
+          ) : deviceAlerts.length === 0 ? (
+            <p className={alertStyles.alertEmpty}>当前规则下暂无预警命中</p>
+          ) : (
+            <ul className={alertStyles.alertRows}>
+              {deviceAlerts.map((alert) => {
+                const converted = actions.some((action) => action.id === `action-alert-${alert.ruleId}-${alert.deviceId}`);
+                return (
+                  <li key={`${alert.ruleId}-${alert.deviceId}`} className={alertStyles.alertRow}>
+                    <span className={`status-pill ${alert.severity === "high" ? "danger" : "warning"}`}>{alert.severity === "high" ? "高" : "中"}</span>
+                    <div className={alertStyles.alertBody}>
+                      <strong>{alert.deviceName}<small>{alert.department}</small></strong>
+                      <span className={alertStyles.alertValues}>指标现值 {alert.currentValue}{alert.unit} · 阈值 {alert.threshold}{alert.unit}</span>
+                      <span className={alertStyles.alertMessage}>{alert.message}</span>
+                    </div>
+                    <button className="secondary-button" onClick={() => convertAlertToAction(alert)}>{converted ? "已生成任务" : "转为改进任务"}</button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      </section>
+
+      <div className="section-heading">
         <div><h2>目标差距雷达</h2><p>目标为院内管理示例；阳性率等质量指标必须按设备类别和适用项目分组，不能直接横向排名。</p></div>
         <span className="chart-note">按当前纳管设备加权前的简单平均</span>
       </div>

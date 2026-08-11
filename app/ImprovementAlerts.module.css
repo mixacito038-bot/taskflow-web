@@ -1,0 +1,134 @@
+.alertCenter {
+  display: grid;
+  grid-template-columns: minmax(300px, 5fr) minmax(0, 7fr);
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 1020px) {
+  .alertCenter {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ruleList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ruleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.ruleRow[data-enabled="false"] {
+  opacity: 0.55;
+}
+
+.ruleToggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ruleToggle input {
+  accent-color: var(--primary);
+}
+
+.ruleThreshold {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ruleThreshold input {
+  width: 66px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.rulePersistNote {
+  margin: 11px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.alertRows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alertRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.alertBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.alertBody strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.alertBody strong small {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.alertValues {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.alertMessage {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.alertEmpty {
+  margin: 0;
+  padding: 18px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
