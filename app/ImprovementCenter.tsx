@@ -590,7 +590,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
         ))}
       </section>
 
-      <div className="method-note"><CircleAlert size={17} /><span><strong>口径提示：</strong>本页数据与改进结果为产品演示。正式上线需由财务、医务、设备、信息和使用科室共同确认目标值、设备分组、现金流口径及收益复盘规则。</span></div>
+      <div className="method-note"><CircleAlert size={17} /><span><strong>口径提示：</strong>改进目标值、设备分组、现金流口径及收益复盘规则，需由财务、医务、设备、信息和使用科室共同确认后生效。</span></div>
     </>
   );
 }

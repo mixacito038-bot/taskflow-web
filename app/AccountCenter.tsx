@@ -357,14 +357,14 @@ export default function AccountCenter({
     : sessionState === "loading"
       ? "正在核验"
       : sessionState === "demo"
-        ? "本地演示身份"
+        ? "体验身份"
         : "医院成员关系不可用";
 
   return (
     <>
       <div className="page-heading account-heading">
         <div><div className="eyebrow"><UserRound size={15} />身份、权限与个人偏好</div><h1>个人中心</h1><p>查看登录身份、医院成员关系、当前权限和消息接收方式。</p></div>
-        <span className={`identity-state identity-${sessionState}`}><Fingerprint size={15} />{sessionState === "verified" ? "服务端身份已核验" : sessionState === "loading" ? "正在核验身份" : sessionState === "demo" ? "本地演示身份" : "医院授权不可用"}</span>
+        <span className={`identity-state identity-${sessionState}`}><Fingerprint size={15} />{sessionState === "verified" ? "服务端身份已核验" : sessionState === "loading" ? "正在核验身份" : sessionState === "demo" ? "体验身份" : "医院授权不可用"}</span>
       </div>
 
       <section className="account-hero">
@@ -383,7 +383,7 @@ export default function AccountCenter({
         <div className="account-grid">
           <section className="panel account-panel">
             <div className="panel-heading"><div><h3>账号信息</h3><p>姓名和邮箱来自受信任登录身份，不在业务前端自行修改。</p></div></div>
-            <div className="account-fields"><div><span>显示姓名</span><strong>{viewer.displayName}</strong></div><div><span>登录邮箱</span><strong>{viewer.email}</strong><button onClick={copyEmail} aria-label="复制登录邮箱"><Clipboard size={14} /></button></div><div><span>访问状态</span><strong className={sessionState === "verified" ? "success-text" : ""}>{sessionState === "verified" ? <Check size={14} /> : null}{authorizedStateLabel}</strong></div><div><span>身份来源</span><strong>{viewer.authenticated ? "站点网关统一身份" : "本地演示身份"}</strong></div></div>
+            <div className="account-fields"><div><span>显示姓名</span><strong>{viewer.displayName}</strong></div><div><span>登录邮箱</span><strong>{viewer.email}</strong><button onClick={copyEmail} aria-label="复制登录邮箱"><Clipboard size={14} /></button></div><div><span>访问状态</span><strong className={sessionState === "verified" ? "success-text" : ""}>{sessionState === "verified" ? <Check size={14} /> : null}{authorizedStateLabel}</strong></div><div><span>身份来源</span><strong>{viewer.authenticated ? "平台工作账号" : "体验身份"}</strong></div></div>
           </section>
           <section className="panel account-panel account-hospitals">
             <div className="panel-heading"><div><h3>我的医院</h3><p>同一账号在不同医院可以拥有不同角色和数据范围。</p></div><button className="text-button" onClick={onOpenAccess}>查看权限详情</button></div>
@@ -401,8 +401,8 @@ export default function AccountCenter({
             <section className="panel account-panel">
               <div className="panel-heading"><div><h3>当前授权边界</h3><p>身份、应用会话和医院权限三项都通过后，才会加载业务数据。</p></div><span className={`status-pill ${sessionState === "verified" ? "success" : "attention"}`}>{authorizedStateLabel}</span></div>
               <div className="security-check-list">
-                <div><span><Fingerprint size={18} /></span><div><strong>统一身份</strong><small>{viewer.authenticated ? `站点网关已核验 ${viewer.email}` : "当前为本地演示身份"}</small></div>{viewer.authenticated ? <Check size={17} /> : <ShieldOff size={17} />}</div>
-                <div><span><MonitorSmartphone size={18} /></span><div><strong>设备效益管理平台会话</strong><small>{applicationSession?.createdAt ? `创建于 ${formatSecurityTime(applicationSession.createdAt)}` : sessionState === "demo" ? "本地演示会话" : "正在核验"}</small></div>{sessionState === "verified" ? <Check size={17} /> : <ShieldOff size={17} />}</div>
+                <div><span><Fingerprint size={18} /></span><div><strong>登录身份</strong><small>{viewer.authenticated ? `已核验 ${viewer.email}` : "当前为体验身份"}</small></div>{viewer.authenticated ? <Check size={17} /> : <ShieldOff size={17} />}</div>
+                <div><span><MonitorSmartphone size={18} /></span><div><strong>设备效益管理平台会话</strong><small>{applicationSession?.createdAt ? `创建于 ${formatSecurityTime(applicationSession.createdAt)}` : sessionState === "demo" ? "体验会话" : "正在核验"}</small></div>{sessionState === "verified" ? <Check size={17} /> : <ShieldOff size={17} />}</div>
                 <div><span><Building2 size={18} /></span><div><strong>医院成员关系</strong><small>{activeHospital.name} · {currentRoleName}</small></div>{activeMembership || sessionState === "demo" ? <Check size={17} /> : <ShieldOff size={17} />}</div>
                 <div><span><KeyRound size={18} /></span><div><strong>数据与操作范围</strong><small>{activeMembership?.dataScope === "department" ? `指定科室：${activeMembership.departmentScope.join("、") || "未配置"}` : activeMembership?.dataScope === "self" ? "本人负责设备" : activeMembership?.dataScope === "platform" ? "平台授权范围" : "本医院范围"} · {activeMembership?.permissions.length ?? 0} 项权限</small></div>{activeMembership || sessionState === "demo" ? <Check size={17} /> : <ShieldOff size={17} />}</div>
               </div>
@@ -422,10 +422,10 @@ export default function AccountCenter({
                 <div className="session-actions">
                   <button className="secondary-button" onClick={onLockApplication}><LockKeyhole size={16} />锁定此设备</button>
                   <button className="secondary-button" onClick={onRevokeAllApplicationSessions}><LogOut size={16} />退出全部应用会话</button>
-                  <button className="danger-button" onClick={onSignOutIdentity}><ShieldOff size={16} />退出统一登录</button>
+                  <button className="danger-button" onClick={onSignOutIdentity}><ShieldOff size={16} />退出登录</button>
                 </div>
               ) : <button className="danger-button signout-button" onClick={onExitDemo}><LogOut size={16} />退出演示环境</button>}
-              <p className="session-action-note">“锁定此设备”保留统一登录，仅暂停本浏览器访问；“退出统一登录”才会离开当前身份并进入统一身份页面。</p>
+              <p className="session-action-note">“锁定此设备”保留登录身份，仅暂停本浏览器访问；“退出登录”才会离开当前身份并返回登录页。</p>
             </section>
           </div>
 
@@ -454,7 +454,7 @@ export default function AccountCenter({
               <span className={`mfa-security-icon ${mfaStatus.enabled ? "enabled" : ""}`}>{securityLoading ? <LoaderCircle className="spin" size={24} /> : <QrCode size={24} />}</span>
               <div>
                 <strong>{mfaStatus.enabled ? "登录本平台时需要动态验证码" : "建议为医院管理账号绑定身份验证器"}</strong>
-                <p>{mfaStatus.enabled ? `启用时间：${formatSecurityTime(mfaStatus.confirmedAt)}；剩余 ${mfaStatus.recoveryCodesRemaining} 枚一次性恢复码。` : "启用后，新建或解锁应用会话时，除统一身份外还需要验证器动态码；二维码不是微信扫码登录。"}</p>
+                <p>{mfaStatus.enabled ? `启用时间：${formatSecurityTime(mfaStatus.confirmedAt)}；剩余 ${mfaStatus.recoveryCodesRemaining} 枚一次性恢复码。` : "启用后，新建或解锁应用会话时，除账号密码外还需要验证器动态码；二维码不是微信扫码登录。"}</p>
                 {mfaStatus.lockedUntil ? <small className="mfa-lock-warning">验证失败次数过多，暂时锁定至 {formatSecurityTime(mfaStatus.lockedUntil)}</small> : null}
               </div>
               <div className="mfa-security-actions">
@@ -541,7 +541,7 @@ export default function AccountCenter({
           <section className="mfa-dialog mfa-disable-dialog">
             <header>
               <span className="mfa-dialog-icon danger"><ShieldOff size={22} /></span>
-              <div><small>高风险账号操作</small><h2 id="disable-mfa-title">关闭二维码二次验证？</h2><p>关闭后，新建或解锁平台应用会话将只依赖统一身份。确认前需要输入当前动态验证码或恢复码。</p></div>
+              <div><small>高风险账号操作</small><h2 id="disable-mfa-title">关闭二维码二次验证？</h2><p>关闭后，新建或解锁平台应用会话将只依赖账号密码。确认前需要输入当前动态验证码或恢复码。</p></div>
               <button className="icon-button" aria-label="取消关闭" disabled={securityBusy} onClick={() => { setDisableOpen(false); setDisableCredential(""); setSecurityError(""); }}><X size={18} /></button>
             </header>
             <label className="mfa-code-field">动态验证码或恢复码<input value={disableCredential} onChange={(event) => { setDisableCredential(event.target.value); setSecurityError(""); }} autoComplete="one-time-code" placeholder="6 位验证码或 YH-… 恢复码" /></label>

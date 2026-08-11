@@ -156,7 +156,7 @@ export function ReliabilityPanel({ deviceIds, publishedData }: { deviceIds: stri
 }
 
 export function WorkforcePerformancePanel({ deviceIds, publishedData }: { deviceIds: string[]; publishedData?: PublishedDatasetView }) {
-  if (publishedData) return <section className="panel insight-unavailable"><Database size={22} /><div><h3>暂无已发布人员绩效事实</h3><p>正式模式不会使用原型工作量；请发布人员、班次、报告与质控指标后配置展示。</p></div></section>;
+  if (publishedData) return <section className="panel insight-unavailable"><Database size={22} /><div><h3>暂无已发布人员绩效事实</h3><p>正式模式只使用已发布数据；请发布人员、班次、报告与质控指标后配置展示。</p></div></section>;
   const scopeRatio = deviceIds.length ? deviceIds.length / 6 : 0;
   const workload = (value: number) => Math.round(value * scopeRatio).toLocaleString("zh-CN");
   const technicianMetrics = [
@@ -422,7 +422,7 @@ export function MetricGovernanceCenter() {
   return (
     <>
       <section className="panel audit-panel">
-        <div className="panel-heading"><div><h3>原型口径审核</h3><p>已将材料与 Stitch 原型中的歧义转为可执行的数据规则</p></div><span className="status-pill success">6 项已修正</span></div>
+        <div className="panel-heading"><div><h3>口径评审记录</h3><p>已将需求材料中的口径歧义逐项转为可执行的数据规则</p></div><span className="status-pill success">6 项已修正</span></div>
         <div className="audit-grid">{auditCorrections.map((item, index) => <div key={item}><span>{index + 1}</span><p>{item}</p></div>)}</div>
       </section>
 

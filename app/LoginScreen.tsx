@@ -36,9 +36,6 @@ export type LoginScreenProps = {
   onSwitchAccount?: () => void | Promise<void>;
 };
 
-const signInPath = "/signin-with-chatgpt?return_to=%2F";
-const switchAccountPath = "/signout-with-chatgpt?return_to=%2F";
-
 function normalizedCredential(value: string) {
   return value.trim().replace(/\s+/g, "");
 }
@@ -160,23 +157,23 @@ export default function LoginScreen({
               {resolvedMode === "locked" ? <LockKeyhole size={22} /> : <ShieldCheck size={22} />}
             </span>
             <div className="login-heading">
-              <small>{resolvedMode === "locked" ? "应用会话已锁定" : "统一身份已通过"}</small>
+              <small>{resolvedMode === "locked" ? "应用会话已锁定" : "登录身份已核验"}</small>
               <h2>{resolvedMode === "locked" ? "重新确认后继续" : `进入${PRODUCT_FULL_NAME}`}</h2>
               <p>
                 {resolvedMode === "locked"
                   ? "为保护医院业务数据，需要重新确认当前身份后恢复应用会话。"
-                  : "统一身份认证和应用会话相互独立，请确认账号后进入医院业务空间。"}
+                  : "登录身份与应用会话相互独立，请确认账号后进入医院业务空间。"}
               </p>
             </div>
 
             <div className="login-identity-card">
               <span className="login-identity-avatar">{avatarLabel}</span>
-              <div><small>当前统一登录账号</small><strong>{viewer.displayName}</strong><span>{viewer.email}</span></div>
+              <div><small>当前登录账号</small><strong>{viewer.displayName}</strong><span>{viewer.email}</span></div>
               <i><CheckCircle2 size={15} />已核验</i>
             </div>
 
             <div className="login-session-steps" aria-label="两层身份与应用会话状态">
-              <div className="complete"><b>1</b><span><strong>统一身份</strong><small>当前账号已核验</small></span></div>
+              <div className="complete"><b>1</b><span><strong>登录身份</strong><small>当前账号已核验</small></span></div>
               <ArrowRight className="login-session-step-arrow" size={16} />
               <div className="current"><b>2</b><span><strong>应用会话</strong><small>{resolvedMode === "locked" ? "等待解锁" : "等待进入"}</small></span></div>
             </div>
@@ -234,14 +231,10 @@ export default function LoginScreen({
             </button>
             {onSwitchAccount ? (
               <button className="secondary-button login-switch-account" type="button" disabled={effectiveBusy} onClick={() => void onSwitchAccount()}>
-                <LogOut size={16} />切换统一登录账号
+                <LogOut size={16} />切换登录账号
               </button>
-            ) : (
-              <a className="secondary-button login-switch-account" href={switchAccountPath} aria-disabled={effectiveBusy}>
-                <LogOut size={16} />切换统一登录账号
-              </a>
-            )}
-            <p className="login-boundary-copy">切换账号会先退出当前统一登录身份；不会删除医院成员关系或云端业务数据。</p>
+            ) : null}
+            <p className="login-boundary-copy">切换账号会先退出当前登录身份；不会删除医院成员关系或云端业务数据。</p>
           </form>
         ) : (
           <div className="login-card">
@@ -299,13 +292,12 @@ export default function LoginScreen({
                 </button>
               </form>
             ) : (
-              <a className="primary-button login-primary" href={signInPath}>使用统一身份登录<ArrowRight size={17} /></a>
+              <div className="login-session-note"><ShieldCheck size={17} /><span><strong>请使用医院工作账号登录</strong><small>登录账号由平台管理员在“医院与权限”中统一分配。</small></span></div>
             )}
             {onEnterDemo ? (
               <>
-                <div className="login-divider"><span>其他方式</span></div>
+                <div className="login-divider"><span>没有账号？</span></div>
                 <div className="login-secondary-actions">
-                  {onPasswordLogin ? <a className="secondary-button login-sso-link" href={signInPath}>使用统一身份登录</a> : null}
                   <button className="secondary-button login-demo" onClick={onEnterDemo}>进入演示环境</button>
                 </div>
               </>

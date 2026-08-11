@@ -505,7 +505,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const currentDataSources = sourceStore[effectiveHospitalId] ?? (demoMode ? initialDataSources : []);
   const currentAnalysisProfiles = analysisProfileStore[effectiveHospitalId] ?? (demoMode ? initialBenefitAnalysisProfiles : []);
   const activeMembership = tenantContext?.memberships.find((membership) => membership.hospitalId === effectiveHospitalId);
-  const currentRoleName = activeMembership?.roleName ?? (viewer.authenticated ? "平台超级管理员" : "本地演示角色");
+  const currentRoleName = activeMembership?.roleName ?? (viewer.authenticated ? "平台超级管理员" : "体验角色");
   const activePermissions = new Set(sessionState === "demo" || (sessionState === "verified" && isPlatformAdmin)
     ? permissionColumns.map((permission) => permission.code)
     : sessionState === "verified" ? activeMembership?.permissions ?? [] : []);
@@ -2501,18 +2501,18 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           <section className="confirmation-dialog session-exit-dialog">
             <span className="confirmation-icon">{exitConfirmMode === "lock" ? <LockKeyhole size={22} /> : <LogOut size={22} />}</span>
             <div>
-              <small>{exitConfirmMode === "lock" ? "当前浏览器" : exitConfirmMode === "all" ? "全部设备" : "统一身份"}</small>
-              <h2 id="exit-session-title">{exitConfirmMode === "lock" ? "锁定并返回系统登录页？" : exitConfirmMode === "all" ? "退出全部平台会话？" : "退出统一登录并切换账号？"}</h2>
+              <small>{exitConfirmMode === "lock" ? "当前浏览器" : exitConfirmMode === "all" ? "全部设备" : "登录身份"}</small>
+              <h2 id="exit-session-title">{exitConfirmMode === "lock" ? "锁定并返回系统登录页？" : exitConfirmMode === "all" ? "退出全部平台会话？" : "退出登录并切换账号？"}</h2>
               <p>{exitConfirmMode === "lock"
-                ? "本浏览器的平台会话会在服务端锁定，医院云端业务数据立即停止访问；统一登录身份仍保留。"
+                ? "本浏览器的平台会话会在服务端锁定，医院云端业务数据立即停止访问；登录身份仍保留。"
                 : exitConfirmMode === "all"
                   ? "当前账号在所有设备上的平台应用会话都会撤销。医院成员关系和云端数据不会删除。"
-                  : "当前平台会话会先撤销，然后退出统一登录身份。此操作会进入统一身份页面，但不会删除医院成员关系或云端数据。"}</p>
+                  : "当前平台会话会先撤销，然后退出当前登录身份并返回登录页；不会删除医院成员关系或云端数据。"}</p>
               <dl className="exit-session-facts"><div><dt>账号</dt><dd>{viewer.email}</dd></div><div><dt>当前医院</dt><dd>{activeHospital.shortName}</dd></div><div><dt>云端状态</dt><dd>{cloudSyncState === "saving" ? "仍在保存，请稍候" : cloudSyncState === "error" ? "存在未同步修改，请先处理" : "已完成同步"}</dd></div></dl>
             </div>
             <footer>
               <button className="secondary-button" disabled={applicationSessionBusy} onClick={() => setExitConfirmMode(null)}>取消</button>
-              <button className={exitConfirmMode === "lock" ? "primary-button" : "danger-button"} disabled={applicationSessionBusy || cloudSyncState === "saving"} onClick={() => void confirmExitAction()}>{applicationSessionBusy ? <LoaderCircle className="spin" size={16} /> : exitConfirmMode === "lock" ? <LockKeyhole size={16} /> : <LogOut size={16} />}{applicationSessionBusy ? "正在处理" : exitConfirmMode === "lock" ? "确认锁定" : exitConfirmMode === "all" ? "退出全部会话" : "退出统一登录"}</button>
+              <button className={exitConfirmMode === "lock" ? "primary-button" : "danger-button"} disabled={applicationSessionBusy || cloudSyncState === "saving"} onClick={() => void confirmExitAction()}>{applicationSessionBusy ? <LoaderCircle className="spin" size={16} /> : exitConfirmMode === "lock" ? <LockKeyhole size={16} /> : <LogOut size={16} />}{applicationSessionBusy ? "正在处理" : exitConfirmMode === "lock" ? "确认锁定" : exitConfirmMode === "all" ? "退出全部会话" : "退出登录"}</button>
             </footer>
           </section>
         </div>

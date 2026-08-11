@@ -179,7 +179,7 @@ export default function AccessControlCenter({
   const activeServerMembership = tenantContext?.memberships.find((membership) => membership.hospitalId === activeHospitalId);
   const platformAdmin = tenantContext?.memberships.some((membership) => membership.roleId === "role-platform-admin") ?? sessionState === "demo";
   const canManageMembers = platformAdmin || activeServerMembership?.permissions.includes("member.manage") || sessionState === "demo";
-  const effectiveRole = activeServerMembership?.roleName ?? (viewer.authenticated ? "平台超级管理员" : "本地演示管理员");
+  const effectiveRole = activeServerMembership?.roleName ?? (viewer.authenticated ? "平台超级管理员" : "体验管理员");
   const currentHospitalRoles = roles.filter((role) => !role.hospitalId || role.hospitalId === activeHospitalId);
   const actorPermissionSet = new Set(platformAdmin ? permissionColumns.map((permission) => permission.code) : activeServerMembership?.permissions ?? []);
   const assignableRoles = currentHospitalRoles.filter((role) => platformAdmin || role.permissions.every((permission) => actorPermissionSet.has(permission)));

@@ -24,5 +24,5 @@ export async function resolveViewerIdentity(): Promise<ViewerIdentity> {
   if (user) {
     return { displayName: user.displayName, email: user.email, authenticated: true };
   }
-  return { displayName: "本地演示账号", email: "demo@local.invalid", authenticated: false };
+  return { displayName: "体验账号", email: "demo@local.invalid", authenticated: false };
 }

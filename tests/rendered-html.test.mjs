@@ -65,8 +65,9 @@ test("offers a trusted sign-in flow to anonymous visitors", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /登录<!-- -->勇虹医疗 · 设备效益管理平台|登录勇虹医疗 · 设备效益管理平台/);
-  assert.match(html, /signin-with-chatgpt/);
+  assert.match(html, /登录账号|账号密码/);
   assert.match(html, /进入演示环境/);
+  assert.doesNotMatch(html, /signin-with-chatgpt|统一身份/);
 });
 
 test("uses one release brand across the product, security issuer, metadata and operator docs", async () => {
@@ -309,7 +310,7 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   assert.match(notificationCenter, /全部标为已读/);
   assert.match(accountCenter, /登录与安全/);
   assert.match(accountCenter, /消息接收偏好/);
-  assert.match(loginScreen, /signin-with-chatgpt/);
+  assert.match(loginScreen, /登录账号/);
   assert.match(loginScreen, /登录不等于获得业务权限/);
   assert.match(notifications, /手术机器人进入效益预警区间/);
 
@@ -468,13 +469,13 @@ test("requires an application session and provides real TOTP account security", 
   assert.match(loginScreen, /viewer\?: ViewerIdentity/);
   assert.match(loginScreen, /mfaEnabled\?: boolean/);
   assert.match(loginScreen, /viewer\.email/);
-  assert.match(loginScreen, /统一身份已通过/);
+  assert.match(loginScreen, /登录身份已核验/);
   assert.match(loginScreen, /应用会话已锁定/);
   assert.match(loginScreen, /6 位验证码或恢复码/);
   assert.match(loginScreen, /进入平台/);
-  assert.match(loginScreen, /切换统一登录账号/);
+  assert.match(loginScreen, /切换登录账号/);
   assert.match(loginScreen, /onSwitchAccount/);
-  assert.match(loginScreen, /signout-with-chatgpt/);
+  assert.match(loginScreen, /onPasswordLogin/);
   assert.doesNotMatch(loginScreen, /QRCode|toDataURL|<canvas/);
 
   assert.match(component, /type ApplicationSessionState = "checking" \| "required" \| "locked" \| "active" \| "error" \| "demo"/);
