@@ -37,7 +37,7 @@ test("declares the complete ten-section data preparation workflow", () => {
       "血缘与回滚",
     ],
   );
-  assert.equal(DATA_WORKBENCH_ENTRY_CLICKS, 6);
+  assert.equal(DATA_WORKBENCH_ENTRY_CLICKS, 3);
   assert.equal(FILE_BUSINESS_TEMPLATES.length, 8);
 });
 
