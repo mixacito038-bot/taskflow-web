@@ -18,11 +18,31 @@ import {
   type AppSessionInspection,
   type MfaFactor,
 } from "../../../db/account-security";
+import {
+  changeAccountPassword,
+  getAccountCredentialSummary,
+  maybeBootstrapAdminCredential,
+  PasswordAuthError,
+  passwordAuthError,
+  verifyPasswordLogin,
+} from "../../../db/password-auth";
 
-type AppSessionAction = "status" | "start" | "unlock" | "lock" | "revoke" | "revoke_all";
+type AppSessionAction =
+  | "status"
+  | "start"
+  | "unlock"
+  | "lock"
+  | "revoke"
+  | "revoke_all"
+  | "password_login"
+  | "change_password";
 
 type AppSessionRequest = MfaFactor & {
   action?: AppSessionAction;
+  username?: string;
+  password?: string;
+  currentPassword?: string;
+  newPassword?: string;
 };
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
@@ -63,6 +83,8 @@ export async function POST(request: Request) {
     }
     if (action === "start") return await startSession(request, payload);
     if (action === "unlock") return await unlockSession(request, payload);
+    if (action === "password_login") return await passwordLogin(request, payload);
+    if (action === "change_password") return await changePassword(request, payload);
     if (action === "lock") {
       await lockAppSession(request);
       const inspection = await inspectAppSession(request);
@@ -87,8 +109,72 @@ export async function POST(request: Request) {
     return Response.json({ error: "unsupported_action" }, { status: 400, headers: NO_STORE_HEADERS });
   } catch (error) {
     if (error instanceof MfaVerificationError) return withNoStore(mfaVerificationError(error));
+    if (error instanceof PasswordAuthError) return withNoStore(passwordAuthError(error));
     return withNoStore(appSessionError(error));
   }
+}
+
+async function passwordLogin(request: Request, payload: AppSessionRequest) {
+  const username = typeof payload.username === "string" ? payload.username.trim() : "";
+  const password = typeof payload.password === "string" ? payload.password : "";
+  if (!username || !password) {
+    return Response.json({ error: "credentials_required" }, { status: 400, headers: NO_STORE_HEADERS });
+  }
+
+  await maybeBootstrapAdminCredential(username, password);
+  const { account } = await verifyPasswordLogin(username, password);
+
+  const mfa = await getMfaStatus(account.id);
+  if (mfa.enabled) {
+    if (!payload.totpCode && !payload.recoveryCode) {
+      return Response.json({ error: "mfa_required" }, { status: 401, headers: NO_STORE_HEADERS });
+    }
+    try {
+      const method = await verifyMfaFactor(account.id, payload);
+      await writeSecurityAudit(account.id, "password_login_mfa", "allowed", `密码登录通过${method === "recovery" ? "恢复码" : "动态口令"}验证`);
+    } catch (error) {
+      await writeSecurityAudit(account.id, "password_login_mfa", "denied", "密码登录多因素验证失败");
+      throw error;
+    }
+  }
+  assertMfaSnapshotUnchanged(mfa, await getMfaStatus(account.id));
+
+  const issued = await issueAppSession(account, account.email, request, "password");
+  await writeSecurityAudit(account.id, "password_login", "allowed", "账号密码登录建立应用会话");
+  const credential = await getAccountCredentialSummary(account.id);
+  return Response.json({
+    ssoAuthenticated: false,
+    provisioned: true,
+    authMethod: "password",
+    account: {
+      email: account.email,
+      displayName: account.displayName,
+    },
+    mustChangePassword: credential?.mustChangePassword ?? false,
+    appSession: {
+      status: "active",
+      createdAt: issued.context.createdAt,
+      lastSeenAt: issued.context.lastSeenAt,
+      idleExpiresAt: issued.context.idleExpiresAt,
+      absoluteExpiresAt: issued.context.absoluteExpiresAt,
+    },
+    mfa: await getMfaStatus(account.id),
+  }, { headers: { ...NO_STORE_HEADERS, "Set-Cookie": appSessionCookie(issued.rawToken) } });
+}
+
+async function changePassword(request: Request, payload: AppSessionRequest) {
+  const inspection = await inspectAppSession(request);
+  if (inspection.state !== "active" || !inspection.account) {
+    return Response.json({ error: "app_session_required" }, { status: 423, headers: NO_STORE_HEADERS });
+  }
+  const currentPassword = typeof payload.currentPassword === "string" ? payload.currentPassword : "";
+  const newPassword = typeof payload.newPassword === "string" ? payload.newPassword : "";
+  if (!currentPassword || !newPassword) {
+    return Response.json({ error: "credentials_required" }, { status: 400, headers: NO_STORE_HEADERS });
+  }
+  await changeAccountPassword(inspection.account.id, currentPassword, newPassword);
+  await writeSecurityAudit(inspection.account.id, "password_change", "allowed", "账号密码已修改");
+  return Response.json({ ok: true, mustChangePassword: false }, { headers: NO_STORE_HEADERS });
 }
 
 async function startSession(request: Request, factor: MfaFactor) {
@@ -130,13 +216,22 @@ async function startSession(request: Request, factor: MfaFactor) {
   }, { headers: { ...NO_STORE_HEADERS, "Set-Cookie": appSessionCookie(issued.rawToken) } });
 }
 
-async function unlockSession(request: Request, factor: MfaFactor) {
+async function unlockSession(request: Request, factor: AppSessionRequest) {
   const inspection = await inspectAppSession(request);
   if (inspection.state === "unauthenticated") {
     return Response.json({ error: "authentication_required" }, { status: 401, headers: NO_STORE_HEADERS });
   }
-  if (inspection.state !== "locked" || !inspection.account || !inspection.ssoUser) {
+  const passwordSession = inspection.session?.authMethod === "password";
+  if (inspection.state !== "locked" || !inspection.account || (!inspection.ssoUser && !passwordSession)) {
     return Response.json({ error: "app_session_not_locked" }, { status: 409, headers: NO_STORE_HEADERS });
+  }
+  if (passwordSession) {
+    // 密码会话解锁需要重新出示账号密码，防止无人值守设备被直接恢复。
+    const password = typeof factor.password === "string" ? factor.password : "";
+    if (!password) return Response.json({ error: "password_required" }, { status: 401, headers: NO_STORE_HEADERS });
+    const credential = await getAccountCredentialSummary(inspection.account.id);
+    if (!credential) return Response.json({ error: "credential_not_found" }, { status: 409, headers: NO_STORE_HEADERS });
+    await verifyPasswordLogin(credential.username, password);
   }
 
   const mfa = await getMfaStatus(inspection.account.id);
@@ -151,7 +246,12 @@ async function unlockSession(request: Request, factor: MfaFactor) {
   }
   assertMfaSnapshotUnchanged(mfa, await getMfaStatus(inspection.account.id));
 
-  const issued = await issueAppSession(inspection.account, inspection.ssoUser.email, request);
+  const issued = await issueAppSession(
+    inspection.account,
+    inspection.ssoUser?.email ?? inspection.account.email,
+    request,
+    passwordSession ? "password" : "sso",
+  );
   await writeSecurityAudit(inspection.account.id, "app_session_unlock", "allowed", "应用会话已解锁并轮换令牌");
   return Response.json({
     ssoAuthenticated: true,
@@ -175,6 +275,7 @@ async function statusPayload(inspection: AppSessionInspection) {
   const session = inspection.session;
   return {
     ssoAuthenticated: Boolean(inspection.ssoUser),
+    authMethod: session?.authMethod ?? (inspection.ssoUser ? "sso" : null),
     provisioned: Boolean(inspection.account?.status === "active"),
     ...(inspection.account ? {
       account: {

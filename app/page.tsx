@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import EquipmentPlatform from "./EquipmentPlatform";
 import { PRODUCT_FULL_NAME } from "./brand";
-import { getChatGPTUser } from "./chatgpt-auth";
+import { resolveViewerIdentity } from "./server-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +11,6 @@ export const metadata: Metadata = {
 };
 
 export default async function Home() {
-  const user = await getChatGPTUser();
-  return (
-    <EquipmentPlatform
-      viewer={user
-        ? { displayName: user.displayName, email: user.email, authenticated: true }
-        : { displayName: "本地演示账号", email: "demo@local.invalid", authenticated: false }}
-    />
-  );
+  const viewer = await resolveViewerIdentity();
+  return <EquipmentPlatform viewer={viewer} />;
 }

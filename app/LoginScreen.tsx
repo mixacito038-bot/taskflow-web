@@ -19,14 +19,20 @@ import { COMPANY_NAME, PRODUCT_FULL_NAME, PRODUCT_NAME } from "./brand";
 
 export type LoginMode = "signin" | "session-required" | "locked";
 
+export type PasswordLoginResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string };
+
 export type LoginScreenProps = {
   viewer?: ViewerIdentity;
   mode?: LoginMode;
   mfaEnabled?: boolean;
+  unlockWithPassword?: boolean;
   busy?: boolean;
   error?: string;
   onEnterDemo?: () => void;
   onContinue?: (credential: string) => void | Promise<void>;
+  onPasswordLogin?: (username: string, password: string, mfaCredential?: string) => Promise<PasswordLoginResult>;
   onSwitchAccount?: () => void | Promise<void>;
 };
 
@@ -46,10 +52,12 @@ export default function LoginScreen({
   viewer,
   mode,
   mfaEnabled = false,
+  unlockWithPassword = false,
   busy = false,
   error,
   onEnterDemo,
   onContinue,
+  onPasswordLogin,
   onSwitchAccount,
 }: LoginScreenProps) {
   const requestedMode = mode ?? (viewer?.authenticated ? "session-required" : "signin");
@@ -58,16 +66,60 @@ export default function LoginScreen({
   const [credential, setCredential] = useState("");
   const [localError, setLocalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordMfaCredential, setPasswordMfaCredential] = useState("");
+  const [passwordMfaNeeded, setPasswordMfaNeeded] = useState(false);
   const credentialId = useId();
+  const usernameId = useId();
+  const passwordId = useId();
   const effectiveBusy = busy || submitting;
   const visibleError = error || localError;
   const avatarLabel = (viewer?.displayName || viewer?.email || "账").trim().slice(0, 1).toUpperCase() || "账";
+
+  async function handlePasswordLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!onPasswordLogin || effectiveBusy) return;
+    if (!username.trim() || !password) {
+      setLocalError("请输入登录账号和密码。");
+      return;
+    }
+    if (passwordMfaNeeded && !isMfaCredential(passwordMfaCredential)) {
+      setLocalError("请输入 6 位动态验证码，或完整的恢复码。");
+      return;
+    }
+    setLocalError("");
+    setSubmitting(true);
+    try {
+      const result = await onPasswordLogin(
+        username.trim(),
+        password,
+        passwordMfaNeeded ? normalizedCredential(passwordMfaCredential) : undefined,
+      );
+      if (!result.ok) {
+        if (result.code === "mfa_required") {
+          setPasswordMfaNeeded(true);
+          setLocalError("该账号已启用多因素验证，请输入动态验证码。");
+        } else {
+          setLocalError(result.message);
+        }
+      }
+    } catch {
+      setLocalError("登录请求失败，请检查网络后重试。");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function handleContinue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!onContinue || effectiveBusy) return;
 
-    if (mfaEnabled && !isMfaCredential(credential)) {
+    if (unlockWithPassword && !credential) {
+      setLocalError("请输入账号密码。");
+      return;
+    }
+    if (!unlockWithPassword && mfaEnabled && !isMfaCredential(credential)) {
       setLocalError("请输入 6 位动态验证码，或完整的恢复码。");
       return;
     }
@@ -75,7 +127,7 @@ export default function LoginScreen({
     setLocalError("");
     setSubmitting(true);
     try {
-      await onContinue(mfaEnabled ? normalizedCredential(credential) : "");
+      await onContinue(unlockWithPassword ? credential : mfaEnabled ? normalizedCredential(credential) : "");
     } catch {
       setLocalError("应用会话建立失败，请核对验证信息后重试。");
     } finally {
@@ -129,7 +181,27 @@ export default function LoginScreen({
               <div className="current"><b>2</b><span><strong>应用会话</strong><small>{resolvedMode === "locked" ? "等待解锁" : "等待进入"}</small></span></div>
             </div>
 
-            {mfaEnabled ? (
+            {unlockWithPassword ? (
+              <label className="login-credential-field" htmlFor={credentialId}>
+                <span><KeyRound size={16} />账号密码</span>
+                <input
+                  id={credentialId}
+                  type="password"
+                  value={credential}
+                  onChange={(event) => {
+                    setCredential(event.target.value);
+                    if (localError) setLocalError("");
+                  }}
+                  autoComplete="current-password"
+                  maxLength={128}
+                  disabled={effectiveBusy}
+                  placeholder="重新输入账号密码"
+                  aria-invalid={Boolean(visibleError)}
+                  aria-describedby={`${credentialId}-help${visibleError ? ` ${credentialId}-error` : ""}`}
+                />
+                <small id={`${credentialId}-help`}>为保护医院业务数据，恢复被锁定的会话需要重新输入账号密码。</small>
+              </label>
+            ) : mfaEnabled ? (
               <label className="login-credential-field" htmlFor={credentialId}>
                 <span><KeyRound size={16} />多因素验证</span>
                 <input
@@ -174,15 +246,71 @@ export default function LoginScreen({
         ) : (
           <div className="login-card">
             <span className="login-lock"><LockKeyhole size={22} /></span>
-            <div className="login-heading"><small>欢迎使用</small><h2>登录{PRODUCT_FULL_NAME}</h2><p>使用已加入医院成员名单的受信任工作账号登录。</p></div>
-            <a className="primary-button login-primary" href={signInPath}>使用统一身份登录<ArrowRight size={17} /></a>
+            <div className="login-heading"><small>欢迎使用</small><h2>登录{PRODUCT_FULL_NAME}</h2><p>使用平台分配的医院工作账号和密码登录。</p></div>
+            {onPasswordLogin ? (
+              <form className="login-password-form" onSubmit={handlePasswordLogin}>
+                <label className="login-credential-field" htmlFor={usernameId}>
+                  <span><Building2 size={16} />登录账号</span>
+                  <input
+                    id={usernameId}
+                    value={username}
+                    onChange={(event) => { setUsername(event.target.value); if (localError) setLocalError(""); }}
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    maxLength={64}
+                    disabled={effectiveBusy}
+                    placeholder="由平台管理员分配"
+                  />
+                </label>
+                <label className="login-credential-field" htmlFor={passwordId}>
+                  <span><KeyRound size={16} />密码</span>
+                  <input
+                    id={passwordId}
+                    type="password"
+                    value={password}
+                    onChange={(event) => { setPassword(event.target.value); if (localError) setLocalError(""); }}
+                    autoComplete="current-password"
+                    maxLength={128}
+                    disabled={effectiveBusy}
+                    placeholder="账号密码"
+                  />
+                </label>
+                {passwordMfaNeeded ? (
+                  <label className="login-credential-field" htmlFor={credentialId}>
+                    <span><ShieldCheck size={16} />多因素验证</span>
+                    <input
+                      id={credentialId}
+                      value={passwordMfaCredential}
+                      onChange={(event) => { setPasswordMfaCredential(event.target.value); if (localError) setLocalError(""); }}
+                      autoComplete="one-time-code"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      maxLength={64}
+                      disabled={effectiveBusy}
+                      placeholder="6 位验证码或恢复码"
+                    />
+                  </label>
+                ) : null}
+                {visibleError ? <div className="login-error" role="alert"><CircleAlert size={16} /><span>{visibleError}</span></div> : null}
+                <button className="primary-button login-primary" type="submit" disabled={effectiveBusy}>
+                  <span>{effectiveBusy ? "正在登录" : "登录"}</span>
+                  {effectiveBusy ? <LoaderCircle className="spin" size={17} /> : <ArrowRight size={17} />}
+                </button>
+              </form>
+            ) : (
+              <a className="primary-button login-primary" href={signInPath}>使用统一身份登录<ArrowRight size={17} /></a>
+            )}
             {onEnterDemo ? (
               <>
-                <div className="login-divider"><span>本地原型预览</span></div>
-                <button className="secondary-button login-demo" onClick={onEnterDemo}>进入演示环境</button>
+                <div className="login-divider"><span>其他方式</span></div>
+                <div className="login-secondary-actions">
+                  {onPasswordLogin ? <a className="secondary-button login-sso-link" href={signInPath}>使用统一身份登录</a> : null}
+                  <button className="secondary-button login-demo" onClick={onEnterDemo}>进入演示环境</button>
+                </div>
               </>
             ) : null}
-            {visibleError ? <div className="login-error" role="alert"><CircleAlert size={16} /><span>{visibleError}</span></div> : null}
+            {!onPasswordLogin && visibleError ? <div className="login-error" role="alert"><CircleAlert size={16} /><span>{visibleError}</span></div> : null}
             <div className="login-help"><ShieldCheck size={15} /><p><strong>登录不等于获得业务权限</strong><span>登录后系统还会核验医院成员关系、院内角色、科室范围和操作权限。</span></p></div>
           </div>
         )}

@@ -16,7 +16,7 @@ export type DataWorkbenchSection = {
   description: string;
 };
 
-export const DATA_WORKBENCH_ENTRY_CLICKS = 6;
+export const DATA_WORKBENCH_ENTRY_CLICKS = 3;
 
 export const DATA_WORKBENCH_SECTIONS: readonly DataWorkbenchSection[] = [
   { id: "overview", label: "工作台", description: "数据准备进度与今日待办" },

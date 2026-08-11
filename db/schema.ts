@@ -641,11 +641,27 @@ export const dataLineageEvents = sqliteTable("data_lineage_events", {
   index("data_lineage_events_hospital_resource_idx").on(table.hospitalId, table.resourceType, table.resourceId),
 ]);
 
+export const accountCredentials = sqliteTable("account_credentials", {
+  accountId: text("account_id").primaryKey().references(() => accounts.id, { onDelete: "cascade" }),
+  username: text("username").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  iterations: integer("iterations").notNull().default(210000),
+  algorithm: text("algorithm").notNull().default("pbkdf2-sha256"),
+  mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: text("locked_until"),
+  passwordUpdatedAt: text("password_updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("account_credentials_username_unique").on(table.username)]);
+
 export const appSessions = sqliteTable("app_sessions", {
   id: text("id").primaryKey(),
   tokenHash: text("token_hash").notNull(),
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
   ssoEmail: text("sso_email").notNull(),
+  authMethod: text("auth_method", { enum: ["sso", "password"] }).notNull().default("sso"),
   status: text("status", { enum: ["active", "locked", "revoked"] }).notNull().default("active"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),

@@ -133,25 +133,47 @@ export function assertSameOrigin(request: Request) {
 }
 
 export async function inspectAppSession(request?: Request, touch = false): Promise<AppSessionInspection> {
+  const db = await getDb();
+  const rawToken = readCookie(await getRequestHeaders(request), APP_SESSION_COOKIE);
+  const tokenHash = rawToken ? await sha256Hex(rawToken) : null;
+  const [tokenSession] = tokenHash
+    ? await db.select().from(appSessions).where(eq(appSessions.tokenHash, tokenHash)).limit(1)
+    : [];
+
+  // 账号密码会话：会话本身即身份凭证，不依赖统一身份网关请求头。
+  if (tokenSession?.authMethod === "password") {
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, tokenSession.accountId)).limit(1);
+    if (!account || account.status !== "active") {
+      return { ssoUser: null, account: account ?? null, session: tokenSession, state: "invalid" };
+    }
+    return settleSessionLifecycle(db, null, account, tokenSession, touch);
+  }
+
   const ssoUser = await getChatGPTUser();
   if (!ssoUser) return { ssoUser: null, account: null, session: null, state: "unauthenticated" };
 
-  const db = await getDb();
   const email = normalizeEmail(ssoUser.email);
   const [account] = await db.select().from(accounts).where(eq(accounts.email, email)).limit(1);
   if (!account || account.status !== "active") {
     return { ssoUser, account: account ?? null, session: null, state: "unprovisioned" };
   }
 
-  const rawToken = readCookie(await getRequestHeaders(request), APP_SESSION_COOKIE);
-  if (!rawToken) return { ssoUser, account, session: null, state: "none" };
-  const tokenHash = await sha256Hex(rawToken);
-  let [session] = await db.select().from(appSessions).where(eq(appSessions.tokenHash, tokenHash)).limit(1);
+  const session = tokenSession ?? null;
   if (!session) return { ssoUser, account, session: null, state: "none" };
   if (session.accountId !== account.id || normalizeEmail(session.ssoEmail) !== email) {
     return { ssoUser, account, session, state: "invalid" };
   }
+  return settleSessionLifecycle(db, ssoUser, account, session, touch);
+}
 
+async function settleSessionLifecycle(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ssoUser: ChatGPTUser | null,
+  account: AccountRow,
+  initialSession: SessionRow,
+  touch: boolean,
+): Promise<AppSessionInspection> {
+  let session = initialSession;
   const now = Date.now();
   if (Date.parse(session.absoluteExpiresAt) <= now || Date.parse(session.idleExpiresAt) <= now) {
     const revokedAt = new Date(now).toISOString();
@@ -204,6 +226,7 @@ export async function issueAppSession(
   account: AccountRow,
   ssoEmail: string,
   request?: Request,
+  authMethod: "sso" | "password" = "sso",
 ) {
   const db = await getDb();
   const requestHeaders = await getRequestHeaders(request);
@@ -228,6 +251,7 @@ export async function issueAppSession(
     tokenHash,
     accountId: account.id,
     ssoEmail: normalizeEmail(ssoEmail),
+    authMethod,
     status: "active",
     createdAt,
     lastSeenAt: createdAt,

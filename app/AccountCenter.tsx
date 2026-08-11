@@ -128,6 +128,53 @@ export default function AccountCenter({
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [disableOpen, setDisableOpen] = useState(false);
   const [disableCredential, setDisableCredential] = useState("");
+  const [passwordCurrent, setPasswordCurrent] = useState("");
+  const [passwordNew, setPasswordNew] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordFeedback, setPasswordFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+
+  async function submitPasswordChange() {
+    if (passwordBusy) return;
+    if (!passwordCurrent || !passwordNew) {
+      setPasswordFeedback({ tone: "error", text: "请输入当前密码和新密码。" });
+      return;
+    }
+    if (passwordNew !== passwordConfirm) {
+      setPasswordFeedback({ tone: "error", text: "两次输入的新密码不一致。" });
+      return;
+    }
+    setPasswordBusy(true);
+    setPasswordFeedback(null);
+    try {
+      const response = await fetch("/api/app-session", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ action: "change_password", currentPassword: passwordCurrent, newPassword: passwordNew }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) {
+        const text = {
+          credential_not_found: "当前账号未启用密码登录，请联系管理员在“医院与权限”中分配登录账号。",
+          invalid_credentials: "当前密码不正确，请重新输入。",
+          weak_password: "新密码至少 8 位，且需同时包含字母和数字。",
+          password_unchanged: "新密码不能与当前密码相同。",
+          app_session_required: "会话已过期，请重新登录后再修改密码。",
+        }[result.error ?? ""] ?? "密码修改失败，请稍后重试。";
+        setPasswordFeedback({ tone: "error", text });
+        return;
+      }
+      setPasswordCurrent("");
+      setPasswordNew("");
+      setPasswordConfirm("");
+      setPasswordFeedback({ tone: "ok", text: "密码已修改，下次登录请使用新密码。" });
+      notify("登录密码已更新");
+    } catch {
+      setPasswordFeedback({ tone: "error", text: "网络异常，密码修改未完成。" });
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (tab !== "security" || !viewer.authenticated || sessionState !== "verified") return;
@@ -381,6 +428,22 @@ export default function AccountCenter({
               <p className="session-action-note">“锁定此设备”保留统一登录，仅暂停本浏览器访问；“退出统一登录”才会离开当前身份并进入统一身份页面。</p>
             </section>
           </div>
+
+          {viewer.authenticated ? (
+            <section className="panel mfa-security-panel password-change-panel">
+              <div className="panel-heading">
+                <div><h3>登录密码</h3><p>修改账号密码登录的密码；密码仅以加盐哈希存储。未分配登录账号的成员请联系医院管理员。</p></div>
+                <span className="status-pill">账号密码登录</span>
+              </div>
+              <form className="password-change-fields" onSubmit={(event) => { event.preventDefault(); void submitPasswordChange(); }}>
+                <label>当前密码<input type="password" autoComplete="current-password" maxLength={128} value={passwordCurrent} disabled={passwordBusy} onChange={(event) => { setPasswordCurrent(event.target.value); if (passwordFeedback) setPasswordFeedback(null); }} /></label>
+                <label>新密码<input type="password" autoComplete="new-password" maxLength={128} value={passwordNew} disabled={passwordBusy} onChange={(event) => { setPasswordNew(event.target.value); if (passwordFeedback) setPasswordFeedback(null); }} placeholder="至少 8 位，含字母和数字" /></label>
+                <label>确认新密码<input type="password" autoComplete="new-password" maxLength={128} value={passwordConfirm} disabled={passwordBusy} onChange={(event) => { setPasswordConfirm(event.target.value); if (passwordFeedback) setPasswordFeedback(null); }} /></label>
+                <button className="primary-button" type="submit" disabled={passwordBusy}>{passwordBusy ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />}修改密码</button>
+              </form>
+              {passwordFeedback ? <div className={passwordFeedback.tone === "ok" ? "password-change-ok" : "account-security-error"} role={passwordFeedback.tone === "ok" ? "status" : "alert"}>{passwordFeedback.text}</div> : null}
+            </section>
+          ) : null}
 
           <section className="panel mfa-security-panel">
             <div className="panel-heading">

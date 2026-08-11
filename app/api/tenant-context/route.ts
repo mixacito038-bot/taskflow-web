@@ -2,7 +2,9 @@ import { and, desc, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import { appSessionError, assertSameOrigin, requireAppSession } from "../../../db/account-security";
 import { getBootstrapAdminEmail, getDb } from "../../../db";
 import { resolveSsoAccount } from "../../../db/account-access";
+import { PasswordAuthError, passwordAuthError, upsertAccountCredential } from "../../../db/password-auth";
 import {
+  accountCredentials,
   accounts,
   auditPolicies,
   auditLogs,
@@ -109,9 +111,12 @@ async function accessConfigurationCatalog(manageHospitalIds: string[], auditHosp
       departmentScope: hospitalMemberships.departmentScope,
       status: hospitalMemberships.status,
       lastLogin: accounts.lastLoginAt,
+      username: accountCredentials.username,
+      mustChangePassword: accountCredentials.mustChangePassword,
     })
     .from(hospitalMemberships)
     .innerJoin(accounts, eq(hospitalMemberships.accountId, accounts.id))
+    .leftJoin(accountCredentials, eq(accountCredentials.accountId, accounts.id))
     .where(inArray(hospitalMemberships.hospitalId, manageHospitalIds)) : [];
   const memberCounts = memberRows.reduce<Record<string, number>>((result, member) => {
     result[member.roleId] = (result[member.roleId] ?? 0) + 1;
@@ -284,10 +289,12 @@ export async function POST(request: Request) {
     const actorContext = await currentAccountContext(user.email, user.displayName);
     if (!actorContext) return Response.json({ error: "account_not_provisioned" }, { status: 403 });
     const payload = await request.json() as {
-      action?: "invite_member" | "create_hospital" | "update_hospital" | "update_member_status" | "save_role" | "save_audit_policy";
+      action?: "invite_member" | "create_hospital" | "update_hospital" | "update_member_status" | "save_role" | "save_audit_policy" | "set_member_credential";
       hospitalId?: string;
       email?: string;
       displayName?: string;
+      username?: string;
+      password?: string;
       roleId?: string;
       departmentScope?: string[];
       code?: string;
@@ -431,6 +438,35 @@ export async function POST(request: Request) {
       return Response.json({ role: { id: roleId, hospitalId, code: roleCode, name: roleName, description: payload.roleDescription?.trim() || "", dataScope: dataScopeLabels[dataScope], builtin: false, permissions: permissionCodes } });
     }
 
+    if (payload.action === "set_member_credential") {
+      const hospitalId = payload.hospitalId?.trim() ?? "";
+      const email = payload.email?.trim().toLowerCase() ?? "";
+      const username = payload.username?.trim() ?? "";
+      const password = payload.password ?? "";
+      const actorMayManage = actorIsPlatformAdmin || actorContext.memberships.some((membership) => membership.hospitalId === hospitalId && membership.permissions.includes("member.manage"));
+      if (!actorMayManage) return Response.json({ error: "permission_denied" }, { status: 403 });
+      if (!hospitalId || !email || !username || !password) return Response.json({ error: "invalid_credential_request" }, { status: 400 });
+      const [targetAccount] = await db.select().from(accounts).where(eq(accounts.email, email)).limit(1);
+      if (!targetAccount) return Response.json({ error: "invalid_member" }, { status: 400 });
+      const [targetMembership] = await db.select().from(hospitalMemberships).where(and(eq(hospitalMemberships.accountId, targetAccount.id), eq(hospitalMemberships.hospitalId, hospitalId))).limit(1);
+      if (!targetMembership) return Response.json({ error: "membership_not_found" }, { status: 404 });
+      // 重置他人密码等同接管账号：目标角色权限超出操作者时按越权拒绝。
+      if (!actorIsPlatformAdmin && targetAccount.id !== actorContext.account.id) {
+        const actorMembership = actorContext.memberships.find((membership) => membership.hospitalId === hospitalId);
+        const actorPermissions = new Set(actorMembership?.permissions ?? []);
+        const targetRolePermissions = await db.select().from(rolePermissions).where(eq(rolePermissions.roleId, targetMembership.roleId));
+        if (targetRolePermissions.some((permission) => !actorPermissions.has(permission.permissionCode))) return Response.json({ error: "role_escalation_denied" }, { status: 403 });
+      }
+      const credential = await upsertAccountCredential({
+        accountId: targetAccount.id,
+        username,
+        password,
+        mustChangePassword: targetAccount.id !== actorContext.account.id,
+      });
+      await db.insert(auditLogs).values({ hospitalId, actorAccountId: actorContext.account.id, action: "set_member_credential", resourceType: "account", resourceId: targetAccount.id, result: "allowed", detail: `${email}→${credential.username}` });
+      return Response.json({ credential: { email, username: credential.username, mustChangePassword: targetAccount.id !== actorContext.account.id } });
+    }
+
     if (payload.action === "save_audit_policy") {
       const hospitalId = payload.hospitalId?.trim() ?? "";
       const actorMayManage = actorIsPlatformAdmin || actorContext.memberships.some((membership) => membership.hospitalId === hospitalId && membership.permissions.includes("member.manage"));
@@ -451,6 +487,7 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "unsupported_action" }, { status: 400 });
   } catch (error) {
+    if (error instanceof PasswordAuthError) return passwordAuthError(error);
     return routeError(error);
   }
 }

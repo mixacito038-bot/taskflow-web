@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 归档的旧 taskflow PWA，不参与平台代码检查。
+    "legacy/**",
   ]),
 ]);
 

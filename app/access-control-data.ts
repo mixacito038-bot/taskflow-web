@@ -41,6 +41,8 @@ export type Membership = {
   departmentScope: string[];
   status: "正常" | "待激活" | "已停用";
   lastLogin: string;
+  username?: string | null;
+  mustChangePassword?: boolean;
 };
 
 export const initialHospitals: Hospital[] = [
