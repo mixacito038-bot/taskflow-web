@@ -378,8 +378,10 @@ test("requires an application session and provides real TOTP account security", 
     assertSameOriginProtected(route, routeName);
   }
 
-  // The session boundary supports explicit creation, lock, unlock and revocation.
-  assert.match(appSessionRoute, /type AppSessionAction = "status" \| "start" \| "unlock" \| "lock" \| "revoke" \| "revoke_all"/);
+  // The session boundary supports explicit creation, lock, unlock, revocation and password login.
+  for (const sessionAction of ["status", "start", "unlock", "lock", "revoke", "revoke_all", "password_login", "change_password"]) {
+    assert.match(appSessionRoute, new RegExp(`"${sessionAction}"`), `AppSessionAction includes ${sessionAction}`);
+  }
   assert.match(appSessionRoute, /assertSameOrigin\(request\)/);
   assert.match(appSessionRoute, /if \(action === "start"\) return await startSession/);
   assert.match(appSessionRoute, /if \(action === "unlock"\) return await unlockSession/);

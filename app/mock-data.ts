@@ -42,12 +42,15 @@ export type Device = {
 
 export type ModuleSize = "small" | "medium" | "wide" | "full";
 
+export type ModuleHeight = "compact" | "standard" | "tall";
+
 export type DashboardModule = {
   id: string;
   name: string;
   description: string;
   visible: boolean;
   size: ModuleSize;
+  height?: ModuleHeight;
 };
 
 export type CostEntry = {

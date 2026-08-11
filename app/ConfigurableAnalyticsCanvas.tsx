@@ -12,12 +12,13 @@ export type ConfigurableAnalyticsCanvasProps = {
   data: AnalyticsPoint[];
   metricDefinitionVersion: number;
   visualizationVersion: number;
+  height?: number;
 };
 
 const chartLabels = { kpi: "KPI", table: "表格", bar: "柱状图", line: "折线图", pie: "饼图", scatter: "散点图", heatmap: "热力图" } as const;
 const colors = ["var(--primary)", "var(--green)", "var(--orange)", "var(--violet)", "var(--cyan)", "var(--rose)"];
 
-export default function ConfigurableAnalyticsCanvas({ metric, visualization, data, metricDefinitionVersion, visualizationVersion }: ConfigurableAnalyticsCanvasProps) {
+export default function ConfigurableAnalyticsCanvas({ metric, visualization, data, metricDefinitionVersion, visualizationVersion, height }: ConfigurableAnalyticsCanvasProps) {
   const sorted = useMemo(() => [...data]
     .sort((a, b) => visualization.sort === "asc" ? a.value - b.value : visualization.sort === "desc" ? b.value - a.value : 0)
     .slice(0, visualization.limit ?? data.length), [data, visualization.limit, visualization.sort]);
@@ -43,7 +44,7 @@ export default function ConfigurableAnalyticsCanvas({ metric, visualization, dat
 
   return <section className={styles.canvas}>
     <header><div><h3>{visualization.name}</h3><p>{chartLabels[visualization.chartType]} · {metric.name}</p></div><span>指标 v{metricDefinitionVersion} · 展示 v{visualizationVersion}</span></header>
-    <div className={`${styles.chart} ${visualization.chartType === "kpi" || visualization.chartType === "table" || visualization.chartType === "heatmap" ? styles.autoHeight : ""}`}>{content}</div>
+    <div className={`${styles.chart} ${visualization.chartType === "kpi" || visualization.chartType === "table" || visualization.chartType === "heatmap" ? styles.autoHeight : ""}`} style={typeof height === "number" ? { height } : undefined}>{content}</div>
   </section>;
 }
 

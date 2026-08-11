@@ -33,6 +33,7 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
+  Minus,
   Pencil,
   Plus,
   RotateCcw,
@@ -74,6 +75,7 @@ import {
   DashboardModule,
   Device,
   DeviceStatus,
+  ModuleHeight,
   ModuleSize,
   costFactors,
   dataSources as initialDataSources,
@@ -114,6 +116,7 @@ import {
 import CloudOperationsCenter from "./CloudOperationsCenter";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
+import { DATA_WORKBENCH_ENTRY_CLICKS } from "./data-workbench-model";
 import ConfigurableAnalyticsCanvas from "./ConfigurableAnalyticsCanvas";
 import type { MetricDefinition as ConfigurableMetric, VisualizationDefinition as ConfigurableVisualization } from "./analytics-semantic-layer";
 import { usePublishedDataset } from "./published-data-client";
@@ -140,6 +143,8 @@ type CloudConflict = CloudRevisionConflictResponse & {
 type ApplicationSessionState = "checking" | "required" | "locked" | "active" | "error" | "demo";
 type ApplicationSessionSnapshot = {
   ssoAuthenticated: boolean;
+  authMethod?: "sso" | "password" | null;
+  mustChangePassword?: boolean;
   provisioned: boolean;
   account?: {
     email: string;
@@ -211,6 +216,15 @@ const sizeLabels: Record<ModuleSize, string> = {
   wide: "2/3 宽",
   full: "整行",
 };
+
+const heightLabels: Record<ModuleHeight, string> = {
+  compact: "紧凑",
+  standard: "标准",
+  tall: "加高",
+};
+
+const moduleSizeOrder: ModuleSize[] = ["small", "medium", "wide", "full"];
+const moduleHeightOrder: ModuleHeight[] = ["compact", "standard", "tall"];
 
 function normalizeSeries(total: number, factors: number[]) {
   const sum = factors.reduce((result, value) => result + value, 0);
@@ -436,9 +450,14 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [costTab, setCostTab] = useState<CostTab>("labor");
   const [costDeviceId, setCostDeviceId] = useState(initialDevices[0].id);
   const [draggingModule, setDraggingModule] = useState<string | null>(null);
+  const [layoutEditing, setLayoutEditing] = useState(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState(initialDevices[0].id);
   const [notifications, setNotificationsLocal] = useDemoState<PlatformNotification[]>("equip-benefit-notifications-v1", initialNotifications, demoMode);
   const [dataWorkbenchUnlocked, setDataWorkbenchUnlocked] = useState(false);
+  const [workbenchEntryPromptOpen, setWorkbenchEntryPromptOpen] = useState(false);
+  const [workbenchEntryPassword, setWorkbenchEntryPassword] = useState("");
+  const [workbenchEntryError, setWorkbenchEntryError] = useState("");
+  const [workbenchEntryBusy, setWorkbenchEntryBusy] = useState(false);
   const brandClickCount = useRef(0);
   const brandClickStartedAt = useRef(0);
 
@@ -501,17 +520,52 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     } else {
       brandClickCount.current += 1;
     }
-    if (brandClickCount.current >= 6) {
+    if (brandClickCount.current >= DATA_WORKBENCH_ENTRY_CLICKS) {
       brandClickCount.current = 0;
       brandClickStartedAt.current = 0;
       if (!canOpenDataWorkbench) {
         notify("当前角色没有数据准备中心权限");
         return;
       }
+      if (dataWorkbenchUnlocked) {
+        setView("workbench");
+        setMobileNavOpen(false);
+        return;
+      }
+      setWorkbenchEntryPassword("");
+      setWorkbenchEntryError("");
+      setWorkbenchEntryPromptOpen(true);
+    }
+  }
+
+  async function submitWorkbenchEntryPassword() {
+    const password = workbenchEntryPassword.trim();
+    if (!password) {
+      setWorkbenchEntryError("请输入入口口令");
+      return;
+    }
+    setWorkbenchEntryBusy(true);
+    setWorkbenchEntryError("");
+    try {
+      const response = await fetch("/api/workbench-entry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (!response.ok) {
+        setWorkbenchEntryError("入口口令不正确");
+        return;
+      }
+      setWorkbenchEntryPromptOpen(false);
+      setWorkbenchEntryPassword("");
       setDataWorkbenchUnlocked(true);
       setView("workbench");
       setMobileNavOpen(false);
       notify("已进入数据准备模式");
+    } catch {
+      setWorkbenchEntryError("口令核验失败，请检查网络后重试");
+    } finally {
+      setWorkbenchEntryBusy(false);
     }
   }
 
@@ -1035,17 +1089,20 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setApplicationSessionBusy(true);
     setApplicationSessionError("");
     try {
-      const normalized = credential.trim().replace(/\s+/g, "");
+      const passwordSession = applicationSession?.authMethod === "password";
+      const normalized = passwordSession ? credential : credential.trim().replace(/\s+/g, "");
       const response = await fetch("/api/app-session", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           action: applicationSessionState === "locked" ? "unlock" : "start",
-          ...(normalized
-            ? /^\d{6}$/.test(normalized)
-              ? { totpCode: normalized }
-              : { recoveryCode: normalized }
-            : {}),
+          ...(passwordSession
+            ? { password: normalized }
+            : normalized
+              ? /^\d{6}$/.test(normalized)
+                ? { totpCode: normalized }
+                : { recoveryCode: normalized }
+              : {}),
         }),
       });
       const result = await response.json() as ApplicationSessionSnapshot & { error?: string; lockedUntil?: string };
@@ -1061,6 +1118,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
             : "验证失败次数过多，请稍后重试。",
           mfa_encryption_key_unavailable: "多因素验证服务尚未完成安全密钥配置，请联系平台管理员。",
           app_session_not_locked: "当前会话状态已变化，正在重新核验。",
+          password_required: "请输入账号密码后解锁。",
+          invalid_credentials: "账号密码不正确，请重新输入。",
+          credential_locked: result.lockedUntil
+            ? `密码错误次数过多，请在 ${new Date(result.lockedUntil).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 后重试。`
+            : "密码错误次数过多，请稍后重试。",
         }[result.error ?? ""] ?? "暂时无法进入系统，请稍后重试。";
         setApplicationSessionError(message);
         if (result.error === "app_session_not_locked") setApplicationSessionRetryKey((current) => current + 1);
@@ -1096,6 +1158,46 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     }
   }
 
+  async function passwordLogin(username: string, password: string, mfaCredential?: string) {
+    const normalizedMfa = mfaCredential?.trim().replace(/\s+/g, "") ?? "";
+    const response = await fetch("/api/app-session", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        action: "password_login",
+        username,
+        password,
+        ...(normalizedMfa
+          ? /^\d{6}$/.test(normalizedMfa)
+            ? { totpCode: normalizedMfa }
+            : { recoveryCode: normalizedMfa }
+          : {}),
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as { error?: string; lockedUntil?: string };
+    if (!response.ok) {
+      const code = result.error ?? "password_login_failed";
+      const message = {
+        credentials_required: "请输入登录账号和密码。",
+        invalid_credentials: "账号或密码不正确，请重新输入。",
+        account_disabled: "当前账号已停用，请联系平台管理员。",
+        credential_locked: result.lockedUntil
+          ? `密码错误次数过多，请在 ${new Date(result.lockedUntil).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 后重试。`
+          : "密码错误次数过多，请稍后重试。",
+        mfa_required: "该账号已启用多因素验证，请输入动态验证码。",
+        mfa_invalid: "验证码或恢复码不正确，请重新输入。",
+        mfa_code_replayed: "该动态验证码已经使用，请等待验证器生成下一组验证码。",
+        mfa_temporarily_locked: "验证失败次数过多，请稍后重试。",
+      }[code] ?? "登录失败，请稍后重试。";
+      return { ok: false as const, code, message };
+    }
+    // 服务端会话 Cookie 已写入；整页刷新让服务端身份解析接管后续流程。
+    window.location.reload();
+    return { ok: true as const };
+  }
+
+  const passwordAuthenticated = applicationSession?.authMethod === "password";
+
   async function confirmExitAction() {
     if (!exitConfirmMode || applicationSessionBusy || cloudSyncState === "saving") return;
     const mode = exitConfirmMode;
@@ -1106,7 +1208,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       } catch {
         // The trusted identity is still explicitly signed out if local revocation is unavailable.
       }
-      window.location.assign("/signout-with-chatgpt?return_to=%2F");
+      if (passwordAuthenticated) {
+        window.location.reload();
+      } else {
+        window.location.assign("/signout-with-chatgpt?return_to=%2F");
+      }
       return;
     }
     try {
@@ -1122,7 +1228,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     } catch {
       // Identity switching remains available if the already-expired app session cannot be revoked.
     }
-    window.location.assign("/signout-with-chatgpt?return_to=%2F");
+    if (passwordAuthenticated) {
+      window.location.reload();
+    } else {
+      window.location.assign("/signout-with-chatgpt?return_to=%2F");
+    }
   }
 
   useEffect(() => {
@@ -1347,6 +1457,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setView(nextView);
     setHeaderPanel(null);
     setMobileNavOpen(false);
+    setLayoutEditing(false);
+    setDraggingModule(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -1601,6 +1713,34 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setDraggingModule(null);
   }
 
+  function stepModuleSize(id: string, direction: -1 | 1) {
+    setModules((current) => current.map((module) => {
+      if (module.id !== id) return module;
+      const nextIndex = Math.min(moduleSizeOrder.length - 1, Math.max(0, moduleSizeOrder.indexOf(module.size) + direction));
+      return { ...module, size: moduleSizeOrder[nextIndex] };
+    }));
+  }
+
+  function stepModuleHeight(id: string, direction: -1 | 1) {
+    setModules((current) => current.map((module) => {
+      if (module.id !== id) return module;
+      const nextIndex = Math.min(moduleHeightOrder.length - 1, Math.max(0, moduleHeightOrder.indexOf(module.height ?? "standard") + direction));
+      return { ...module, height: moduleHeightOrder[nextIndex] };
+    }));
+  }
+
+  function toggleLayoutEditing() {
+    if (layoutEditing) {
+      setLayoutEditing(false);
+      setDraggingModule(null);
+      setModules((current) => [...current]);
+      notify("驾驶舱布局已保存，并同步到当前医院");
+      return;
+    }
+    setLayoutEditing(true);
+    notify("已进入布局编辑：拖动模块调整位置，用模块角标调整宽度和高度");
+  }
+
   const navItems: Array<{ id: View; label: string; icon: React.ReactNode; group: "show" | "manage"; permissions: string[] }> = [
     { id: "cockpit", label: "效益驾驶舱", icon: <LayoutDashboard size={18} />, group: "show", permissions: ["dashboard.view"] },
     { id: "analysis", label: "采集与分析", icon: <Activity size={18} />, group: "show", permissions: ["dashboard.view", "source.manage"] },
@@ -1821,7 +1961,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   }[view];
 
   if (!viewer.authenticated && !demoEntered) {
-    return <LoginScreen onEnterDemo={() => setDemoEntered(true)} />;
+    return <LoginScreen onEnterDemo={() => setDemoEntered(true)} onPasswordLogin={passwordLogin} />;
   }
 
   if (viewer.authenticated && applicationSessionState === "checking") {
@@ -1834,6 +1974,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         viewer={viewer}
         mode={applicationSessionState === "locked" ? "locked" : "session-required"}
         mfaEnabled={Boolean(applicationSession?.mfa?.enabled)}
+        unlockWithPassword={passwordAuthenticated && applicationSessionState === "locked"}
         busy={applicationSessionBusy}
         error={applicationSessionError}
         onContinue={continueApplicationSession}
@@ -1855,7 +1996,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           <h1>账号尚未配置医院权限</h1>
           <strong>{viewer.email}</strong>
           <small>请联系平台管理员，将该账号加入指定医院并分配医院内角色。仅完成站点分享、但没有医院成员关系时，仍然不能访问业务数据。</small>
-          <div className="access-boundary-actions"><button className="secondary-button" onClick={() => { setSessionState("loading"); setTenantRetryKey((current) => current + 1); }}>重新核验</button><button className="danger-button" onClick={() => void changeApplicationSession("revoke").catch(() => undefined).finally(() => window.location.assign("/signout-with-chatgpt?return_to=%2F"))}>退出并切换账号</button></div>
+          <div className="access-boundary-actions"><button className="secondary-button" onClick={() => { setSessionState("loading"); setTenantRetryKey((current) => current + 1); }}>重新核验</button><button className="danger-button" onClick={() => void changeApplicationSession("revoke").catch(() => undefined).finally(() => { if (passwordAuthenticated) window.location.reload(); else window.location.assign("/signout-with-chatgpt?return_to=%2F"); })}>退出并切换账号</button></div>
         </div>
       </main>
     );
@@ -1889,7 +2030,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     );
   }
 
-  if (view === "workbench" && canOpenDataWorkbench) {
+  if (view === "workbench" && canOpenDataWorkbench && dataWorkbenchUnlocked) {
     return (
       <DataWorkbench
         hospitalId={effectiveHospitalId}
@@ -2031,6 +2172,12 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                   <p>统一观察经济效益、使用效率、临床质量、患者体验和设备保障，并按角色呈现管理重点。</p>
                 </div>
                 <div className="heading-actions">
+                  {hasPermission("member.manage") && (sessionState !== "verified" || publishedData.publication) && visibleModules.length ? (
+                    <button className={layoutEditing ? "primary-button" : "secondary-button"} onClick={toggleLayoutEditing}>
+                      {layoutEditing ? <Check size={17} /> : <Pencil size={17} />}
+                      {layoutEditing ? "完成布局" : "编辑布局"}
+                    </button>
+                  ) : null}
                   {hasPermission("member.manage") ? <button className="secondary-button" onClick={() => navigate("layout")}><Settings2 size={17} />配置驾驶舱</button> : null}
                   {hasPermission("report.export") ? <button className="primary-button" onClick={() => navigate("report")}><FileText size={17} />生成效益报告</button> : null}
                 </div>
@@ -2063,8 +2210,35 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                 {perspectiveItems[perspective].map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong><small>{item.note}</small></div>)}
               </section> : null}
               {sessionState !== "verified" || publishedData.publication ? <div className="dashboard-grid">
-                {visibleModules.map((module) => <div className={`module module-${module.size}`} key={module.id}>{renderModule(module)}</div>)}
-              </div> : <div className="empty-dashboard"><Database size={30} /><h3>暂无已发布数据</h3><p>正式模式保持空态；完成文件映射、清洗、复核与发布后自动刷新。</p>{canOpenDataWorkbench ? <button className="primary-button" onClick={() => navigate("workbench")}>打开数据准备中心</button> : null}</div>}
+                {visibleModules.map((module) => (
+                  <div
+                    className={`module module-${module.size} module-h-${module.height ?? "standard"}${layoutEditing ? " module-editing" : ""}${layoutEditing && draggingModule === module.id ? " dragging" : ""}`}
+                    key={module.id}
+                    draggable={layoutEditing}
+                    onDragStart={layoutEditing ? () => setDraggingModule(module.id) : undefined}
+                    onDragEnd={layoutEditing ? () => setDraggingModule(null) : undefined}
+                    onDragOver={layoutEditing ? (event) => event.preventDefault() : undefined}
+                    onDrop={layoutEditing ? () => dropModule(module.id) : undefined}
+                  >
+                    {layoutEditing ? (
+                      <div className="module-layout-controls">
+                        <span className="module-drag-chip" title="按住拖动，放到目标模块上调整顺序"><GripVertical size={14} />{module.name}</span>
+                        <span className="module-control-group" role="group" aria-label={`${module.name}宽度`}>
+                          <button type="button" aria-label="减小宽度" disabled={module.size === moduleSizeOrder[0]} onClick={() => stepModuleSize(module.id, -1)}><Minus size={13} /></button>
+                          <b>宽 {sizeLabels[module.size]}</b>
+                          <button type="button" aria-label="增加宽度" disabled={module.size === moduleSizeOrder[moduleSizeOrder.length - 1]} onClick={() => stepModuleSize(module.id, 1)}><Plus size={13} /></button>
+                        </span>
+                        <span className="module-control-group" role="group" aria-label={`${module.name}高度`}>
+                          <button type="button" aria-label="降低高度" disabled={(module.height ?? "standard") === moduleHeightOrder[0]} onClick={() => stepModuleHeight(module.id, -1)}><Minus size={13} /></button>
+                          <b>高 {heightLabels[module.height ?? "standard"]}</b>
+                          <button type="button" aria-label="增加高度" disabled={(module.height ?? "standard") === moduleHeightOrder[moduleHeightOrder.length - 1]} onClick={() => stepModuleHeight(module.id, 1)}><Plus size={13} /></button>
+                        </span>
+                      </div>
+                    ) : null}
+                    {renderModule(module)}
+                  </div>
+                ))}
+              </div> : <div className="empty-dashboard"><Database size={30} /><h3>暂无已发布数据</h3><p>正式模式保持空态；完成文件映射、清洗、复核与发布后自动刷新。</p>{canOpenDataWorkbench && dataWorkbenchUnlocked ? <button className="primary-button" onClick={() => navigate("workbench")}>打开数据准备中心</button> : null}</div>}
               {configuredPublishedCanvases.length ? <div className="dashboard-grid">{configuredPublishedCanvases.map((item) => <div className="module module-medium" key={item.visualization.code}><ConfigurableAnalyticsCanvas metric={item.metric} visualization={item.visualization} data={[...item.data]} metricDefinitionVersion={item.metric.version ?? 1} visualizationVersion={item.visualization.version} /></div>)}</div> : null}
               {!visibleModules.length ? <div className="empty-dashboard"><EyeOff size={30} /><h3>驾驶舱暂未启用模块</h3><p>前往管理后台选择需要展示的内容。</p><button className="primary-button" onClick={() => navigate("layout")}>立即配置</button></div> : null}
             </>
@@ -2276,6 +2450,40 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           onClose={() => setEditorOpen(false)}
           onSave={saveDevice}
         />
+      ) : null}
+
+      {workbenchEntryPromptOpen ? (
+        <div className="modal-backdrop confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="workbench-entry-title">
+          <section className="confirmation-dialog">
+            <span className="confirmation-icon"><LockKeyhole size={22} /></span>
+            <div>
+              <small>受控入口</small>
+              <h2 id="workbench-entry-title">进入数据准备中心</h2>
+              <p>请输入入口口令。口令通过后仍会在服务端校验医院成员关系与数据准备权限。</p>
+              <form
+                className="workbench-entry-form"
+                onSubmit={(event) => { event.preventDefault(); void submitWorkbenchEntryPassword(); }}
+              >
+                <input
+                  type="password"
+                  value={workbenchEntryPassword}
+                  onChange={(event) => { setWorkbenchEntryPassword(event.target.value); if (workbenchEntryError) setWorkbenchEntryError(""); }}
+                  placeholder="入口口令"
+                  aria-label="数据准备中心入口口令"
+                  autoComplete="off"
+                  maxLength={128}
+                  disabled={workbenchEntryBusy}
+                  autoFocus
+                />
+              </form>
+              {workbenchEntryError ? <p className="workbench-entry-error" role="alert">{workbenchEntryError}</p> : null}
+            </div>
+            <footer>
+              <button className="secondary-button" disabled={workbenchEntryBusy} onClick={() => { setWorkbenchEntryPromptOpen(false); setWorkbenchEntryPassword(""); setWorkbenchEntryError(""); }}>取消</button>
+              <button className="primary-button" disabled={workbenchEntryBusy} onClick={() => void submitWorkbenchEntryPassword()}>{workbenchEntryBusy ? <LoaderCircle className="spin" size={16} /> : <LockKeyhole size={16} />}{workbenchEntryBusy ? "正在核验" : "确认进入"}</button>
+            </footer>
+          </section>
+        </div>
       ) : null}
 
       {resetConfirmOpen ? (
@@ -2502,7 +2710,7 @@ function LayoutConfiguration({
   return (
     <>
       <div className="page-heading">
-        <div><div className="eyebrow"><SlidersHorizontal size={15} />所见即所得配置</div><h1>驾驶舱配置</h1><p>选择展示模块、调整顺序和宽度，并设置驾驶舱视觉主题。配置会保存到当前浏览器。</p></div>
+        <div><div className="eyebrow"><SlidersHorizontal size={15} />所见即所得配置</div><h1>驾驶舱配置</h1><p>选择展示模块、调整顺序、宽度和高度，并设置驾驶舱视觉主题；也可以在驾驶舱页面点击“编辑布局”直接拖拽调整，配置按当前医院保存。</p></div>
         <div className="heading-actions"><button className="secondary-button" onClick={() => setModules(initialModules)}><RotateCcw size={17} />恢复默认布局</button><button className="primary-button" onClick={openCockpit}><Eye size={17} />查看驾驶舱</button></div>
       </div>
       <div className="config-grid">
@@ -2525,7 +2733,7 @@ function LayoutConfiguration({
           <div className="preview-caption"><i />配置保存后，驾驶舱按此顺序和宽度展示</div>
         </Panel>
       </div>
-      <Panel title="模块编排" description="拖动卡片调整顺序，也可以使用上下移动按钮" action={<span className="chart-note">支持 1/3、1/2、2/3 和整行宽度</span>}>
+      <Panel title="模块编排" description="拖动卡片调整顺序，也可以使用上下移动按钮；宽度和高度会同步到驾驶舱" action={<span className="chart-note">宽度 1/3–整行 · 高度 紧凑/标准/加高</span>}>
         <div className="module-config-list">
           {modules.map((module, index) => (
             <div
@@ -2541,6 +2749,7 @@ function LayoutConfiguration({
               <span className="module-index">{String(index + 1).padStart(2, "0")}</span>
               <span className="module-copy"><strong>{module.name}</strong><small>{module.description}</small></span>
               <label className="size-field"><span>宽度</span><select value={module.size} onChange={(event) => setModules((current) => current.map((item) => item.id === module.id ? { ...item, size: event.target.value as ModuleSize } : item))}>{Object.entries(sizeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+              <label className="size-field"><span>高度</span><select value={module.height ?? "standard"} onChange={(event) => setModules((current) => current.map((item) => item.id === module.id ? { ...item, height: event.target.value as ModuleHeight } : item))}>{Object.entries(heightLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
               <div className="order-actions"><button className="icon-button" aria-label="上移" disabled={index === 0} onClick={() => moveModule(module.id, -1)}><ArrowUp size={15} /></button><button className="icon-button" aria-label="下移" disabled={index === modules.length - 1} onClick={() => moveModule(module.id, 1)}><ArrowDown size={15} /></button></div>
               <button className={`visibility-button ${module.visible ? "active" : ""}`} onClick={() => setModules((current) => current.map((item) => item.id === module.id ? { ...item, visible: !item.visible } : item))}>{module.visible ? <Eye size={16} /> : <EyeOff size={16} />}{module.visible ? "已显示" : "已隐藏"}</button>
             </div>
