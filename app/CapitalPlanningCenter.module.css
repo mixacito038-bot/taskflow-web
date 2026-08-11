@@ -1,0 +1,39 @@
+.root { display: grid; gap: 18px; }
+.heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; }
+.heading > div:first-child > span, .kicker { display: flex; align-items: center; gap: 6px; color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.heading h1 { margin: 6px 0; font-size: 26px; }
+.heading p, .panelTitle p, .detail p { margin: 0; color: var(--muted); line-height: 1.55; }
+.guardrail { display: flex; align-items: center; gap: 8px; padding: 10px 12px; color: var(--green); background: var(--green-soft); border: 1px solid color-mix(in srgb, var(--green) 22%, var(--border)); border-radius: 10px; font-size: 12px; }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.metrics article { display: flex; gap: 12px; padding: 17px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow); }
+.metrics svg { color: var(--primary); }
+.metrics article div { display: grid; gap: 4px; }
+.metrics span, .metrics small { color: var(--muted); font-size: 12px; }
+.metrics strong { font-size: 22px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .7fr); gap: 14px; }
+.tablePanel, .detail, .scenarios { padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow); }
+.panelTitle h2, .detail h2 { margin: 0 0 5px; font-size: 16px; }
+.tableWrap { margin-top: 14px; overflow: auto; }
+.tableWrap table { width: 100%; border-collapse: collapse; }
+.tableWrap th { color: var(--muted); font-size: 12px; font-weight: 600; text-align: left; background: var(--surface-soft); }
+.tableWrap th, .tableWrap td { padding: 11px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tableWrap tbody tr { cursor: pointer; }
+.tableWrap tbody tr:hover, .selected { background: var(--primary-soft); }
+.tableWrap td:first-child, .tableWrap td:nth-child(2) { display: table-cell; }
+.tableWrap td small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.band { padding: 4px 7px; border-radius: 7px; font-size: 11px; background: var(--surface-soft); }
+.band必须替换 { color: var(--red); background: var(--red-soft); }
+.band计划替换, .band可延寿 { color: var(--orange); background: var(--orange-soft); }
+.band共享调拨 { color: var(--violet); background: var(--violet-soft); }
+.detail { display: flex; flex-direction: column; gap: 14px; }
+.score { display: flex; align-items: baseline; gap: 4px; padding: 14px; border-radius: 11px; background: var(--surface-soft); }
+.score strong { color: var(--primary); font-size: 34px; }.score span { color: var(--muted); }
+.detail ul { margin: 0; padding-left: 19px; color: var(--text-soft); line-height: 1.75; }
+.detail dl, .scenarioGrid dl { margin: 0; display: grid; gap: 8px; }
+.detail dl div, .scenarioGrid dl div { display: flex; justify-content: space-between; gap: 12px; }.detail dt, .scenarioGrid dt { color: var(--muted); }.detail dd, .scenarioGrid dd { margin: 0; font-weight: 650; }
+.detail button { margin-top: auto; min-height: 38px; border: 0; border-radius: 9px; color: #fff; background: var(--primary); display: flex; align-items: center; justify-content: center; gap: 7px; }
+.scenarioGrid { margin-top: 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.scenarioGrid article { padding: 15px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-soft); display: grid; gap: 7px; }
+.scenarioGrid article > span { color: var(--primary); font-weight: 700; }.scenarioGrid article > strong { font-size: 22px; }.scenarioGrid article > small, .scenarioGrid article > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.empty { padding: 24px; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+@media (max-width: 980px) { .layout { grid-template-columns: 1fr; } .metrics, .scenarioGrid { grid-template-columns: 1fr; } .heading { align-items: flex-start; flex-direction: column; } }

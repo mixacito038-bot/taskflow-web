@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Data Entry - Labor &amp; Consumables</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#321200",
+                        "on-surface": "#191c22",
+                        "surface-container-highest": "#e1e2eb",
+                        "on-secondary-fixed": "#051b39",
+                        "surface": "#f9f9ff",
+                        "surface-container-low": "#f2f3fc",
+                        "secondary-container": "#c4d8ff",
+                        "secondary": "#4c5f80",
+                        "primary": "#0052ac",
+                        "surface-bright": "#f9f9ff",
+                        "inverse-on-surface": "#eff0f9",
+                        "on-surface-variant": "#424753",
+                        "on-secondary-container": "#4b5e7f",
+                        "on-primary-fixed": "#001a40",
+                        "outline": "#727784",
+                        "primary-container": "#246bce",
+                        "outline-variant": "#c2c6d5",
+                        "on-tertiary-fixed-variant": "#753400",
+                        "tertiary-fixed-dim": "#ffb68b",
+                        "surface-tint": "#005bbe",
+                        "on-secondary-fixed-variant": "#344767",
+                        "surface-variant": "#e1e2eb",
+                        "primary-fixed": "#d7e2ff",
+                        "inverse-primary": "#acc7ff",
+                        "tertiary-fixed": "#ffdbc8",
+                        "inverse-surface": "#2e3037",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#acc7ff",
+                        "tertiary": "#8a3f00",
+                        "secondary-fixed": "#d6e3ff",
+                        "surface-dim": "#d8d9e2",
+                        "surface-container-lowest": "#ffffff",
+                        "background": "#f9f9ff",
+                        "on-primary-fixed-variant": "#004491",
+                        "on-tertiary-container": "#ffede4",
+                        "on-error-container": "#93000a",
+                        "on-primary-container": "#ecf0ff",
+                        "error-container": "#ffdad6",
+                        "error": "#ba1a1a",
+                        "surface-container-high": "#e7e8f0",
+                        "tertiary-container": "#b05200",
+                        "secondary-fixed-dim": "#b4c7ed",
+                        "surface-container": "#ecedf6",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "on-background": "#191c22"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "stack-compact": "8px",
+                        "table-cell-padding": "12px 16px",
+                        "gutter": "16px",
+                        "stack-loose": "24px",
+                        "container-margin": "24px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "data-mono": ["14px", {"lineHeight": "20px", "fontWeight": "500"}],
+                        "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "display-lg": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for tight data areas */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c2c6d5;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #727784;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md min-h-screen flex flex-col md:flex-row overflow-hidden">
+<!-- Mobile Top App Bar (Only visible on md:hidden) -->
+<header class="md:hidden bg-surface-container-lowest dark:bg-surface border-b border-outline-variant dark:border-outline flex justify-between items-center w-full px-gutter h-14 z-50 flex-shrink-0">
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed">衡效智舱</div>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<img alt="Administrator Profile" class="w-8 h-8 rounded-full border border-outline-variant object-cover ml-1" data-alt="A small circular avatar showing a generic, modern hospital building in a stylized, corporate blue color palette, suitable for a medical software interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAi_neM2C_E2f2yZDKAbGUCHyMriozYDmn4BaWpF3lE-KkjS_IKzLwAMXMnhs9yDnJDaBQXLO-CZev0LAYQY_KQY90Ql_98x8xIdEqxXfVDXNyKSduqyNPbdhQzzHTBxewvun-LMYP2LB8qR3_QR1WAKTYv1hIps7aiya67TzlxGAemDAiWbZRGxokCPpMfQjVL2bvveRA8-DNd3Zb4c6gSIJK3WW8cB2A4BHVtGj4AGVR8MfvMy-l7"/>
+</div>
+</header>
+<!-- Desktop Side Nav Bar (Hidden on md:hidden) -->
+<nav class="hidden md:flex bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant dark:border-outline flex-col h-full py-stack-loose overflow-y-auto flex-shrink-0 docked left-0 h-screen w-64 z-40">
+<div class="px-container-margin mb-8 flex items-center gap-3">
+<div class="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center text-on-primary-container shrink-0">
+<span class="material-symbols-outlined fill text-[24px]">local_hospital</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm font-black text-on-surface dark:text-inverse-on-surface leading-tight">Hengxiao Zhicang</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-outline-variant">Medical Analysis Platform</span>
+</div>
+</div>
+<div class="flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-caps text-label-caps">Overview</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-label-caps text-label-caps">Equipment Benefit</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">speed</span>
+<span class="font-label-caps text-label-caps">Efficiency</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings_input_component</span>
+<span class="font-label-caps text-label-caps">Machine Details</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">inventory</span>
+<span class="font-label-caps text-label-caps">Equipment Ledger</span>
+</a>
+<!-- Active State -->
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary font-semibold duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined fill">group</span>
+<span class="font-label-caps text-label-caps">Labor</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">biotech</span>
+<span class="font-label-caps text-label-caps">Consumables</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">account_balance</span>
+<span class="font-label-caps text-label-caps">Fixed Costs</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="font-label-caps text-label-caps">Audit &amp; Closing</span>
+</a>
+<div class="my-2 border-t border-outline-variant dark:border-outline mx-3"></div>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">rule</span>
+<span class="font-label-caps text-label-caps">Rules</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings_suggest</span>
+<span class="font-label-caps text-label-caps">Dashboard Designer</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">database</span>
+<span class="font-label-caps text-label-caps">Data Sources</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+</div>
+</nav>
+<!-- Main Canvas -->
+<main class="flex-1 flex flex-col h-full md:h-screen overflow-hidden bg-background relative">
+<!-- Top App Bar Desktop (Only visible md+) -->
+<header class="hidden md:flex bg-surface-container-lowest dark:bg-surface border-b border-outline-variant dark:border-outline justify-between items-center w-full px-gutter h-14 z-30 flex-shrink-0">
+<div class="flex items-center gap-4 text-on-surface-variant">
+<!-- Search could go here -->
+<span class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed">数据填报 (Data Entry)</span>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 rounded-full">
+<span class="material-symbols-outlined">calendar_month</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 rounded-full">
+<span class="material-symbols-outlined">local_hospital</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 rounded-full">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="w-px h-6 bg-outline-variant mx-2"></div>
+<img class="w-8 h-8 rounded-full border border-outline-variant object-cover cursor-pointer" data-alt="Administrator Profile: A professional headshot of a person in a corporate setting, soft lighting, sharp focus, signifying trust and authority in a medical administration context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDFGA4Av_e_RUr2A6yHs1lNa-7JRnMGNyH6FPnpXU6urzLddLbkLyYAQfbN1WYMPfa6V0ZHU_0S5YXPkXN6L-JnSF7-SgBCmvuiMoULqC-5-GafXXHHVfhfAcypyzvUerCdIKNDjfcsgPlRQC5DUiONjmLaKjeWQC3Qyl0e9NdPqzL0Tu1IicDu92ZCbjE0ZZPVyzZq7dkADEg-VDoWi1kXqVBjTKB7GkTAwAYTjYWtC1wzc7WY2SU1"/>
+</div>
+</header>
+<!-- Main Layout Split -->
+<div class="flex-1 flex overflow-hidden">
+<!-- Left Task/Period List -->
+<aside class="w-64 bg-surface-container-lowest border-r border-outline-variant flex-shrink-0 flex flex-col hidden lg:flex">
+<div class="p-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Reporting Periods</span>
+<button class="text-primary hover:bg-surface-container-highest p-1 rounded transition-colors">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+</button>
+</div>
+<div class="flex-1 overflow-y-auto p-2 space-y-1">
+<!-- List Item Active -->
+<div class="p-3 rounded-lg bg-primary-fixed text-on-primary-fixed-variant cursor-pointer border border-primary-fixed-dim relative group">
+<div class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-r-full"></div>
+<div class="flex justify-between items-center mb-1 pl-2">
+<span class="font-body-md text-body-md font-medium">June 2026</span>
+<span class="material-symbols-outlined text-[16px] text-primary">edit_document</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-secondary-container pl-2">Due: Jul 5, 2026</div>
+<div class="mt-2 flex gap-1 pl-2">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider bg-surface-container-lowest text-on-surface border border-outline-variant">Draft</span>
+</div>
+</div>
+<!-- List Item Inactive -->
+<div class="p-3 rounded-lg hover:bg-surface-container-low text-on-surface cursor-pointer border border-transparent transition-colors">
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-md text-body-md font-medium">May 2026</span>
+<span class="material-symbols-outlined text-[16px] text-surface-variant group-hover:text-outline">check_circle</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Due: Jun 5, 2026</div>
+<div class="mt-2 flex gap-1">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider bg-surface-variant text-on-surface-variant">Submitted</span>
+</div>
+</div>
+<!-- List Item Inactive -->
+<div class="p-3 rounded-lg hover:bg-surface-container-low text-on-surface cursor-pointer border border-transparent transition-colors">
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-md text-body-md font-medium">April 2026</span>
+<span class="material-symbols-outlined text-[16px] text-surface-variant group-hover:text-outline">check_circle</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Due: May 5, 2026</div>
+<div class="mt-2 flex gap-1">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider bg-surface-variant text-on-surface-variant">Closed</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Data Entry Area -->
+<div class="flex-1 flex flex-col overflow-hidden bg-background">
+<!-- Entry Header Context -->
+<div class="bg-surface-container-lowest p-6 border-b border-outline-variant shrink-0">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div>
+<div class="flex items-center gap-2 mb-2">
+<span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-secondary-container text-on-secondary-container">Draft Status</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">history</span> Last auto-saved: 2 mins ago
+                                </span>
+</div>
+<h1 class="font-display-lg text-display-lg text-on-surface flex items-center gap-3">
+                                June 2026 <span class="text-outline-variant font-light">/</span>
+<span class="text-primary-container">3.0T MRI</span>
+</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Data entry for labor utilization and direct consumable expenses for this period.</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="h-[40px] px-4 rounded-lg bg-surface border border-outline-variant text-on-surface font-body-md text-body-md font-medium hover:bg-surface-container-low flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+                                Copy Last Month
+                            </button>
+<button class="h-[40px] px-4 rounded-lg bg-surface border border-outline-variant text-on-surface font-body-md text-body-md font-medium hover:bg-surface-container-low transition-colors">
+                                Save Draft
+                            </button>
+<button class="h-[40px] px-6 rounded-lg bg-primary-container text-on-primary font-body-md text-body-md font-medium hover:bg-primary transition-colors flex items-center gap-2 shadow-sm">
+                                Submit for Review
+                                <span class="material-symbols-outlined text-[18px]">send</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Scrollable Forms Canvas -->
+<div class="flex-1 overflow-y-auto p-4 md:p-6 lg:px-8 space-y-8">
+<!-- Alert/Validation Example -->
+<div class="bg-error-container border border-error/20 rounded-xl p-4 flex gap-3 items-start shadow-sm">
+<span class="material-symbols-outlined text-error mt-0.5">warning</span>
+<div>
+<h4 class="font-body-md text-body-md font-semibold text-on-error-container">Anomalous Data Detected</h4>
+<p class="font-body-sm text-body-sm text-on-error-container/80 mt-1">The "Support Hours" for Senior Technician exceeds the typical monthly average by 45%. Please verify before submission.</p>
+</div>
+</div>
+<!-- Section 1: Labor Cost Entry -->
+<section class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
+<div class="p-5 border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-tertiary-container text-on-tertiary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">group</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Labor Cost Entry</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Record direct and indirect labor hours associated with equipment operation.</p>
+</div>
+</div>
+<button class="text-primary font-body-sm text-body-sm font-medium hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">add</span> Add Row
+                            </button>
+</div>
+<div class="p-5 overflow-x-auto">
+<!-- High Density Form/Table Hybrid -->
+<table class="w-full text-left border-collapse min-w-[800px]">
+<thead>
+<tr>
+<th class="pb-3 px-2 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant font-semibold w-1/4">Job Type</th>
+<th class="pb-3 px-2 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant font-semibold w-[12%]">Headcount</th>
+<th class="pb-3 px-2 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant font-semibold w-[15%]">Direct Hrs</th>
+<th class="pb-3 px-2 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant font-semibold w-[15%]">Support Hrs</th>
+<th class="pb-3 px-2 font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant font-semibold w-[20%] text-right">Calculated Cost (¥)</th>
+<th class="pb-3 px-2 border-b border-outline-variant w-[5%]"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-high">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-lowest/50 group h-12">
+<td class="p-2">
+<select class="w-full h-8 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface">
+<option>Senior MRI Technician</option>
+<option>Junior MRI Technician</option>
+<option>Attending Radiologist</option>
+<option>Support Staff</option>
+</select>
+</td>
+<td class="p-2">
+<input class="w-full h-8 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono" type="number" value="2"/>
+</td>
+<td class="p-2">
+<input class="w-full h-8 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono" type="number" value="320"/>
+</td>
+<td class="p-2">
+<div class="relative">
+<input class="w-full h-8 text-sm border-error rounded bg-error-container/10 focus:ring-error focus:border-error text-on-surface font-data-mono pr-8" type="number" value="85"/>
+<span class="material-symbols-outlined text-[16px] text-error absolute right-2 top-2">warning</span>
+</div>
+</td>
+<td class="p-2 text-right">
+<div class="h-8 flex items-center justify-end px-2 bg-surface-container-low rounded border border-transparent font-data-mono text-on-surface">
+                                                48,600.00
+                                            </div>
+</td>
+<td class="p-2 text-center">
+<button class="text-outline-variant hover:text-error transition-colors opacity-0 group-hover:opacity-100">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-lowest/50 group h-12">
+<td class="p-2">
+<select class="w-full h-8 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface">
+<option>Junior MRI Technician</option>
+<option selected="">Attending Radiologist</option>
+<option>Support Staff</option>
+</select>
+</td>
+<td class="p-2">
+<input class="w-full h-8 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono" type="number" value="1"/>
+</td>
+<td class="p-2">
+<input class="w-full h-8 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono" type="number" value="160"/>
+</td>
+<td class="p-2">
+<input class="w-full h-8 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono" type="number" value="20"/>
+</td>
+<td class="p-2 text-right">
+<div class="h-8 flex items-center justify-end px-2 bg-surface-container-low rounded border border-transparent font-data-mono text-on-surface">
+                                                36,000.00
+                                            </div>
+</td>
+<td class="p-2 text-center">
+<button class="text-outline-variant hover:text-error transition-colors opacity-0 group-hover:opacity-100">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</td>
+</tr>
+<!-- Empty Row for new entry -->
+<tr class="hover:bg-surface-container-lowest/50 group h-12 opacity-60">
+<td class="p-2">
+<select class="w-full h-8 text-sm border-outline-variant border-dashed rounded bg-surface text-on-surface-variant">
+<option disabled="" selected="" value="">Select Job Type...</option>
+<option>Junior MRI Technician</option>
+<option>Support Staff</option>
+</select>
+</td>
+<td class="p-2"><input class="w-full h-8 text-sm border-outline-variant border-dashed rounded bg-surface font-data-mono text-center" placeholder="-" type="number"/></td>
+<td class="p-2"><input class="w-full h-8 text-sm border-outline-variant border-dashed rounded bg-surface font-data-mono text-center" placeholder="-" type="number"/></td>
+<td class="p-2"><input class="w-full h-8 text-sm border-outline-variant border-dashed rounded bg-surface font-data-mono text-center" placeholder="-" type="number"/></td>
+<td class="p-2 text-right"><div class="h-8 flex items-center justify-end px-2 text-outline-variant font-data-mono">-</div></td>
+<td class="p-2"></td>
+</tr>
+</tbody>
+<tfoot>
+<tr class="bg-surface-container-low border-t border-outline-variant">
+<td class="p-3 text-right font-label-caps text-label-caps text-on-surface-variant" colspan="4">Total Labor Cost</td>
+<td class="p-3 text-right font-data-mono text-body-lg font-bold text-on-surface">¥ 84,600.00</td>
+<td></td>
+</tr>
+</tfoot>
+</table>
+</div>
+</section>
+<!-- Section 2: Consumables Entry -->
+<section class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden mb-12">
+<div class="p-5 border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-secondary-container text-on-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">biotech</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Consumables Entry</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Direct materials and contrast agents used during the period.</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="h-8 px-3 rounded bg-surface border border-outline-variant text-on-surface text-sm font-medium hover:bg-surface-container-low flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">upload_file</span> Import
+                                </button>
+<button class="text-primary font-body-sm text-body-sm font-medium hover:underline flex items-center gap-1 px-2">
+<span class="material-symbols-outlined text-[16px]">add</span> Add Item
+                                </button>
+</div>
+</div>
+<div class="p-0 overflow-x-auto">
+<!-- High Density Data Table -->
+<table class="w-full text-left border-collapse min-w-[900px]">
+<thead class="bg-surface-container-lowest sticky top-0 z-10">
+<tr>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant w-[25%]">Item ID / Name</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant w-[10%]">Unit</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant w-[15%]">Usage Qty</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant w-[15%] text-right">Avg Unit Cost (¥)</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant w-[15%] text-center">Chargeable</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant border-b border-outline-variant w-[15%] text-right">Total Line (¥)</th>
+<th class="p-table-cell-padding border-b border-outline-variant w-[5%]"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-highest">
+<!-- Zebra Striping via alternating bg colors in standard high density tables -->
+<tr class="h-12 bg-surface-container-lowest hover:bg-surface-container-low/50 group">
+<td class="px-4 py-2">
+<div class="flex flex-col">
+<span class="font-body-sm font-medium text-on-surface">Gadolinium Contrast Agent</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">CON-MR-001</span>
+</div>
+</td>
+<td class="px-4 py-2 text-sm text-on-surface-variant">vial (15ml)</td>
+<td class="px-4 py-2">
+<input class="w-full h-7 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono px-2 py-0" type="number" value="450"/>
+</td>
+<td class="px-4 py-2 text-right font-data-mono text-sm">
+<input class="w-full h-7 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono text-right px-2 py-0" type="number" value="120.50"/>
+</td>
+<td class="px-4 py-2 text-center">
+<label class="inline-flex items-center cursor-pointer">
+<input checked="" class="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 bg-surface" type="checkbox"/>
+</label>
+</td>
+<td class="px-4 py-2 text-right font-data-mono text-on-surface">
+                                            54,225.00
+                                        </td>
+<td class="px-4 py-2 text-center">
+<button class="text-outline-variant hover:text-error transition-colors opacity-0 group-hover:opacity-100">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+<tr class="h-12 bg-surface-bright hover:bg-surface-container-low/50 group">
+<td class="px-4 py-2">
+<div class="flex flex-col">
+<span class="font-body-sm font-medium text-on-surface">Disposable Syringe 20ml</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">CON-GEN-104</span>
+</div>
+</td>
+<td class="px-4 py-2 text-sm text-on-surface-variant">box (50)</td>
+<td class="px-4 py-2">
+<input class="w-full h-7 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono px-2 py-0" type="number" value="12"/>
+</td>
+<td class="px-4 py-2 text-right font-data-mono text-sm">
+<input class="w-full h-7 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono text-right px-2 py-0" type="number" value="45.00"/>
+</td>
+<td class="px-4 py-2 text-center">
+<label class="inline-flex items-center cursor-pointer">
+<input class="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 bg-surface" type="checkbox"/>
+</label>
+</td>
+<td class="px-4 py-2 text-right font-data-mono text-on-surface">
+                                            540.00
+                                        </td>
+<td class="px-4 py-2 text-center">
+<button class="text-outline-variant hover:text-error transition-colors opacity-0 group-hover:opacity-100">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+<tr class="h-12 bg-surface-container-lowest hover:bg-surface-container-low/50 group">
+<td class="px-4 py-2">
+<div class="flex flex-col">
+<span class="font-body-sm font-medium text-on-surface">Patient Gowns (Single Use)</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">CON-TEX-002</span>
+</div>
+</td>
+<td class="px-4 py-2 text-sm text-on-surface-variant">pack (10)</td>
+<td class="px-4 py-2">
+<input class="w-full h-7 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono px-2 py-0" type="number" value="85"/>
+</td>
+<td class="px-4 py-2 text-right font-data-mono text-sm">
+<input class="w-full h-7 text-sm border-outline-variant rounded bg-surface focus:ring-primary focus:border-primary text-on-surface font-data-mono text-right px-2 py-0" type="number" value="12.00"/>
+</td>
+<td class="px-4 py-2 text-center">
+<label class="inline-flex items-center cursor-pointer">
+<input class="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 bg-surface" type="checkbox"/>
+</label>
+</td>
+<td class="px-4 py-2 text-right font-data-mono text-on-surface">
+                                            1,020.00
+                                        </td>
+<td class="px-4 py-2 text-center">
+<button class="text-outline-variant hover:text-error transition-colors opacity-0 group-hover:opacity-100">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+<tfoot>
+<tr class="bg-surface-container-low border-t border-outline-variant border-b border-outline-variant">
+<td class="p-3 text-right font-label-caps text-label-caps text-on-surface-variant" colspan="5">Total Consumables Expense</td>
+<td class="p-3 text-right font-data-mono text-body-lg font-bold text-on-surface">¥ 55,785.00</td>
+<td></td>
+</tr>
+</tfoot>
+</table>
+</div>
+<div class="p-4 bg-surface-bright flex justify-end">
+<div class="flex items-center gap-4 border border-outline-variant rounded-lg p-3 bg-surface-container-lowest">
+<div class="text-right">
+<div class="font-label-caps text-[10px] text-on-surface-variant uppercase tracking-wider">Total Direct Costs (Period)</div>
+<div class="font-data-mono text-headline-md font-bold text-primary">¥ 140,385.00</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+</div>
+</main>
+</body></html>

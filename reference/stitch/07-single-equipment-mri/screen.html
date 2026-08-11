@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Machine Details - Single Equipment Analysis</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "on-tertiary-fixed": "#321200",
+                            "on-surface": "#191c22",
+                            "surface-container-highest": "#e1e2eb",
+                            "on-secondary-fixed": "#051b39",
+                            "surface": "#f9f9ff",
+                            "surface-container-low": "#f2f3fc",
+                            "secondary-container": "#c4d8ff",
+                            "secondary": "#4c5f80",
+                            "primary": "#0052ac",
+                            "surface-bright": "#f9f9ff",
+                            "inverse-on-surface": "#eff0f9",
+                            "on-surface-variant": "#424753",
+                            "on-secondary-container": "#4b5e7f",
+                            "on-primary-fixed": "#001a40",
+                            "outline": "#727784",
+                            "primary-container": "#246bce",
+                            "outline-variant": "#c2c6d5",
+                            "on-tertiary-fixed-variant": "#753400",
+                            "tertiary-fixed-dim": "#ffb68b",
+                            "surface-tint": "#005bbe",
+                            "on-secondary-fixed-variant": "#344767",
+                            "surface-variant": "#e1e2eb",
+                            "primary-fixed": "#d7e2ff",
+                            "inverse-primary": "#acc7ff",
+                            "tertiary-fixed": "#ffdbc8",
+                            "inverse-surface": "#2e3037",
+                            "on-error": "#ffffff",
+                            "primary-fixed-dim": "#acc7ff",
+                            "tertiary": "#8a3f00",
+                            "secondary-fixed": "#d6e3ff",
+                            "surface-dim": "#d8d9e2",
+                            "surface-container-lowest": "#ffffff",
+                            "background": "#f9f9ff",
+                            "on-primary-fixed-variant": "#004491",
+                            "on-tertiary-container": "#ffede4",
+                            "on-error-container": "#93000a",
+                            "on-primary-container": "#ecf0ff",
+                            "error-container": "#ffdad6",
+                            "error": "#ba1a1a",
+                            "surface-container-high": "#e7e8f0",
+                            "tertiary-container": "#b05200",
+                            "secondary-fixed-dim": "#b4c7ed",
+                            "surface-container": "#ecedf6",
+                            "on-tertiary": "#ffffff",
+                            "on-secondary": "#ffffff",
+                            "on-primary": "#ffffff",
+                            "on-background": "#191c22",
+                            
+                            // Adding specific colors mentioned in style guidance for immediate utility
+                            "status-success": "#138A63",
+                            "chart-grid": "#E2E8F0"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "0.25rem",
+                            "lg": "0.5rem",
+                            "xl": "0.75rem",
+                            "full": "9999px",
+                            "button": "6px",
+                            "card": "12px",
+                            "chip": "2px"
+                    },
+                    "spacing": {
+                            "base": "4px",
+                            "stack-compact": "8px",
+                            "table-cell-padding": "12px 16px",
+                            "gutter": "16px",
+                            "stack-loose": "24px",
+                            "container-margin": "24px",
+                            "row-height": "48px"
+                    },
+                    "fontFamily": {
+                            "body-sm": ["Inter", "sans-serif"],
+                            "label-caps": ["Inter", "sans-serif"],
+                            "body-md": ["Inter", "sans-serif"],
+                            "headline-lg": ["Inter", "sans-serif"],
+                            "body-lg": ["Inter", "sans-serif"],
+                            "data-mono": ["Inter", "sans-serif"],
+                            "headline-md": ["Inter", "sans-serif"],
+                            "display-lg": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                            "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                            "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                            "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                            "headline-lg": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                            "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                            "data-mono": ["14px", {"lineHeight": "20px", "fontWeight": "500"}],
+                            "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                            "display-lg": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #F4F7FA;
+        }
+        /* Custom Scrollbar for dense data areas */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c2c6d5; 
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #727784; 
+        }
+        
+        .chip-success {
+            background-color: rgba(19, 138, 99, 0.1);
+            color: #138A63;
+        }
+        
+        .table-stripe tr:nth-child(even) {
+            background-color: #F8FAFC;
+        }
+    </style>
+</head>
+<body class="font-body-md text-on-surface flex h-screen overflow-hidden">
+<!-- SideNavBar -->
+<nav class="bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant dark:border-outline flex flex-col h-full py-stack-loose overflow-y-auto docked left-0 h-screen w-64 shrink-0 hidden md:flex">
+<div class="px-gutter mb-8">
+<div class="flex items-center gap-3">
+<img alt="Hospital Logo" class="w-10 h-10 rounded object-cover" data-alt="A clean, minimalist hospital logo icon in shades of blue and white, suitable for a modern medical analysis software platform. High resolution, flat design vector style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnm_gIFiMhjdj8gBjdmJcccceCaUy9n4sT7AqzeyEue3IFoD9mcrQzyfWiIMfRvsyyWFGLxzZdp30v6_LxQ-NqUXNPMpb5CoIA6JD8IRca3kuYTPtpZUQHwbB7d9nLPYI558haHTYooV_w0bsboWoDVmv-fMhr-eDBpsG8_IZrTv0jYVgxK_t3DJwKAl-8azdREZKQ4ibTzTuPVUZRnMYyd31SmwyxcDpHqzqUnzl6WIeKJXP1hprB"/>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-black text-on-surface dark:text-inverse-on-surface">衡效智舱</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Medical Analysis Platform</p>
+</div>
+</div>
+</div>
+<ul class="flex-1 px-4 space-y-1">
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span class="font-label-caps text-label-caps">Overview</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">analytics</span>
+<span class="font-label-caps text-label-caps">Equipment Benefit</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">speed</span>
+<span class="font-label-caps text-label-caps">Efficiency</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary font-semibold hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">settings_input_component</span>
+<span class="font-label-caps text-label-caps">Machine Details</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">inventory</span>
+<span class="font-label-caps text-label-caps">Equipment Ledger</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">group</span>
+<span class="font-label-caps text-label-caps">Labor</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">biotech</span>
+<span class="font-label-caps text-label-caps">Consumables</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">account_balance</span>
+<span class="font-label-caps text-label-caps">Fixed Costs</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">verified_user</span>
+<span class="font-label-caps text-label-caps">Audit &amp; Closing</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">rule</span>
+<span class="font-label-caps text-label-caps">Indicators</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings_suggest</span>
+<span class="font-label-caps text-label-caps">Rules</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">design_services</span>
+<span class="font-label-caps text-label-caps">Dashboard Designer</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">database</span>
+<span class="font-label-caps text-label-caps">Data Sources</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col h-full relative">
+<!-- TopNavBar -->
+<header class="bg-surface-container-lowest dark:bg-surface border-b border-outline-variant dark:border-outline flex justify-between items-center w-full px-gutter h-14 z-50 shrink-0">
+<div class="flex items-center gap-4">
+<!-- Mobile Menu Toggle (Visible only on small screens) -->
+<button class="md:hidden text-on-surface-variant p-2 -ml-2 rounded-full hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="hidden md:flex items-center relative text-on-surface-variant">
+<span class="material-symbols-outlined absolute left-3 pointer-events-none" style="font-size: 20px;">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-surface-container-low border border-outline-variant rounded-full text-body-sm focus:outline-none focus:ring-2 focus:ring-primary-container/20 focus:border-primary-container transition-all w-64" placeholder="Search AST or Name..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="text-on-surface-variant dark:text-outline hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">calendar_month</span>
+</button>
+<button class="text-on-surface-variant dark:text-outline hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">local_hospital</span>
+</button>
+<button class="text-on-surface-variant dark:text-outline hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 p-2 rounded-full flex items-center justify-center relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<div class="h-8 w-px bg-outline-variant mx-2"></div>
+<button class="flex items-center gap-2 hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 p-1 pr-3 rounded-full border border-transparent hover:border-outline-variant">
+<img alt="Administrator Profile" class="w-8 h-8 rounded-full object-cover bg-surface-container-high" data-alt="A professional headshot of a hospital administrator or financial controller, wearing formal business attire, well-lit, sharp focus." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDaJDTEI9RF592m6S2DHFF6mLshy-tJz2XonDBQBlInZEkL6g1tLr4JoTO7aX1wFjinznhePK2va4LF_Mce5vLS2wQd_wzxJ00HbkQC-DR2wf9B3Hh79CgzDh-4J0FpOiyXaa3SLSPBToZ5mJPk2RTC1i4DJ9nx9yw5uuaO5yRscZU-TQ1oez6Lz-YKmrqU3TUqZDBDkvE-Rb-cYSQBIUm8cuknY07WyU0Tr_ufzfBnA6GZKbQx-Wea"/>
+<span class="font-body-sm text-body-sm text-on-surface font-medium hidden lg:block">Admin</span>
+</button>
+</div>
+</header>
+<!-- Canvas -->
+<div class="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6">
+<!-- Page Header Container -->
+<div class="max-w-[1320px] mx-auto mb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+<div>
+<div class="flex items-center gap-3 mb-1">
+<span class="font-data-mono text-body-sm text-on-surface-variant bg-surface-container px-2 py-0.5 rounded border border-outline-variant">AST-10492</span>
+<span class="px-2 py-0.5 rounded-chip font-label-caps text-label-caps chip-success">In Use</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg font-bold text-on-surface">3.0T MRI Scanner</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Model: Siemens Magnetom Vida • Dept: Radiology • Resp: Dr. Chen Wei</p>
+</div>
+<div class="flex items-center gap-4 bg-white px-4 py-2 rounded-card border border-outline-variant shadow-sm">
+<div class="text-right">
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-0.5">Data Quality</div>
+<div class="font-data-mono text-headline-md text-primary font-bold">98%</div>
+</div>
+<div class="h-10 w-10 rounded-full border-4 border-surface-container-highest border-t-status-success flex items-center justify-center transform -rotate-45">
+<span class="material-symbols-outlined text-status-success transform rotate-45" style="font-size: 20px;">check</span>
+</div>
+</div>
+</div>
+<!-- Tabs -->
+<div class="max-w-[1320px] mx-auto mb-6 border-b border-outline-variant overflow-x-auto no-scrollbar">
+<nav class="flex space-x-6 min-w-max px-2">
+<a class="pb-3 border-b-2 border-primary font-body-md text-body-md text-primary font-bold whitespace-nowrap" href="#">Overview</a>
+<a class="pb-3 border-b-2 border-transparent font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors whitespace-nowrap" href="#">Revenue &amp; Volume</a>
+<a class="pb-3 border-b-2 border-transparent font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors whitespace-nowrap" href="#">Cost Detail</a>
+<a class="pb-3 border-b-2 border-transparent font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors whitespace-nowrap" href="#">Efficiency</a>
+<a class="pb-3 border-b-2 border-transparent font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors whitespace-nowrap" href="#">Maintenance &amp; Downtime</a>
+<a class="pb-3 border-b-2 border-transparent font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors whitespace-nowrap" href="#">Clinical Benefit</a>
+<a class="pb-3 border-b-2 border-transparent font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors whitespace-nowrap" href="#">Data Source</a>
+</nav>
+</div>
+<!-- Dashboard Grid -->
+<div class="max-w-[1320px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Main Data Column (Spans 9 cols on Desktop) -->
+<div class="lg:col-span-9 space-y-6">
+<!-- KPI Row -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<!-- KPI Card 1 -->
+<div class="bg-white p-4 rounded-card border border-outline-variant shadow-sm flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Utilization Rate</span>
+<span class="material-symbols-outlined text-outline">query_stats</span>
+</div>
+<div class="mt-auto">
+<div class="font-data-mono text-headline-lg text-on-surface">86.4%</div>
+<div class="flex items-center gap-1 mt-1 text-status-success font-body-sm text-body-sm">
+<span class="material-symbols-outlined" style="font-size: 16px;">trending_up</span>
+<span>+2.1% vs last mo</span>
+</div>
+</div>
+</div>
+<!-- KPI Card 2 -->
+<div class="bg-white p-4 rounded-card border border-outline-variant shadow-sm flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Net Profit (YTD)</span>
+<span class="material-symbols-outlined text-outline">payments</span>
+</div>
+<div class="mt-auto">
+<div class="font-data-mono text-headline-lg text-on-surface">¥1.24M</div>
+<div class="flex items-center gap-1 mt-1 text-status-success font-body-sm text-body-sm">
+<span class="material-symbols-outlined" style="font-size: 16px;">trending_up</span>
+<span>+8.4% vs target</span>
+</div>
+</div>
+</div>
+<!-- KPI Card 3 -->
+<div class="bg-white p-4 rounded-card border border-outline-variant shadow-sm flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">ROI</span>
+<span class="material-symbols-outlined text-outline">trending_up</span>
+</div>
+<div class="mt-auto">
+<div class="font-data-mono text-headline-lg text-on-surface">14.2%</div>
+<div class="flex items-center gap-1 mt-1 text-on-surface-variant font-body-sm text-body-sm">
+<span class="material-symbols-outlined" style="font-size: 16px;">horizontal_rule</span>
+<span>On track (36 mo)</span>
+</div>
+</div>
+</div>
+<!-- KPI Card 4 -->
+<div class="bg-white p-4 rounded-card border border-outline-variant shadow-sm flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Downtime Count</span>
+<span class="material-symbols-outlined text-outline">build</span>
+</div>
+<div class="mt-auto">
+<div class="font-data-mono text-headline-lg text-error">3</div>
+<div class="flex items-center gap-1 mt-1 text-error font-body-sm text-body-sm">
+<span class="material-symbols-outlined" style="font-size: 16px;">trending_up</span>
+<span>+1 vs last mo</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Chart Card -->
+<div class="bg-white p-6 rounded-card border border-outline-variant shadow-sm">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-headline-md text-headline-md text-on-surface">Cumulative Cash Flow</h3>
+<button class="px-3 py-1.5 border border-outline-variant rounded-button text-body-sm font-medium hover:bg-surface-container-lowest transition-colors flex items-center gap-2">
+                                Export Data <span class="material-symbols-outlined" style="font-size: 16px;">download</span>
+</button>
+</div>
+<!-- Chart Area Placeholder (CSS built structural mock) -->
+<div class="h-64 w-full relative border-l border-b border-chart-grid mt-4">
+<!-- Y-Axis Labels -->
+<div class="absolute -left-12 top-0 text-label-caps text-outline font-data-mono">¥2M</div>
+<div class="absolute -left-12 top-1/4 text-label-caps text-outline font-data-mono">¥1M</div>
+<div class="absolute -left-12 top-2/4 text-label-caps text-outline font-data-mono">¥0</div>
+<div class="absolute -left-12 top-3/4 text-label-caps text-outline font-data-mono">-¥1M</div>
+<div class="absolute -left-12 bottom-0 text-label-caps text-outline font-data-mono">-¥2M</div>
+<!-- Grid Lines -->
+<div class="absolute w-full border-t border-chart-grid top-1/4 border-dashed"></div>
+<div class="absolute w-full border-t border-outline top-2/4 z-0"></div> <!-- Zero Line -->
+<div class="absolute w-full border-t border-chart-grid top-3/4 border-dashed"></div>
+<!-- X-Axis Labels -->
+<div class="absolute -bottom-6 left-0 text-label-caps text-outline font-data-mono">Q1</div>
+<div class="absolute -bottom-6 left-1/4 text-label-caps text-outline font-data-mono">Q2</div>
+<div class="absolute -bottom-6 left-2/4 text-label-caps text-outline font-data-mono">Q3</div>
+<div class="absolute -bottom-6 left-3/4 text-label-caps text-outline font-data-mono">Q4</div>
+<div class="absolute -bottom-6 right-0 text-label-caps text-outline font-data-mono">Q1 (Y2)</div>
+<!-- Line Path SVG Mock -->
+<svg class="absolute inset-0 h-full w-full overflow-visible z-10" preserveaspectratio="none" viewbox="0 0 100 100">
+<!-- Cash Flow Line -->
+<path class="drop-shadow-md" d="M0,80 L20,70 L40,55 L60,40 L80,25 L100,10" fill="none" stroke="#246BCE" stroke-width="2"></path>
+<!-- Points -->
+<circle class="bg-white" cx="0" cy="80" fill="#246BCE" r="1.5"></circle>
+<circle class="bg-white" cx="40" cy="55" fill="#246BCE" r="1.5"></circle>
+<circle class="bg-white" cx="60" cy="40" fill="#246BCE" r="1.5"></circle>
+<circle class="bg-white" cx="100" cy="10" fill="#246BCE" r="1.5"></circle>
+<!-- Breakeven point marker -->
+<circle cx="50" cy="50" fill="#138A63" r="2"></circle>
+<text fill="#138A63" font-family="Inter" font-size="3" font-weight="600" x="52" y="48">Breakeven</text>
+</svg>
+</div>
+</div>
+<!-- High-Density Table -->
+<div class="bg-white rounded-card border border-outline-variant shadow-sm overflow-hidden">
+<div class="p-4 border-b border-outline-variant flex justify-between items-center">
+<h3 class="font-headline-md text-headline-md text-on-surface">Monthly Performance Summary</h3>
+<button class="text-primary font-medium text-body-sm hover:underline">View All</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse table-stripe">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-container-lowest">
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant font-medium sticky top-0">Month</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant font-medium sticky top-0">Volume</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant font-medium sticky top-0">Revenue</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant font-medium sticky top-0">Direct Costs</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant font-medium sticky top-0">Margin</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant font-medium sticky top-0">Status</th>
+</tr>
+</thead>
+<tbody class="font-data-mono text-body-md text-on-surface">
+<tr class="h-row-height border-b border-outline-variant/50">
+<td class="p-table-cell-padding">Oct 2023</td>
+<td class="p-table-cell-padding">1,245</td>
+<td class="p-table-cell-padding">¥480,000</td>
+<td class="p-table-cell-padding text-on-surface-variant">¥210,000</td>
+<td class="p-table-cell-padding text-status-success">56.2%</td>
+<td class="p-table-cell-padding"><span class="px-2 py-0.5 rounded-chip text-label-caps bg-secondary-container text-on-secondary-container">Normal</span></td>
+</tr>
+<tr class="h-row-height border-b border-outline-variant/50">
+<td class="p-table-cell-padding">Sep 2023</td>
+<td class="p-table-cell-padding">1,180</td>
+<td class="p-table-cell-padding">¥450,000</td>
+<td class="p-table-cell-padding text-on-surface-variant">¥205,000</td>
+<td class="p-table-cell-padding text-status-success">54.4%</td>
+<td class="p-table-cell-padding"><span class="px-2 py-0.5 rounded-chip text-label-caps bg-secondary-container text-on-secondary-container">Normal</span></td>
+</tr>
+<tr class="h-row-height border-b border-outline-variant/50">
+<td class="p-table-cell-padding">Aug 2023</td>
+<td class="p-table-cell-padding">950</td>
+<td class="p-table-cell-padding">¥380,000</td>
+<td class="p-table-cell-padding text-on-surface-variant">¥280,000</td>
+<td class="p-table-cell-padding text-error">26.3%</td>
+<td class="p-table-cell-padding"><span class="px-2 py-0.5 rounded-chip text-label-caps bg-error-container text-on-error-container">Maint.</span></td>
+</tr>
+<tr class="h-row-height">
+<td class="p-table-cell-padding">Jul 2023</td>
+<td class="p-table-cell-padding">1,320</td>
+<td class="p-table-cell-padding">¥510,000</td>
+<td class="p-table-cell-padding text-on-surface-variant">¥215,000</td>
+<td class="p-table-cell-padding text-status-success">57.8%</td>
+<td class="p-table-cell-padding"><span class="px-2 py-0.5 rounded-chip text-label-caps bg-secondary-container text-on-secondary-container">Normal</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Sidebar Column (Spans 3 cols on Desktop) -->
+<div class="lg:col-span-3 space-y-6">
+<!-- Health Summary Sidebar Panel -->
+<div class="bg-white rounded-card border border-outline-variant shadow-sm p-5 sticky top-6">
+<h3 class="font-headline-md text-headline-md text-on-surface border-b border-outline-variant pb-3 mb-4">Health Summary</h3>
+<div class="space-y-5">
+<!-- Summary Item 1 -->
+<div>
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Breakeven Target</span>
+<span class="font-label-caps text-label-caps text-status-success">AHEAD</span>
+</div>
+<div class="w-full bg-surface-container-high rounded-full h-2 mb-1">
+<div class="bg-status-success h-2 rounded-full" style="width: 110%"></div>
+</div>
+<div class="text-right font-data-mono text-body-sm text-outline">+3 Months ahead of plan</div>
+</div>
+<!-- Summary Item 2 -->
+<div>
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Active Alerts</span>
+<span class="font-label-caps text-label-caps bg-error-container text-on-error-container px-1.5 rounded-chip">1 ISSUE</span>
+</div>
+<div class="p-3 bg-surface-container-low rounded border border-outline-variant mt-2">
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-error" style="font-size: 18px;">warning</span>
+<div>
+<div class="font-data-mono text-body-sm text-on-surface font-medium">Maintenance Overdue</div>
+<div class="text-xs text-on-surface-variant mt-0.5">Coil calibration was due 5 days ago.</div>
+</div>
+</div>
+</div>
+</div>
+<hr class="border-outline-variant"/>
+<!-- Quick Details -->
+<div>
+<h4 class="font-label-caps text-label-caps text-on-surface-variant mb-3">Key Specs</h4>
+<ul class="space-y-2 font-body-sm text-body-sm">
+<li class="flex justify-between">
+<span class="text-on-surface-variant">Install Date</span>
+<span class="font-data-mono text-on-surface">2021-03-15</span>
+</li>
+<li class="flex justify-between">
+<span class="text-on-surface-variant">Expected Life</span>
+<span class="font-data-mono text-on-surface">120 Months</span>
+</li>
+<li class="flex justify-between">
+<span class="text-on-surface-variant">Depreciation</span>
+<span class="font-data-mono text-on-surface">Straight-line</span>
+</li>
+</ul>
+</div>
+<button class="w-full py-2 bg-primary-container text-on-primary font-medium rounded-button hover:bg-primary transition-colors flex justify-center items-center gap-2">
+                                Generate Full Report <span class="material-symbols-outlined" style="font-size: 18px;">description</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

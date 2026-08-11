@@ -1,0 +1,157 @@
+{
+  "project": {
+    "id": "4871037464888449592",
+    "title": "衡效智舱医疗设备分析平台"
+  },
+  "retrievedAt": "2026-07-22T02:11:12.413Z",
+  "source": "Stitch MCP https://stitch.googleapis.com/mcp",
+  "credentialsIncluded": false,
+  "assets": [
+    {
+      "kind": "designSystem",
+      "requestedScreenId": "asset-stub-assets_99a324c79c9d4dbe823bf5d3c0f1948d",
+      "resourceName": "assets/99a324c79c9d4dbe823bf5d3c0f1948d",
+      "title": "Design System",
+      "note": "Stitch exposes this item as a design-system asset, not a screen; therefore no hosted screenshot or HTML URL is available.",
+      "localFiles": [
+        "01-design-system/DESIGN.md",
+        "01-design-system/design-system.json",
+        "01-design-system/mcp-response.json"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "screenId": "ddd3ab43656541e6a3790a392a303295",
+      "resourceName": "projects/4871037464888449592/screens/ddd3ab43656541e6a3790a392a303295",
+      "title": "Benefit Dashboard - Overview",
+      "deviceType": "DESKTOP",
+      "declaredDimensions": {
+        "width": 2560,
+        "height": 2048
+      },
+      "screenshot": {
+        "hostedUrl": "https://lh3.googleusercontent.com/aida/AP1WRLugZx1AtU1ypolYOxzhbkI5GB9-TmMQl_UBGIZYaDv4Pp40XPZgFNiInbcuAIPcrOMr0iao1-pHp2tMiSgs2C_BsKZtQiPpEHhyDRKQkh0foyl86iISxXbek87wxWP-s3LSoPuEJPXYLdtvhKzpeg9GYpvPGA8tPt8GEz17MBjr8cFfitTG9hyXmFEwe9SHWBeyWZvkQcnNBBMzfP66DixhudYP6vvR_B3XhIvYQOCaNhnZXKQssXeQPRM",
+        "fullResolutionDownloadUrl": "https://lh3.googleusercontent.com/aida/AP1WRLugZx1AtU1ypolYOxzhbkI5GB9-TmMQl_UBGIZYaDv4Pp40XPZgFNiInbcuAIPcrOMr0iao1-pHp2tMiSgs2C_BsKZtQiPpEHhyDRKQkh0foyl86iISxXbek87wxWP-s3LSoPuEJPXYLdtvhKzpeg9GYpvPGA8tPt8GEz17MBjr8cFfitTG9hyXmFEwe9SHWBeyWZvkQcnNBBMzfP66DixhudYP6vvR_B3XhIvYQOCaNhnZXKQssXeQPRM=s0",
+        "localFile": "02-benefit-dashboard-overview/screenshot.png",
+        "bytes": 332537
+      },
+      "html": {
+        "hostedUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1NzI4ZDYwZmNiODYwMjNiZmE4OWUzMTY3OWQxEgsSBxDBzM7J-w0YAZIBIwoKcHJvamVjdF9pZBIVQhM0ODcxMDM3NDY0ODg4NDQ5NTky&filename=&opi=89354086",
+        "mimeType": "text/html",
+        "localFile": "02-benefit-dashboard-overview/screen.html",
+        "bytes": 41198
+      }
+    },
+    {
+      "screenId": "51b340e385ab4dcda6085575518899a0",
+      "resourceName": "projects/4871037464888449592/screens/51b340e385ab4dcda6085575518899a0",
+      "title": "Equipment Ledger Management",
+      "deviceType": "DESKTOP",
+      "declaredDimensions": {
+        "width": 2560,
+        "height": 2048
+      },
+      "screenshot": {
+        "hostedUrl": "https://lh3.googleusercontent.com/aida/AP1WRLtsSOhTyDUGKEkgX98RZqsX1umi-Ygcf1ke7NhKg6GLyhXK1aGzpxNJkPLsgQ8P93qxW-5bQuPXUzbzUedD0j5wv36ncAZaNSU9Cnd7Qwm_deEBfYshE1aPWXNeWA_Mi_58u9jsO6nRtU9EkrErw0lya6rdduUKjQQQ2doa5_k9gaRnVvIvsl2OgJS342mQXL05hZ6sHCjNhqQKTeciKm5Miw4KoVayK6BEYVvgERR6_42KFYSkunvTig",
+        "fullResolutionDownloadUrl": "https://lh3.googleusercontent.com/aida/AP1WRLtsSOhTyDUGKEkgX98RZqsX1umi-Ygcf1ke7NhKg6GLyhXK1aGzpxNJkPLsgQ8P93qxW-5bQuPXUzbzUedD0j5wv36ncAZaNSU9Cnd7Qwm_deEBfYshE1aPWXNeWA_Mi_58u9jsO6nRtU9EkrErw0lya6rdduUKjQQQ2doa5_k9gaRnVvIvsl2OgJS342mQXL05hZ6sHCjNhqQKTeciKm5Miw4KoVayK6BEYVvgERR6_42KFYSkunvTig=s0",
+        "localFile": "03-equipment-ledger-management/screenshot.png",
+        "bytes": 319343
+      },
+      "html": {
+        "hostedUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1NzI4ZDQyYTUwNjUwMzU2YzFkM2VhMTllMjM5EgsSBxDBzM7J-w0YAZIBIwoKcHJvamVjdF9pZBIVQhM0ODcxMDM3NDY0ODg4NDQ5NTky&filename=&opi=89354086",
+        "mimeType": "text/html",
+        "localFile": "03-equipment-ledger-management/screen.html",
+        "bytes": 29777
+      }
+    },
+    {
+      "screenId": "49abd2d1ef67424e9ccdbe0239f704fb",
+      "resourceName": "projects/4871037464888449592/screens/49abd2d1ef67424e9ccdbe0239f704fb",
+      "title": "Monthly Cost Data Entry",
+      "deviceType": "DESKTOP",
+      "declaredDimensions": {
+        "width": 2560,
+        "height": 2048
+      },
+      "screenshot": {
+        "hostedUrl": "https://lh3.googleusercontent.com/aida/AP1WRLtfDzfN-Ebve153TqAb1itlq5pAZvNB9X8osp2bAFWQ-pmKbgUJWaNNrUUKBbb32-IaPJw40Wt86LLjuxXa_cjFk_BaNn_UGSgVmoQks6gIoPIFPfeudeah7eXOfJt1Nd6ceakGuO1dxdso-2PC5AW_3QtYOtQtmz-2iCDyRBPPyzqngP__7Zd8WygulqDo-nQD2YD4a1J_tIlyzL3W-zOhRfBs-8-q4ZZgnYLrmCb2L6CgPlIHziiLfUQ",
+        "fullResolutionDownloadUrl": "https://lh3.googleusercontent.com/aida/AP1WRLtfDzfN-Ebve153TqAb1itlq5pAZvNB9X8osp2bAFWQ-pmKbgUJWaNNrUUKBbb32-IaPJw40Wt86LLjuxXa_cjFk_BaNn_UGSgVmoQks6gIoPIFPfeudeah7eXOfJt1Nd6ceakGuO1dxdso-2PC5AW_3QtYOtQtmz-2iCDyRBPPyzqngP__7Zd8WygulqDo-nQD2YD4a1J_tIlyzL3W-zOhRfBs-8-q4ZZgnYLrmCb2L6CgPlIHziiLfUQ=s0",
+        "localFile": "04-monthly-cost-data-entry/screenshot.png",
+        "bytes": 335500
+      },
+      "html": {
+        "hostedUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1NzI4ZDNmNjdmY2QwNDc5ZjI1NDBkMjI3MDc3EgsSBxDBzM7J-w0YAZIBIwoKcHJvamVjdF9pZBIVQhM0ODcxMDM3NDY0ODg4NDQ5NTky&filename=&opi=89354086",
+        "mimeType": "text/html",
+        "localFile": "04-monthly-cost-data-entry/screen.html",
+        "bytes": 35064
+      }
+    },
+    {
+      "screenId": "c4b00d7f11924c20a3d314e6b9ea360b",
+      "resourceName": "projects/4871037464888449592/screens/c4b00d7f11924c20a3d314e6b9ea360b",
+      "title": "Dashboard Layout Designer",
+      "deviceType": "DESKTOP",
+      "declaredDimensions": {
+        "width": 2560,
+        "height": 2048
+      },
+      "screenshot": {
+        "hostedUrl": "https://lh3.googleusercontent.com/aida/AP1WRLvdjhi1rfYU5XuOgTzfos-uyZPWp0_xKgRxw0r6xFVnHm9wRqIp5ZFkI82SPbX9_SytRFfZ69bxOtgyiSQmEsWzKasMnVDfioDVXrOsaLW9o2IjMvoYvr_ohg1VnVkfO1wyPZJSKU41odyEj_OQ6_fCF4rMj7POekr-FgoFa5LbYsWIVYSnJuGPeP7_MKBYV6cGOyZ_ul8OD5dn88VvDuHaxujV2pXDb0OJZAFUAUriKW4FlIXNuU5B1dM",
+        "fullResolutionDownloadUrl": "https://lh3.googleusercontent.com/aida/AP1WRLvdjhi1rfYU5XuOgTzfos-uyZPWp0_xKgRxw0r6xFVnHm9wRqIp5ZFkI82SPbX9_SytRFfZ69bxOtgyiSQmEsWzKasMnVDfioDVXrOsaLW9o2IjMvoYvr_ohg1VnVkfO1wyPZJSKU41odyEj_OQ6_fCF4rMj7POekr-FgoFa5LbYsWIVYSnJuGPeP7_MKBYV6cGOyZ_ul8OD5dn88VvDuHaxujV2pXDb0OJZAFUAUriKW4FlIXNuU5B1dM=s0",
+        "localFile": "05-dashboard-layout-designer/screenshot.png",
+        "bytes": 290091
+      },
+      "html": {
+        "hostedUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1NzI4ZGEzYTE4N2QwNDRmNmFhNzg2MDYyMTljEgsSBxDBzM7J-w0YAZIBIwoKcHJvamVjdF9pZBIVQhM0ODcxMDM3NDY0ODg4NDQ5NTky&filename=&opi=89354086",
+        "mimeType": "text/html",
+        "localFile": "05-dashboard-layout-designer/screen.html",
+        "bytes": 27314
+      }
+    },
+    {
+      "screenId": "88f2d2b9a5184f52bd1cfaa8cc5e799c",
+      "resourceName": "projects/4871037464888449592/screens/88f2d2b9a5184f52bd1cfaa8cc5e799c",
+      "title": "Data Sources & Integration Management",
+      "deviceType": "DESKTOP",
+      "declaredDimensions": {
+        "width": 2560,
+        "height": 2048
+      },
+      "screenshot": {
+        "hostedUrl": "https://lh3.googleusercontent.com/aida/AP1WRLtT9c8Hmr0hVr8j0EH3Jezd0RNxLOPpDPZf0YjIHX0b8yAlO6eyeBha2dkNjvz-NDvchc0l0gp7i-E_9jXyakmjbqQ2Shb0N8-IQx0EBIye3egf-y94Vp3Dz-qVdJRQEH5foPO5MxG785IJsDKToXBIdRprgdriLi9mKILSlBcK0hffCL9MxQMQAVSVekJwCPV6WSFde_Vu4g-cm4c3L3j7qzAkdxtE1Yd5SKFgxga77OPauxsot5Xnvg",
+        "fullResolutionDownloadUrl": "https://lh3.googleusercontent.com/aida/AP1WRLtT9c8Hmr0hVr8j0EH3Jezd0RNxLOPpDPZf0YjIHX0b8yAlO6eyeBha2dkNjvz-NDvchc0l0gp7i-E_9jXyakmjbqQ2Shb0N8-IQx0EBIye3egf-y94Vp3Dz-qVdJRQEH5foPO5MxG785IJsDKToXBIdRprgdriLi9mKILSlBcK0hffCL9MxQMQAVSVekJwCPV6WSFde_Vu4g-cm4c3L3j7qzAkdxtE1Yd5SKFgxga77OPauxsot5Xnvg=s0",
+        "localFile": "06-data-sources-integration/screenshot.png",
+        "bytes": 354979
+      },
+      "html": {
+        "hostedUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1NzI4ZGE0N2Q1MGMwOTY4OGZiOWYyMzM4YjhmEgsSBxDBzM7J-w0YAZIBIwoKcHJvamVjdF9pZBIVQhM0ODcxMDM3NDY0ODg4NDQ5NTky&filename=&opi=89354086",
+        "mimeType": "text/html",
+        "localFile": "06-data-sources-integration/screen.html",
+        "bytes": 31301
+      }
+    },
+    {
+      "screenId": "d791ca2f9a99477c8d0a23e74fe0ec7a",
+      "resourceName": "projects/4871037464888449592/screens/d791ca2f9a99477c8d0a23e74fe0ec7a",
+      "title": "Single Equipment Detail - 3.0T MRI",
+      "deviceType": "DESKTOP",
+      "declaredDimensions": {
+        "width": 2560,
+        "height": 2048
+      },
+      "screenshot": {
+        "hostedUrl": "https://lh3.googleusercontent.com/aida/AP1WRLv3AMhmkXfvZUczVtiynlBOBdb_KnRY4kTimViATEB8Bclc-A0abDoIXCBVDU4wMNue88ZSIsrn0ut1J-qZfP6NM8pA16uOusmPI9LjFc5SOUyUSycsZQDvDCk0FuppS6B5GKlal2xSD46fMXprZeznnHg-GlZ7SZy15H2vUYopE7h3J6l1qSm6YrSmVUF-f5OBQaOLXAdvXSa93wnx_JPyHP4NSuGlFyjkajIhj3486N4r5Y_cgVInhYc",
+        "fullResolutionDownloadUrl": "https://lh3.googleusercontent.com/aida/AP1WRLv3AMhmkXfvZUczVtiynlBOBdb_KnRY4kTimViATEB8Bclc-A0abDoIXCBVDU4wMNue88ZSIsrn0ut1J-qZfP6NM8pA16uOusmPI9LjFc5SOUyUSycsZQDvDCk0FuppS6B5GKlal2xSD46fMXprZeznnHg-GlZ7SZy15H2vUYopE7h3J6l1qSm6YrSmVUF-f5OBQaOLXAdvXSa93wnx_JPyHP4NSuGlFyjkajIhj3486N4r5Y_cgVInhYc=s0",
+        "localFile": "07-single-equipment-mri/screenshot.png",
+        "bytes": 386813
+      },
+      "html": {
+        "hostedUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1NzI4ZGFiNzZhM2YwOTY4OGRlZTkzMDZkYmNiEgsSBxDBzM7J-w0YAZIBIwoKcHJvamVjdF9pZBIVQhM0ODcxMDM3NDY0ODg4NDQ5NTky&filename=&opi=89354086",
+        "mimeType": "text/html",
+        "localFile": "07-single-equipment-mri/screen.html",
+        "bytes": 31379
+      }
+    }
+  ]
+}

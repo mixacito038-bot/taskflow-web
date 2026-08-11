@@ -1,0 +1,1 @@
+ALTER TABLE `hospital_cloud_resources` ADD `revision` integer DEFAULT 1 NOT NULL;

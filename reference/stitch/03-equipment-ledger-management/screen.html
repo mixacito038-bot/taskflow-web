@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Equipment Ledger - Hengxiao Zhicang</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-tertiary-fixed": "#321200",
+                        "on-surface": "#191c22",
+                        "surface-container-highest": "#e1e2eb",
+                        "on-secondary-fixed": "#051b39",
+                        "surface": "#f9f9ff",
+                        "surface-container-low": "#f2f3fc",
+                        "secondary-container": "#c4d8ff",
+                        "secondary": "#4c5f80",
+                        "primary": "#0052ac",
+                        "surface-bright": "#f9f9ff",
+                        "inverse-on-surface": "#eff0f9",
+                        "on-surface-variant": "#424753",
+                        "on-secondary-container": "#4b5e7f",
+                        "on-primary-fixed": "#001a40",
+                        "outline": "#727784",
+                        "primary-container": "#246bce",
+                        "outline-variant": "#c2c6d5",
+                        "on-tertiary-fixed-variant": "#753400",
+                        "tertiary-fixed-dim": "#ffb68b",
+                        "surface-tint": "#005bbe",
+                        "on-secondary-fixed-variant": "#344767",
+                        "surface-variant": "#e1e2eb",
+                        "primary-fixed": "#d7e2ff",
+                        "inverse-primary": "#acc7ff",
+                        "tertiary-fixed": "#ffdbc8",
+                        "inverse-surface": "#2e3037",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#acc7ff",
+                        "tertiary": "#8a3f00",
+                        "secondary-fixed": "#d6e3ff",
+                        "surface-dim": "#d8d9e2",
+                        "surface-container-lowest": "#ffffff",
+                        "background": "#f9f9ff",
+                        "on-primary-fixed-variant": "#004491",
+                        "on-tertiary-container": "#ffede4",
+                        "on-error-container": "#93000a",
+                        "on-primary-container": "#ecf0ff",
+                        "error-container": "#ffdad6",
+                        "error": "#ba1a1a",
+                        "surface-container-high": "#e7e8f0",
+                        "tertiary-container": "#b05200",
+                        "secondary-fixed-dim": "#b4c7ed",
+                        "surface-container": "#ecedf6",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "on-background": "#191c22"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "base": "4px",
+                        "stack-compact": "8px",
+                        "table-cell-padding": "12px 16px",
+                        "gutter": "16px",
+                        "stack-loose": "24px",
+                        "container-margin": "24px"
+                    },
+                    fontFamily: {
+                        "body-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["Inter"]
+                    },
+                    fontSize: {
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "display-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #c2c6d5;
+            border-radius: 4px;
+        }
+        .table-row-h {
+            height: 48px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen flex overflow-hidden selection:bg-secondary-container selection:text-on-secondary-container">
+<aside class="hidden md:flex bg-surface-container-low border-r border-outline-variant flex-col h-screen py-stack-loose overflow-y-auto w-64 flex-shrink-0 z-20">
+<div class="px-gutter mb-8 flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">local_hospital</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-md font-black text-on-surface">Hengxiao Zhicang</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Medical Analysis Platform</p>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-md text-body-md">Overview</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-body-md text-body-md">Equipment Benefit</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">speed</span>
+<span class="font-body-md text-body-md">Efficiency</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings_input_component</span>
+<span class="font-body-md text-body-md">Machine Details</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary-container text-on-secondary-container font-semibold transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">inventory</span>
+<span class="font-body-md text-body-md">Equipment Ledger</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-body-md text-body-md">Labor</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">biotech</span>
+<span class="font-body-md text-body-md">Consumables</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">account_balance</span>
+<span class="font-body-md text-body-md">Fixed Costs</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="font-body-md text-body-md">Audit &amp; Closing</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">rule</span>
+<span class="font-body-md text-body-md">Indicators</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings_suggest</span>
+<span class="font-body-md text-body-md">Rules</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">design_services</span>
+<span class="font-body-md text-body-md">Dashboard Designer</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">database</span>
+<span class="font-body-md text-body-md">Data Sources</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-md text-body-md">Settings</span>
+</a>
+</nav>
+</aside>
+<div class="flex-1 flex flex-col min-w-0 relative">
+<header class="bg-surface-container-lowest border-b border-outline-variant flex justify-between items-center w-full px-gutter h-14 z-10 flex-shrink-0">
+<div class="flex items-center gap-4 flex-1">
+<div class="md:hidden">
+<span class="material-symbols-outlined cursor-pointer hover:bg-surface-container-low transition-colors p-1 rounded">menu</span>
+</div>
+<div class="font-headline-md text-headline-md font-bold text-primary md:hidden">
+                    衡效智舱
+                </div>
+<div class="hidden md:flex relative w-96">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full h-8 pl-10 pr-3 rounded border border-outline-variant bg-surface-container-low focus:bg-surface-container-lowest focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-body-sm font-body-sm transition-colors" placeholder="Search equipment, models, or IDs..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 text-on-surface-variant">
+<span class="material-symbols-outlined">calendar_month</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 text-on-surface-variant">
+<span class="material-symbols-outlined">local_hospital</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 text-on-surface-variant relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest ml-2 overflow-hidden border border-outline-variant cursor-pointer">
+<img alt="Administrator Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBeL7sPvzWbqfs0cKKfT2ixGgawegXi3BWOMs_oG8JvZQXVRkXy0j-7G-uFzBoWk4XpFLRmweSC4zaNZxNoezz75VwYUlkZGUmsojp9hR2iC-7pnwookkAygAXPEVJfIcqfQlzq2kXHabeOv3HuF5rW5zXdLSFYQsbguMwn2EOYv1_IQMtSXUxWGY1uQxTn5qo_TCcD_GFSYnUlCGXZbyEPrYXLtfTB9uhDf7dplyQCVVbdjc9EcgNM"/>
+</div>
+</div>
+</header>
+<main class="flex-1 overflow-auto custom-scrollbar p-container-margin relative flex flex-col gap-6">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 flex-shrink-0">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-1">Equipment Ledger</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Manage and track lifecycle files, financial valuation, and operational status of all clinical assets.</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="h-10 px-4 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors flex items-center gap-2 font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[18px]">upload</span>
+                        Import
+                    </button>
+<button class="h-10 px-4 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors flex items-center gap-2 font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[18px]">download</span>
+                        Export
+                    </button>
+<button class="h-10 px-4 rounded-[6px] bg-primary-container text-on-primary-container hover:opacity-90 transition-opacity flex items-center gap-2 font-body-sm text-body-sm font-medium shadow-sm">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                        Add Equipment
+                    </button>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-wrap gap-4 items-end flex-shrink-0">
+<div class="flex flex-col gap-1.5 w-full md:w-48">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Department</label>
+<select class="h-8 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full">
+<option>All Departments</option>
+<option>Radiology</option>
+<option>Cardiology</option>
+<option>Surgery</option>
+</select>
+</div>
+<div class="flex flex-col gap-1.5 w-full md:w-48">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Brand</label>
+<select class="h-8 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full">
+<option>All Brands</option>
+<option>Siemens</option>
+<option>GE Healthcare</option>
+<option>Philips</option>
+</select>
+</div>
+<div class="flex flex-col gap-1.5 w-full md:w-48">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Category</label>
+<select class="h-8 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full">
+<option>All Categories</option>
+<option>Imaging</option>
+<option>Monitoring</option>
+<option>Surgical</option>
+</select>
+</div>
+<div class="flex flex-col gap-1.5 w-full md:w-48">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Status</label>
+<select class="h-8 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full">
+<option>Any Status</option>
+<option>In Use</option>
+<option>Maintenance</option>
+<option>Decommissioned</option>
+</select>
+</div>
+<button class="h-8 px-4 rounded-[6px] text-primary hover:bg-surface-container-low transition-colors font-body-sm text-body-sm font-medium ml-auto">
+                    Clear Filters
+                </button>
+</div>
+<div class="flex-1 bg-surface-container-lowest border border-outline-variant rounded-lg flex flex-col overflow-hidden min-h-[400px]">
+<div class="overflow-auto custom-scrollbar flex-1 relative">
+<table class="w-full text-left border-collapse whitespace-nowrap">
+<thead class="sticky top-0 bg-surface-container-low border-b border-outline-variant z-10">
+<tr>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">Asset ID</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">Name</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">Model</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">Dept</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">Purchase Date</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold text-right">Org Value (¥)</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">ROI Unit</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">Status</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold">Data Owner</th>
+<th class="py-3 px-4 font-label-caps text-label-caps text-on-surface-variant font-semibold text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="font-body-sm text-body-sm text-on-surface">
+<tr class="table-row-h hover:bg-surface-container-high transition-colors even:bg-surface border-b border-outline-variant/30">
+<td class="px-4 font-data-mono text-data-mono text-on-surface-variant">AST-10492</td>
+<td class="px-4 font-medium">MRI Scanner 3.0T</td>
+<td class="px-4 text-on-surface-variant">Magnetom Vida</td>
+<td class="px-4">Radiology</td>
+<td class="px-4 text-on-surface-variant">2021-08-15</td>
+<td class="px-4 text-right font-data-mono text-data-mono">15,000,000</td>
+<td class="px-4">Unit A</td>
+<td class="px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[11px] font-medium bg-[#138A63]/10 text-[#138A63] border border-[#138A63]/20">In Use</span>
+</td>
+<td class="px-4 text-on-surface-variant">Dr. Wang</td>
+<td class="px-4 text-right">
+<button class="text-primary hover:underline font-medium">Edit</button>
+</td>
+</tr>
+<tr class="table-row-h hover:bg-surface-container-high transition-colors even:bg-surface border-b border-outline-variant/30">
+<td class="px-4 font-data-mono text-data-mono text-on-surface-variant">AST-10493</td>
+<td class="px-4 font-medium">CT Scanner 256-Slice</td>
+<td class="px-4 text-on-surface-variant">Revolution CT</td>
+<td class="px-4">Radiology</td>
+<td class="px-4 text-on-surface-variant">2022-03-10</td>
+<td class="px-4 text-right font-data-mono text-data-mono">8,500,000</td>
+<td class="px-4">Unit A</td>
+<td class="px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[11px] font-medium bg-[#138A63]/10 text-[#138A63] border border-[#138A63]/20">In Use</span>
+</td>
+<td class="px-4 text-on-surface-variant">Dr. Wang</td>
+<td class="px-4 text-right">
+<button class="text-primary hover:underline font-medium">Edit</button>
+</td>
+</tr>
+<tr class="table-row-h hover:bg-surface-container-high transition-colors even:bg-surface border-b border-outline-variant/30 bg-surface">
+<td class="px-4 font-data-mono text-data-mono text-on-surface-variant">AST-10501</td>
+<td class="px-4 font-medium">Ultrasound System</td>
+<td class="px-4 text-on-surface-variant">EPIQ Elite</td>
+<td class="px-4">Cardiology</td>
+<td class="px-4 text-on-surface-variant">2019-11-22</td>
+<td class="px-4 text-right font-data-mono text-data-mono">1,200,000</td>
+<td class="px-4">Unit B</td>
+<td class="px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[11px] font-medium bg-tertiary-container/10 text-tertiary-container border border-tertiary-container/20">Maintenance</span>
+</td>
+<td class="px-4 text-on-surface-variant">Dr. Li</td>
+<td class="px-4 text-right">
+<button class="text-primary hover:underline font-medium">Edit</button>
+</td>
+</tr>
+<tr class="table-row-h hover:bg-surface-container-high transition-colors even:bg-surface border-b border-outline-variant/30">
+<td class="px-4 font-data-mono text-data-mono text-on-surface-variant">AST-10211</td>
+<td class="px-4 font-medium">Surgical Robot</td>
+<td class="px-4 text-on-surface-variant">Da Vinci Xi</td>
+<td class="px-4">Surgery</td>
+<td class="px-4 text-on-surface-variant">2020-05-05</td>
+<td class="px-4 text-right font-data-mono text-data-mono">22,000,000</td>
+<td class="px-4">Unit C</td>
+<td class="px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[11px] font-medium bg-[#138A63]/10 text-[#138A63] border border-[#138A63]/20">In Use</span>
+</td>
+<td class="px-4 text-on-surface-variant">Dr. Chen</td>
+<td class="px-4 text-right">
+<button class="text-primary hover:underline font-medium">Edit</button>
+</td>
+</tr>
+<tr class="table-row-h hover:bg-surface-container-high transition-colors even:bg-surface border-b border-outline-variant/30 bg-surface">
+<td class="px-4 font-data-mono text-data-mono text-on-surface-variant">AST-09882</td>
+<td class="px-4 font-medium">Old X-Ray Machine</td>
+<td class="px-4 text-on-surface-variant">Definium 8000</td>
+<td class="px-4">Radiology</td>
+<td class="px-4 text-on-surface-variant">2010-02-14</td>
+<td class="px-4 text-right font-data-mono text-data-mono">800,000</td>
+<td class="px-4">-</td>
+<td class="px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[11px] font-medium bg-on-surface-variant/10 text-on-surface-variant border border-on-surface-variant/20">Decommissioned</span>
+</td>
+<td class="px-4 text-on-surface-variant">Admin</td>
+<td class="px-4 text-right">
+<button class="text-primary hover:underline font-medium">Edit</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="h-12 border-t border-outline-variant bg-surface-container-low flex items-center justify-between px-4 text-body-sm font-body-sm text-on-surface-variant">
+<span>Showing 1 to 5 of 1,248 entries</span>
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 rounded flex items-center justify-center hover:bg-surface-container-highest disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-[20px]">chevron_left</span>
+</button>
+<button class="w-8 h-8 rounded flex items-center justify-center bg-primary-container text-on-primary-container font-medium">1</button>
+<button class="w-8 h-8 rounded flex items-center justify-center hover:bg-surface-container-highest">2</button>
+<button class="w-8 h-8 rounded flex items-center justify-center hover:bg-surface-container-highest">3</button>
+<span>...</span>
+<button class="w-8 h-8 rounded flex items-center justify-center hover:bg-surface-container-highest">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Edit Drawer Modal Overlay (Visible for demonstration) -->
+<div class="absolute inset-0 bg-inverse-surface/20 z-40 backdrop-blur-[1px] hidden"></div>
+<!-- Edit Drawer Panel -->
+<div class="absolute top-0 right-0 h-full w-[500px] max-w-full bg-surface-container-lowest shadow-[-4px_0_24px_rgba(0,0,0,0.05)] border-l border-outline-variant z-50 flex flex-col transform transition-transform duration-300 translate-x-0">
+<div class="px-6 py-4 border-b border-outline-variant flex items-center justify-between bg-surface-container-low">
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface">Edit Equipment</h3>
+<p class="font-data-mono text-data-mono text-on-surface-variant mt-1">AST-10492 • MRI Scanner 3.0T</p>
+</div>
+<button class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-highest text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="px-6 border-b border-outline-variant flex gap-6 mt-2">
+<button class="pb-3 border-b-2 border-primary font-body-sm text-body-sm font-semibold text-primary">Basic Info</button>
+<button class="pb-3 border-b-2 border-transparent font-body-sm text-body-sm font-medium text-on-surface-variant hover:text-on-surface transition-colors">Assets/Finance</button>
+<button class="pb-3 border-b-2 border-transparent font-body-sm text-body-sm font-medium text-on-surface-variant hover:text-on-surface transition-colors">Operational</button>
+<button class="pb-3 border-b-2 border-transparent font-body-sm text-body-sm font-medium text-on-surface-variant hover:text-on-surface transition-colors">Mapping</button>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col gap-5">
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-1.5">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Asset ID</label>
+<input class="h-9 rounded-[6px] border border-outline-variant bg-surface-container text-body-sm font-body-sm px-3 text-on-surface-variant" disabled="" type="text" value="AST-10492"/>
+</div>
+<div class="flex flex-col gap-1.5">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Equipment Name <span class="text-error">*</span></label>
+<input class="h-9 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm" type="text" value="MRI Scanner 3.0T"/>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-1.5">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Brand / Manufacturer</label>
+<input class="h-9 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm" type="text" value="Siemens"/>
+</div>
+<div class="flex flex-col gap-1.5">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Model</label>
+<input class="h-9 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm" type="text" value="Magnetom Vida"/>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-1.5">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Department</label>
+<select class="h-9 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm">
+<option selected="">Radiology</option>
+<option>Cardiology</option>
+</select>
+</div>
+<div class="flex flex-col gap-1.5">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Data Owner</label>
+<input class="h-9 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm px-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm" type="text" value="Dr. Wang"/>
+</div>
+</div>
+<div class="flex flex-col gap-1.5">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Current Status</label>
+<div class="flex gap-3 mt-1">
+<label class="flex items-center gap-2 cursor-pointer">
+<input checked="" class="text-primary focus:ring-primary" name="status" type="radio"/>
+<span class="font-body-sm text-body-sm">In Use</span>
+</label>
+<label class="flex items-center gap-2 cursor-pointer">
+<input class="text-primary focus:ring-primary" name="status" type="radio"/>
+<span class="font-body-sm text-body-sm">Maintenance</span>
+</label>
+<label class="flex items-center gap-2 cursor-pointer">
+<input class="text-primary focus:ring-primary" name="status" type="radio"/>
+<span class="font-body-sm text-body-sm">Decommissioned</span>
+</label>
+</div>
+</div>
+<div class="flex flex-col gap-1.5 mt-2">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Notes</label>
+<textarea class="h-24 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-body-sm font-body-sm p-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm resize-none" placeholder="Add operational notes or maintenance history..."></textarea>
+</div>
+</div>
+<div class="p-4 border-t border-outline-variant bg-surface-container-low flex justify-end gap-3">
+<button class="h-10 px-5 rounded-[6px] border border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container-high transition-colors font-body-sm text-body-sm font-medium">Cancel</button>
+<button class="h-10 px-5 rounded-[6px] bg-primary text-on-primary hover:bg-primary-container transition-colors font-body-sm text-body-sm font-medium shadow-sm">Save Changes</button>
+</div>
+</div>
+</main>
+</div>
+</body></html>

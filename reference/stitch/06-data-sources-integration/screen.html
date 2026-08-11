@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Hengxiao Zhicang - Data Source &amp; Interface Mapping</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed": "#321200",
+                      "on-surface": "#191c22",
+                      "surface-container-highest": "#e1e2eb",
+                      "on-secondary-fixed": "#051b39",
+                      "surface": "#f9f9ff",
+                      "surface-container-low": "#f2f3fc",
+                      "secondary-container": "#c4d8ff",
+                      "secondary": "#4c5f80",
+                      "primary": "#0052ac",
+                      "surface-bright": "#f9f9ff",
+                      "inverse-on-surface": "#eff0f9",
+                      "on-surface-variant": "#424753",
+                      "on-secondary-container": "#4b5e7f",
+                      "on-primary-fixed": "#001a40",
+                      "outline": "#727784",
+                      "primary-container": "#246bce",
+                      "outline-variant": "#c2c6d5",
+                      "on-tertiary-fixed-variant": "#753400",
+                      "tertiary-fixed-dim": "#ffb68b",
+                      "surface-tint": "#005bbe",
+                      "on-secondary-fixed-variant": "#344767",
+                      "surface-variant": "#e1e2eb",
+                      "primary-fixed": "#d7e2ff",
+                      "inverse-primary": "#acc7ff",
+                      "tertiary-fixed": "#ffdbc8",
+                      "inverse-surface": "#2e3037",
+                      "on-error": "#ffffff",
+                      "primary-fixed-dim": "#acc7ff",
+                      "tertiary": "#8a3f00",
+                      "secondary-fixed": "#d6e3ff",
+                      "surface-dim": "#d8d9e2",
+                      "surface-container-lowest": "#ffffff",
+                      "background": "#f9f9ff",
+                      "on-primary-fixed-variant": "#004491",
+                      "on-tertiary-container": "#ffede4",
+                      "on-error-container": "#93000a",
+                      "on-primary-container": "#ecf0ff",
+                      "error-container": "#ffdad6",
+                      "error": "#ba1a1a",
+                      "surface-container-high": "#e7e8f0",
+                      "tertiary-container": "#b05200",
+                      "secondary-fixed-dim": "#b4c7ed",
+                      "surface-container": "#ecedf6",
+                      "on-tertiary": "#ffffff",
+                      "on-secondary": "#ffffff",
+                      "on-primary": "#ffffff",
+                      "on-background": "#191c22"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "base": "4px",
+                      "stack-compact": "8px",
+                      "table-cell-padding": "12px 16px",
+                      "gutter": "16px",
+                      "stack-loose": "24px",
+                      "container-margin": "24px"
+              },
+              "fontFamily": {
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "data-mono": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "display-lg": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "body-sm": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "data-mono": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "36px",
+                              {
+                                      "lineHeight": "44px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: theme('colors.outline-variant');
+            border-radius: 4px;
+        }
+      </style>
+</head>
+<body class="bg-background text-on-background font-body-md text-body-md h-screen overflow-hidden flex">
+<!-- SideNavBar -->
+<nav class="bg-surface-container-low dark:bg-surface-dim docked left-0 h-screen w-64 border-r border-outline-variant dark:border-outline flat no shadows flex flex-col h-full py-stack-loose overflow-y-auto duration-200 ease-in-out z-40 hidden md:flex shrink-0 custom-scrollbar">
+<div class="px-gutter mb-stack-loose flex items-center gap-3">
+<div class="w-10 h-10 rounded-DEFAULT bg-primary-container text-on-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined" data-icon="local_hospital">local_hospital</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-black text-on-surface dark:text-inverse-on-surface leading-tight">Hengxiao Zhicang</h1>
+<p class="font-label-caps text-label-caps text-on-surface-variant opacity-80 uppercase">Medical Analysis Platform</p>
+</div>
+</div>
+<ul class="flex-1 flex flex-col gap-1 px-3">
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="dashboard">dashboard</span>
+                    Overview
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="analytics">analytics</span>
+                    Equipment Benefit
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="speed">speed</span>
+                    Efficiency
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings_input_component">settings_input_component</span>
+                    Machine Details
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="inventory">inventory</span>
+                    Equipment Ledger
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="group">group</span>
+                    Labor
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="biotech">biotech</span>
+                    Consumables
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="account_balance">account_balance</span>
+                    Fixed Costs
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="verified_user">verified_user</span>
+                    Audit &amp; Closing
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="rule">rule</span>
+                    Indicators
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings_suggest">settings_suggest</span>
+                    Rules
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="design_services">design_services</span>
+                    Dashboard Designer
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary font-semibold hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="database">database</span>
+                    Data Sources
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high hover:bg-surface-container-highest dark:hover:bg-surface-variant transition-all font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span>
+                    Settings
+                </a>
+</li>
+</ul>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col min-w-0 bg-background relative">
+<!-- TopNavBar -->
+<header class="bg-surface-container-lowest dark:bg-surface font-body-md text-body-md border-b border-outline-variant dark:border-outline flat no shadows flex justify-between items-center w-full px-gutter h-14 z-50 shrink-0 sticky top-0">
+<div class="flex items-center gap-4">
+<button class="md:hidden text-on-surface-variant p-2 hover:bg-surface-container-low transition-colors rounded-full">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<div class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed md:hidden">衡效智舱</div>
+<div class="hidden md:flex items-center bg-surface-container-low rounded-lg px-3 py-1.5 focus-within:ring-2 ring-primary-container/20 border border-transparent focus-within:border-outline-variant transition-all">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] mr-2" data-icon="search">search</span>
+<input class="bg-transparent border-none outline-none text-body-md font-body-md w-64 placeholder-on-surface-variant/60 focus:ring-0 p-0 text-on-surface" placeholder="Search resources..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant dark:text-outline hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="calendar_month">calendar_month</span>
+</button>
+<button class="p-2 text-on-surface-variant dark:text-outline hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="location_hospital">local_hospital</span>
+</button>
+<button class="p-2 text-on-surface-variant dark:text-outline hover:bg-surface-container-low transition-colors cursor-pointer active:opacity-80 rounded-full flex items-center justify-center relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<div class="w-px h-6 bg-outline-variant mx-2"></div>
+<button class="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center cursor-pointer hover:bg-primary-container/90 transition-colors ml-2 border border-outline-variant">
+<span class="font-label-caps text-label-caps">AD</span>
+</button>
+</div>
+</header>
+<!-- Page Content -->
+<main class="flex-1 overflow-y-auto p-container-margin custom-scrollbar">
+<div class="max-w-[1320px] mx-auto flex flex-col gap-6">
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">Data Source &amp; Interface Mapping</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Manage external system connections and field mappings for data ingestion.</p>
+</div>
+<div class="flex items-center gap-3">
+<button class="h-10 px-4 rounded bg-surface-container-lowest border border-outline-variant text-on-surface-variant font-data-mono text-data-mono hover:bg-surface-container-low transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]" data-icon="refresh">refresh</span>
+                            Sync All Systems
+                        </button>
+<button class="h-10 px-4 rounded bg-primary-container text-on-primary font-data-mono text-data-mono hover:bg-primary transition-colors flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[18px]" data-icon="add">add</span>
+                            New Connection
+                        </button>
+</div>
+</div>
+<!-- Systems Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- HIS System -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-secondary-container/30 text-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="monitor_heart">monitor_heart</span>
+</div>
+<div>
+<h3 class="font-body-lg text-body-lg font-semibold text-on-surface">HIS</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Hospital Info Sys</p>
+</div>
+</div>
+<span class="px-2 py-1 rounded-[2px] bg-[#138A63]/10 text-[#138A63] font-label-caps text-label-caps flex items-center gap-1">
+<div class="w-1.5 h-1.5 rounded-full bg-[#138A63]"></div>
+                                Connected
+                            </span>
+</div>
+<div class="flex justify-between items-center mt-auto pt-2 border-t border-surface-variant">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Last sync: 10m ago</span>
+<button class="text-primary font-data-mono text-data-mono hover:underline">Manage</button>
+</div>
+</div>
+<!-- RIS/PACS System -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col gap-4 ring-1 ring-primary-container/20 shadow-[0_4px_12px_rgba(0,0,0,0.05)]">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary text-on-primary flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined" data-icon="medical_information">medical_information</span>
+</div>
+<div>
+<h3 class="font-body-lg text-body-lg font-semibold text-on-surface">RIS/PACS</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Radiology &amp; Archiving</p>
+</div>
+</div>
+<span class="px-2 py-1 rounded-[2px] bg-secondary-container/50 text-on-secondary-container font-label-caps text-label-caps flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] animate-spin" data-icon="sync">sync</span>
+                                Syncing
+                            </span>
+</div>
+<div class="flex justify-between items-center mt-auto pt-2 border-t border-surface-variant">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Syncing records... 45%</span>
+<button class="text-primary font-data-mono text-data-mono hover:underline">Manage</button>
+</div>
+</div>
+<!-- Financial System -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+</div>
+<div>
+<h3 class="font-body-lg text-body-lg font-semibold text-on-surface">Financial</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">ERP Core</p>
+</div>
+</div>
+<span class="px-2 py-1 rounded-[2px] bg-error-container text-on-error-container font-label-caps text-label-caps flex items-center gap-1">
+<div class="w-1.5 h-1.5 rounded-full bg-error"></div>
+                                Error
+                            </span>
+</div>
+<div class="flex justify-between items-center mt-auto pt-2 border-t border-surface-variant">
+<span class="font-body-sm text-body-sm text-error">Auth failure</span>
+<button class="text-primary font-data-mono text-data-mono hover:underline">Manage</button>
+</div>
+</div>
+<!-- Asset System -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-4 flex flex-col gap-4 opacity-75">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container text-outline flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="devices">devices</span>
+</div>
+<div>
+<h3 class="font-body-lg text-body-lg font-semibold text-on-surface">Asset</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Fixed Asset Mgmt</p>
+</div>
+</div>
+<span class="px-2 py-1 rounded-[2px] bg-surface-container-highest text-on-surface-variant font-label-caps text-label-caps flex items-center gap-1">
+                                Idle
+                            </span>
+</div>
+<div class="flex justify-between items-center mt-auto pt-2 border-t border-surface-variant">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Scheduled: 02:00 AM</span>
+<button class="text-primary font-data-mono text-data-mono hover:underline">Manage</button>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Mapping Rules Panel -->
+<div class="lg:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant flex flex-col h-[500px]">
+<div class="p-4 border-b border-surface-variant flex justify-between items-center shrink-0">
+<h3 class="font-headline-md text-headline-md text-on-surface">Mapping Rules: RIS/PACS</h3>
+<button class="h-8 px-3 rounded bg-surface-container-lowest border border-outline-variant text-on-surface-variant font-data-mono text-data-mono hover:bg-surface-container-low transition-colors flex items-center gap-1 text-[13px]">
+<span class="material-symbols-outlined text-[16px]" data-icon="edit">edit</span>
+                                Edit Mapping
+                            </button>
+</div>
+<div class="flex-1 overflow-auto custom-scrollbar p-0">
+<table class="w-full text-left border-collapse">
+<thead class="sticky top-0 bg-surface-container-lowest z-10 shadow-[0_1px_0_0_theme('colors.surface-variant')]">
+<tr>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant uppercase w-2/5">Source Field (RIS)</th>
+<th class="p-table-cell-padding w-10 text-center"></th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant uppercase w-2/5">System Field (Target)</th>
+<th class="p-table-cell-padding font-label-caps text-label-caps text-on-surface-variant uppercase w-1/5">Type</th>
+</tr>
+</thead>
+<tbody class="font-data-mono text-data-mono">
+<tr class="border-b border-surface-variant hover:bg-surface/50">
+<td class="p-table-cell-padding text-on-surface">TerminalID</td>
+<td class="p-table-cell-padding text-center text-outline-variant">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</td>
+<td class="p-table-cell-padding text-primary font-medium">AssetID</td>
+<td class="p-table-cell-padding text-on-surface-variant">String</td>
+</tr>
+<tr class="border-b border-surface-variant bg-[#F8FAFC]">
+<td class="p-table-cell-padding text-on-surface">ExamDate</td>
+<td class="p-table-cell-padding text-center text-outline-variant">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</td>
+<td class="p-table-cell-padding text-primary font-medium">TransactionDate</td>
+<td class="p-table-cell-padding text-on-surface-variant">DateTime</td>
+</tr>
+<tr class="border-b border-surface-variant hover:bg-surface/50">
+<td class="p-table-cell-padding text-on-surface">ProcedureCode</td>
+<td class="p-table-cell-padding text-center text-outline-variant">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</td>
+<td class="p-table-cell-padding text-primary font-medium">ServiceItemID</td>
+<td class="p-table-cell-padding text-on-surface-variant">String</td>
+</tr>
+<tr class="border-b border-surface-variant bg-[#F8FAFC]">
+<td class="p-table-cell-padding text-on-surface">ChargeAmount</td>
+<td class="p-table-cell-padding text-center text-outline-variant">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</td>
+<td class="p-table-cell-padding text-primary font-medium">RevenueGenerated</td>
+<td class="p-table-cell-padding text-on-surface-variant">Decimal</td>
+</tr>
+<tr class="border-b border-surface-variant hover:bg-surface/50">
+<td class="p-table-cell-padding text-on-surface">DepartmentCode</td>
+<td class="p-table-cell-padding text-center text-outline-variant">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</td>
+<td class="p-table-cell-padding text-primary font-medium">CostCenterID</td>
+<td class="p-table-cell-padding text-on-surface-variant">String</td>
+</tr>
+<tr class="border-b border-surface-variant bg-[#F8FAFC]">
+<td class="p-table-cell-padding text-on-surface">PatientType</td>
+<td class="p-table-cell-padding text-center text-outline-variant">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</td>
+<td class="p-table-cell-padding text-primary font-medium">PatientCategory</td>
+<td class="p-table-cell-padding text-on-surface-variant">Enum</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Anomaly Queue -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant flex flex-col h-[500px]">
+<div class="p-4 border-b border-surface-variant flex justify-between items-center shrink-0">
+<div class="flex items-center gap-2">
+<h3 class="font-headline-md text-headline-md text-on-surface">Anomaly Queue</h3>
+<span class="bg-error/10 text-error font-data-mono text-[12px] px-1.5 py-0.5 rounded">24</span>
+</div>
+</div>
+<div class="flex-1 overflow-auto custom-scrollbar p-2 flex flex-col gap-2">
+<!-- Anomaly Item 1 -->
+<div class="p-3 border border-error-container bg-error-container/20 rounded-lg flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<span class="font-label-caps text-label-caps text-error bg-error/10 px-1.5 py-0.5 rounded-[2px]">Equipment Not Found</span>
+<span class="font-body-sm text-[12px] text-on-surface-variant">10:42 AM</span>
+</div>
+<div class="font-data-mono text-[13px] text-on-surface">
+                                    Source: RIS | TermID: <span class="font-semibold">CT-99X</span>
+</div>
+<p class="font-body-sm text-[13px] text-on-surface-variant truncate">Mapping target AssetID failed validation.</p>
+<div class="flex gap-2 mt-1">
+<button class="flex-1 h-8 bg-surface-container-lowest border border-outline-variant rounded text-[13px] font-data-mono hover:bg-surface-container-low transition-colors text-on-surface">Manually Resolve</button>
+</div>
+</div>
+<!-- Anomaly Item 2 -->
+<div class="p-3 border border-surface-variant hover:border-outline-variant bg-surface rounded-lg flex flex-col gap-2 transition-colors">
+<div class="flex justify-between items-start">
+<span class="font-label-caps text-label-caps text-tertiary-container bg-tertiary-container/10 px-1.5 py-0.5 rounded-[2px]">Negative Revenue</span>
+<span class="font-body-sm text-[12px] text-on-surface-variant">09:15 AM</span>
+</div>
+<div class="font-data-mono text-[13px] text-on-surface">
+                                    Source: HIS | TransID: <span class="font-semibold">TR-8472</span>
+</div>
+<p class="font-body-sm text-[13px] text-on-surface-variant truncate">ChargeAmount is -450.00 (Refund threshold alert).</p>
+<div class="flex gap-2 mt-1">
+<button class="flex-1 h-8 bg-surface-container-lowest border border-outline-variant rounded text-[13px] font-data-mono hover:bg-surface-container-low transition-colors text-on-surface">Review</button>
+</div>
+</div>
+<!-- Anomaly Item 3 -->
+<div class="p-3 border border-surface-variant hover:border-outline-variant bg-surface rounded-lg flex flex-col gap-2 transition-colors">
+<div class="flex justify-between items-start">
+<span class="font-label-caps text-label-caps text-error bg-error/10 px-1.5 py-0.5 rounded-[2px]">Equipment Not Found</span>
+<span class="font-body-sm text-[12px] text-on-surface-variant">Yesterday</span>
+</div>
+<div class="font-data-mono text-[13px] text-on-surface">
+                                    Source: LIS | TermID: <span class="font-semibold">BC-200A</span>
+</div>
+<p class="font-body-sm text-[13px] text-on-surface-variant truncate">AssetID missing in target database.</p>
+<div class="flex gap-2 mt-1">
+<button class="flex-1 h-8 bg-surface-container-lowest border border-outline-variant rounded text-[13px] font-data-mono hover:bg-surface-container-low transition-colors text-on-surface">Manually Resolve</button>
+</div>
+</div>
+</div>
+<div class="p-3 border-t border-surface-variant mt-auto bg-surface-container-lowest rounded-b-xl">
+<button class="w-full h-8 flex items-center justify-center gap-2 text-primary font-data-mono text-[13px] hover:bg-surface-container-low rounded transition-colors">
+<span class="material-symbols-outlined text-[16px]" data-icon="sync">sync</span>
+                                Re-import Queue
+                            </button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

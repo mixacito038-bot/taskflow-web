@@ -1,0 +1,7 @@
+.canvas { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--card-radius); background: var(--surface); box-shadow: var(--shadow); }
+.canvas header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }.canvas h3 { margin: 0 0 4px; font-size: 15px; }.canvas p, .canvas header > span { margin: 0; color: var(--muted); font-size: 11px; }
+.chart { height: 260px; }.autoHeight { height: auto; min-height: 150px; }
+.kpi { min-height: 150px; display: grid; place-content: center; text-align: center; }.kpi strong { color: var(--primary); font-size: 34px; }.kpi span { color: var(--muted); }
+.tableWrap { overflow: auto; }.tableWrap table { width: 100%; border-collapse: collapse; }.tableWrap th, .tableWrap td { padding: 9px; border-bottom: 1px solid var(--border); text-align: left; }.tableWrap th { color: var(--muted); font-size: 11px; background: var(--surface-soft); }
+.heatmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 7px; }.heatmap div { min-height: 82px; padding: 10px; border-radius: 9px; color: var(--text); background: color-mix(in srgb, var(--primary) calc(var(--intensity) * 72%), var(--surface-soft)); display: flex; flex-direction: column; justify-content: flex-end; }.heatmap span { font-size: 11px; }
+@media (max-width: 760px) { .canvas header { flex-direction: column; } .chart { height: 220px; } }

@@ -1,0 +1,83 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784716082390,
+      "tag": "0000_thankful_starhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784718842529,
+      "tag": "0001_cooing_captain_universe",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784772818347,
+      "tag": "0002_fantastic_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784780294221,
+      "tag": "0003_little_excalibur",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784794488551,
+      "tag": "0004_rare_robbie_robertson",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784799728127,
+      "tag": "0005_milky_rocket_racer",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784805711127,
+      "tag": "0006_lethal_scream",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786444214761,
+      "tag": "0007_data_workbench",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786444524012,
+      "tag": "0008_metadata_contracts",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786452872733,
+      "tag": "0009_file_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1786455356153,
+      "tag": "0010_publish_series_atomicity",
+      "breakpoints": true
+    }
+  ]
+}
