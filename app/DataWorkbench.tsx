@@ -90,6 +90,10 @@ import {
   type ServerCleaningImpact,
   type WorkbenchBatch,
 } from "./data-workbench-model";
+import {
+  SAMPLE_DATA_PACKAGE_VERSION,
+  buildSampleDataCsv,
+} from "./sample-data-package";
 
 export type DataWorkbenchProps = {
   hospitalId: string;
@@ -806,6 +810,22 @@ export default function DataWorkbench({
     setTemplateCode(nextTemplateCode);
     if (filePreview)
       setMapping(suggestedMapping(filePreview.headers, nextTemplateCode));
+  }
+
+  function downloadSampleData(code: string) {
+    const sample = buildSampleDataCsv(code);
+    downloadText(sample.fileName, sample.csv);
+    inform(`${sample.fileName} 已生成，共 ${sample.rowCount} 行脱敏示范数据`);
+  }
+
+  function downloadAllSampleData() {
+    FILE_BUSINESS_TEMPLATES.forEach((item, index) => {
+      window.setTimeout(() => {
+        const sample = buildSampleDataCsv(item.code);
+        downloadText(sample.fileName, sample.csv);
+      }, index * 350);
+    });
+    inform("8 个示范数据文件将依次下载，可直接走 导入→映射→清洗→发布 全流程");
   }
 
   async function submitFile(event: FormEvent<HTMLFormElement>) {
@@ -1563,6 +1583,13 @@ export default function DataWorkbench({
                 <Download size={14} />
                 下载 CSV 模板 / 字段说明
               </button>
+              <button
+                className={styles.templateDownload}
+                onClick={() => downloadSampleData(item.code)}
+              >
+                <WandSparkles size={14} />
+                下载示范数据
+              </button>
             </article>
           ))}
         </div>
@@ -1616,7 +1643,15 @@ export default function DataWorkbench({
                 <RefreshCw size={15} />
                 重新选择
               </button>
-            ) : undefined
+            ) : (
+              <button
+                className={styles.secondaryButton}
+                onClick={downloadAllSampleData}
+              >
+                <Download size={15} />
+                下载全部示范数据
+              </button>
+            )
           }
         />
         {error ? (
@@ -1730,6 +1765,14 @@ export default function DataWorkbench({
               </div>
               <footer className={styles.formActions}>
                 <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => downloadSampleData(templateCode)}
+                >
+                  <WandSparkles size={15} />
+                  下载示范数据
+                </button>
+                <button
                   className={styles.primaryButton}
                   disabled={
                     !draft ||
@@ -1754,6 +1797,16 @@ export default function DataWorkbench({
                 </button>
               </footer>
             </form>
+            <div className={styles.capabilityNote}>
+              <FileSpreadsheet size={18} />
+              <div>
+                <strong>示范数据包 {SAMPLE_DATA_PACKAGE_VERSION}</strong>
+                <p>
+                  这些文件为脱敏示范数据，与设备台账使用同一套设备编号，可直接走
+                  导入→映射→清洗→发布 全流程；不含姓名、证件、手机号等个人信息。
+                </p>
+              </div>
+            </div>
             {templateCode === "exam_activity" ? (
               <div className={styles.capabilityNote}>
                 <AlertTriangle size={18} />
@@ -1822,7 +1875,7 @@ export default function DataWorkbench({
               <div className={styles.emptyState}>
                 <TableProperties size={26} />
                 <strong>尚无真实预览</strong>
-                <p>不会填充示例行；Excel 需服务端解析成功后显示。</p>
+                <p>可先下载示范数据体验全流程；Excel 需服务端解析成功后显示。</p>
               </div>
             )}
           </Panel>
