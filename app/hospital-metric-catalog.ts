@@ -11,6 +11,8 @@ export type HospitalMetricCatalogItem = {
   dimension: DimensionId;
   definition: string;
   formula: string;
+  /** 机器可执行的派生公式（仅引用同目录指标编码）；基础指标不携带。 */
+  formulaExpr?: string;
   numerator: string;
   denominator: string;
   unit: string;

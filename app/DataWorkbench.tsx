@@ -51,6 +51,10 @@ import {
   hospitalMetricCatalog,
 } from "./hospital-metric-catalog";
 import {
+  metricTemplateRegistry,
+  resolveMetricTemplate,
+} from "./metric-template-registry";
+import {
   DATA_WORKBENCH_ENTRY_CLICKS,
   DATA_WORKBENCH_SECTIONS,
   FILE_BUSINESS_TEMPLATES,
@@ -457,6 +461,9 @@ export default function DataWorkbench({
   const [fieldName, setFieldName] = useState("");
   const [fieldCode, setFieldCode] = useState("");
   const [metricName, setMetricName] = useState("");
+  const [metricTemplateVersion, setMetricTemplateVersion] = useState<string>(
+    HOSPITAL_METRIC_CATALOG_VERSION,
+  );
   const [catalogFieldIds, setCatalogFieldIds] = useState<string[]>([]);
   const [catalogDependencyIds, setCatalogDependencyIds] = useState<string[]>(
     [],
@@ -497,7 +504,8 @@ export default function DataWorkbench({
   const activatableHospitalMetricCodes = useMemo(
     () =>
       new Set(
-        hospitalMetricCatalog
+        Object.values(metricTemplateRegistry)
+          .flatMap((template) => template.catalog)
           .filter((metric) => metric.readiness !== "deferred")
           .map((metric) => metric.code),
       ),
@@ -1169,10 +1177,11 @@ export default function DataWorkbench({
   }
 
   async function importHospitalMetricCatalog() {
+    const template = resolveMetricTemplate(metricTemplateVersion);
     const result = await callAction(
       "import_hospital_metric_template",
-      { templateVersion: HOSPITAL_METRIC_CATALOG_VERSION },
-      "医院关注指标 20 项已导入为草稿",
+      { templateVersion: metricTemplateVersion },
+      `${template?.label ?? "医院关注指标"} ${template?.expectedCount ?? 20} 项已导入为草稿`,
     );
     if (result) retryResources();
   }
@@ -2149,13 +2158,43 @@ export default function DataWorkbench({
             title="指标配置"
             description="选择字段、聚合 / 公式、分子、分母、维度和版本"
             action={
-              <button
-                className={styles.secondaryButton}
-                disabled={!canClean || Boolean(operation)}
-                onClick={() => void importHospitalMetricCatalog()}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 8,
+                }}
               >
-                导入医院关注指标（20 项）
-              </button>
+                <select
+                  aria-label="选择指标模板版本"
+                  value={metricTemplateVersion}
+                  onChange={(event) =>
+                    setMetricTemplateVersion(event.target.value)
+                  }
+                >
+                  {Object.entries(metricTemplateRegistry).map(
+                    ([version, template]) => (
+                      <option key={version} value={version}>
+                        {template.label}（{template.expectedCount} 项）
+                      </option>
+                    ),
+                  )}
+                </select>
+                <button
+                  className={styles.secondaryButton}
+                  disabled={!canClean || Boolean(operation)}
+                  onClick={() => void importHospitalMetricCatalog()}
+                >
+                  导入
+                  {resolveMetricTemplate(metricTemplateVersion)?.label ??
+                    "医院关注指标"}
+                  （
+                  {resolveMetricTemplate(metricTemplateVersion)
+                    ?.expectedCount ?? 20}
+                  {" 项）"}
+                </button>
+              </div>
             }
           >
             <form
@@ -2338,10 +2377,16 @@ export default function DataWorkbench({
             <p>
               原表存在“或”口径的项目拆分后共形成 20 个指标。目录中的外部业务
               出处只用于说明理论来源；本平台仅接收 Excel、CSV 或 JSON
-              导出文件，不建立在线接口。
+              导出文件，不建立在线接口。当前展示模板：
+              {resolveMetricTemplate(metricTemplateVersion)?.label ??
+                "医院关注指标基线"}
+              （{metricTemplateVersion}）。
             </p>
             <div className={styles.stateGrid}>
-              {hospitalMetricCatalog.map((catalog) => {
+              {(
+                resolveMetricTemplate(metricTemplateVersion)?.catalog ??
+                hospitalMetricCatalog
+              ).map((catalog) => {
                 const stored = collections.metrics.find(
                   (item) => String(item.code) === catalog.code,
                 );
@@ -3814,7 +3859,7 @@ export default function DataWorkbench({
             返回设备效益平台
           </button>
           <span>
-            <LockKeyhole size={12} />6 击入口 · 服务端最终鉴权
+            <LockKeyhole size={12} />{DATA_WORKBENCH_ENTRY_CLICKS} 击口令入口 · 服务端最终鉴权
           </span>
         </footer>
       </aside>

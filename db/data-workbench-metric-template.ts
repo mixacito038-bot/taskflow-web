@@ -7,6 +7,7 @@ export type HospitalMetricTemplateCatalogItem = {
   dimension: string;
   definition: string;
   formula: string;
+  formulaExpr?: string;
   numerator: string;
   denominator: string;
   unit: string;
@@ -35,6 +36,7 @@ export type HospitalMetricTemplateMetadata = {
   audience: string[];
   validation: string;
   decision: string;
+  formulaExpr?: string;
 };
 
 export type HospitalMetricTemplateRow = {
@@ -99,6 +101,8 @@ function metadataFor(item: HospitalMetricTemplateCatalogItem, templateVersion: s
     audience: [...item.audience],
     validation: item.validation,
     decision: item.decision,
+    // 基线目录没有 formulaExpr，条件展开保证其元数据 JSON 与历史版本逐字节一致。
+    ...(item.formulaExpr !== undefined ? { formulaExpr: item.formulaExpr } : {}),
   };
 }
 
@@ -174,6 +178,7 @@ export function parseHospitalMetricTemplateMetadata(value: string): HospitalMetr
       || !Array.isArray(parsed.audience)
       || typeof parsed.validation !== "string"
       || typeof parsed.decision !== "string"
+      || (parsed.formulaExpr !== undefined && typeof parsed.formulaExpr !== "string")
     ) return null;
     return parsed as HospitalMetricTemplateMetadata;
   } catch {
@@ -189,13 +194,16 @@ export type HospitalMetricActivationBindings = {
 export function hospitalMetricActivationIssues(
   row: HospitalMetricTemplateRow,
   bindings: HospitalMetricActivationBindings,
-  expectedCatalogVersion?: string,
+  expectedCatalogVersion?: string | ReadonlySet<string>,
 ) {
   if (row.status !== "draft") return ["immutable_status"] as const;
   const metadata = parseHospitalMetricTemplateMetadata(row.description);
   if (!metadata) return ["not_hospital_metric_template"] as const;
-  if (expectedCatalogVersion && metadata.catalogVersion !== expectedCatalogVersion) {
-    return ["unsupported_template_version"] as const;
+  if (expectedCatalogVersion !== undefined) {
+    const supported = typeof expectedCatalogVersion === "string"
+      ? metadata.catalogVersion === expectedCatalogVersion
+      : expectedCatalogVersion.has(metadata.catalogVersion);
+    if (!supported) return ["unsupported_template_version"] as const;
   }
   if (metadata.readiness === "deferred") return ["deferred_metric"] as const;
   try {

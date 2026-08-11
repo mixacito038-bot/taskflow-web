@@ -1,3 +1,5 @@
+import { evaluateMetricSet, validateFormulaExpression, type FormulaResult } from "./metric-formula";
+
 export type MetadataStatus = "draft" | "active" | "retired";
 export type FieldDataType = "text" | "number" | "date" | "datetime" | "boolean" | "dictionary" | "identifier";
 export type Aggregation = "sum" | "avg" | "min" | "max" | "count" | "count_distinct";
@@ -20,7 +22,10 @@ export type MetricDefinition = {
   code: string;
   name: string;
   aggregation: Aggregation;
-  field: string;
+  /** 单字段聚合的取数字段；派生指标（含 formulaExpr）可不填。 */
+  field?: string;
+  /** 机器可执行的派生公式，引用其他指标编码，由安全公式引擎计算。 */
+  formulaExpr?: string;
   unit?: string;
   allowedDimensions?: string[];
   allocationRule?: AllocationRule;
@@ -66,7 +71,11 @@ export function validateMetricDefinition(metric: MetricDefinition) {
   const errors: string[] = [];
   if (!codePattern.test(metric.code)) errors.push("指标编码不合法");
   if (!metric.name.trim()) errors.push("指标名称不能为空");
-  if (!metric.field.trim()) errors.push("指标必须引用字段");
+  if (metric.formulaExpr !== undefined) {
+    errors.push(...validateFormulaExpression(metric.formulaExpr));
+  } else if (!metric.field?.trim()) {
+    errors.push("指标必须引用字段");
+  }
   if ((metric.version ?? 1) < 1) errors.push("指标版本必须大于零");
   return errors;
 }
@@ -86,16 +95,28 @@ function numberValue(row: ExamFact, field: string) {
 }
 
 export function aggregateExamFacts(events: ExamFact[], metric: Pick<MetricDefinition, "aggregation" | "field" | "code">) {
+  const field = metric.field ?? "";
   if (metric.aggregation === "count_distinct") {
-    return { metricCode: metric.code, value: new Set(events.map((event) => String(event[metric.field] ?? "")).filter(Boolean)).size };
+    return { metricCode: metric.code, value: new Set(events.map((event) => String(event[field] ?? "")).filter(Boolean)).size };
   }
   if (metric.aggregation === "count") return { metricCode: metric.code, value: events.length };
-  const values = events.map((event) => numberValue(event, metric.field));
+  const values = events.map((event) => numberValue(event, field));
   if (!values.length) return { metricCode: metric.code, value: 0 };
   if (metric.aggregation === "avg") return { metricCode: metric.code, value: values.reduce((sum, value) => sum + value, 0) / values.length };
   if (metric.aggregation === "min") return { metricCode: metric.code, value: Math.min(...values) };
   if (metric.aggregation === "max") return { metricCode: metric.code, value: Math.max(...values) };
   return { metricCode: metric.code, value: values.reduce((sum, value) => sum + value, 0) };
+}
+
+/**
+ * 计算带 formulaExpr 的派生指标：基础指标取值来自 baseResolve，
+ * 派生指标可引用同组指标编码；缺值、除零和循环引用显式失败，绝不补零。
+ */
+export function evaluateDerivedMetrics(
+  metrics: ReadonlyArray<Pick<MetricDefinition, "code" | "formulaExpr">>,
+  baseResolve: (code: string) => number | null | undefined,
+): Map<string, FormulaResult> {
+  return evaluateMetricSet(metrics, baseResolve);
 }
 
 export function allocateExamByBodyPart(events: ExamFact[], rule: AllocationRule) {

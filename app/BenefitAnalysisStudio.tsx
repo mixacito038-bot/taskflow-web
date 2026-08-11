@@ -18,6 +18,7 @@ import {
   CircleDollarSign,
   Database,
   FileCheck2,
+  Gauge,
   Pencil,
   Save,
   ShieldCheck,
@@ -37,6 +38,7 @@ import {
   type UtilizationDenominator,
 } from "./benefit-analysis-config";
 import type { DataSource, Device } from "./mock-data";
+import ComprehensiveMonitoringBoard from "./ComprehensiveMonitoringBoard";
 import ConfigurableAnalyticsCanvas from "./ConfigurableAnalyticsCanvas";
 import type { ChartType, MetricDefinition, VisualizationDefinition } from "./analytics-semantic-layer";
 import {
@@ -47,7 +49,7 @@ import {
   type HospitalMetricReadiness,
 } from "./hospital-metric-catalog";
 
-type StudioTab = "collection" | "quality" | "metrics" | "custom";
+type StudioTab = "collection" | "monitor" | "quality" | "metrics" | "custom";
 type ConfigurationIssueKind = "source" | "manual" | "profile";
 
 type ConfigurationIssue = {
@@ -491,6 +493,7 @@ export default function BenefitAnalysisStudio({
 
       <div className="analysis-tabs" role="tablist" aria-label="采集与分析配置页签">
         <button role="tab" aria-selected={tab === "collection"} className={tab === "collection" ? "active" : ""} onClick={() => setTab("collection")}><Database size={16} />采集方案</button>
+        <button role="tab" aria-selected={tab === "monitor"} className={tab === "monitor" ? "active" : ""} onClick={() => setTab("monitor")}><Gauge size={16} />全面监测</button>
         <button role="tab" aria-selected={tab === "quality"} className={tab === "quality" ? "active" : ""} onClick={() => setTab("quality")}><ShieldCheck size={16} />质量与对账</button>
         <button role="tab" aria-selected={tab === "metrics"} className={tab === "metrics" ? "active" : ""} onClick={() => setTab("metrics")}><CircleDollarSign size={16} />分析口径</button>
         <button role="tab" aria-selected={tab === "custom"} className={tab === "custom" ? "active" : ""} onClick={() => setTab("custom")}><BarChart3 size={16} />自定义视图</button>
@@ -572,6 +575,10 @@ export default function BenefitAnalysisStudio({
           </div>
           <div className="analysis-privacy-note"><ShieldCheck size={18} /><span><strong>隐私边界：</strong>云端效益层只接收设备、事件、科室和金额等去标识化数据；姓名、身份证、手机号、住院号、病历号与影像原文不得进入本演示云。</span></div>
         </>
+      ) : null}
+
+      {tab === "monitor" ? (
+        <ComprehensiveMonitoringBoard devices={devices} />
       ) : null}
 
       {tab === "quality" ? (

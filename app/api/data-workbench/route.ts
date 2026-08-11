@@ -2,7 +2,12 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { appSessionError, assertSameOrigin, requireAppSession } from "../../../db/account-security";
 import { getCloudStateAccess } from "../../../db/cloud-state";
-import { HOSPITAL_METRIC_CATALOG_VERSION, hospitalMetricCatalog } from "../../hospital-metric-catalog";
+import { HOSPITAL_METRIC_CATALOG_VERSION } from "../../hospital-metric-catalog";
+import {
+  metricTemplateRegistry,
+  registeredMetricTemplateVersions,
+  resolveMetricTemplate,
+} from "../../metric-template-registry";
 import {
   boundedJson,
   canAdvanceImport,
@@ -102,7 +107,10 @@ const issueStatuses = new Set(["open", "acknowledged", "resolved", "waived"]);
 const fieldDataTypes = new Set(["string", "integer", "decimal", "boolean", "date", "datetime", "code", "json"]);
 const metricAggregations = new Set(["sum", "avg", "min", "max", "count", "distinct_count", "ratio", "custom"]);
 const cleaningRuleTypes = new Set(["trim", "upper", "lower", "default", "number", "required", "regex", "enum", "replace", "deduplicate"]);
-const hospitalMetricCatalogCodes = new Set(hospitalMetricCatalog.map((item) => item.code));
+// 所有已登记模板（基线 + 全面监测）的目录编码都必须走激活专用动作，不允许绕过。
+const hospitalMetricCatalogCodes = new Set(
+  Object.values(metricTemplateRegistry).flatMap((template) => template.catalog.map((item) => item.code)),
+);
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "unexpected_error";
@@ -538,12 +546,15 @@ export async function POST(request: Request) {
     if (payload.action === "import_hospital_metric_template") {
       const denied = requirePermission(access, "data.clean");
       if (denied) return denied;
-      const templateVersion = textValue(payload.templateVersion, 120);
-      if (!templateVersion || templateVersion !== HOSPITAL_METRIC_CATALOG_VERSION) {
+      const templateVersion = payload.templateVersion === undefined
+        ? HOSPITAL_METRIC_CATALOG_VERSION
+        : textValue(payload.templateVersion, 120);
+      const registeredTemplate = templateVersion ? resolveMetricTemplate(templateVersion) : null;
+      if (!templateVersion || !registeredTemplate) {
         return Response.json({ error: "unsupported_hospital_metric_template_version" }, { status: 400 });
       }
-      const expected = buildHospitalMetricTemplateRows(hospitalMetricCatalog, templateVersion);
-      if (expected.length !== 20) throw new Error("invalid_hospital_metric_catalog_size");
+      const expected = buildHospitalMetricTemplateRows(registeredTemplate.catalog, templateVersion);
+      if (expected.length !== registeredTemplate.expectedCount) throw new Error("invalid_hospital_metric_catalog_size");
       const version = expected[0]?.version ?? 0;
       const existing = await metricDefinitionsByCodesVersionInHospital(
         hospitalId,
@@ -659,7 +670,7 @@ export async function POST(request: Request) {
       const issues = hospitalMetricActivationIssues(
         current,
         { sourceFieldIds, dependencyMetricIds },
-        HOSPITAL_METRIC_CATALOG_VERSION,
+        registeredMetricTemplateVersions,
       );
       if (issues.length) {
         return Response.json({ error: "metric_activation_blocked", issues }, { status: 409 });

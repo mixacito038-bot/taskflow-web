@@ -133,7 +133,12 @@ test("路由对导入、激活实施权限、租户依赖校验和 lineage 审�
   const dbHelpers = await readFile(new URL("../db/data-workbench.ts", import.meta.url), "utf8");
   assert.match(route, /payload\.action === "import_hospital_metric_template"/);
   assert.match(route, /requirePermission\(access, "data\.clean"\)/);
-  assert.match(route, /templateVersion !== HOSPITAL_METRIC_CATALOG_VERSION/);
+  // 模板版本仍然被钉死：只接受注册表登记的版本，默认保持医院基线。
+  assert.match(route, /resolveMetricTemplate\(templateVersion\)/);
+  assert.match(route, /unsupported_hospital_metric_template_version/);
+  assert.match(route, /HOSPITAL_METRIC_CATALOG_VERSION/);
+  assert.match(route, /expected\.length !== registeredTemplate\.expectedCount/);
+  assert.match(route, /registeredMetricTemplateVersions/);
   assert.match(route, /payload\.action === "activate_hospital_metric_definition"/);
   assert.match(route, /requirePermission\(access, "data\.review"\)/);
   assert.match(route, /hospital_metric_template_imported/);
