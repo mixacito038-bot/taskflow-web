@@ -49,6 +49,8 @@ test("Docker 交付物齐备且编排不暴露公网端口", async () => {
   assert.match(dockerfile, /FROM \$\{BASE_IMAGE\}/);
   // 中国大陆：容器默认 UTC 会让"今天/本月"在 0—8 点整体错一天
   assert.match(dockerfile, /TZ=Asia\/Shanghai/);
+  // 时区只靠 ENV TZ（Node 直接读），不用 RUN——最小化基础镜像（无 shell）也能构建
+  assert.doesNotMatch(dockerfile, /^RUN /m);
   assert.match(dockerfile, /HEALTHCHECK/);
   assert.match(dockerfile, /register-loader\.mjs/);
   assert.match(compose, /127\.0\.0\.1:8911:8911/);
@@ -125,4 +127,24 @@ test("单机试用路径：默认 IP 直连可用，--behind-nginx 才收回本�
   assert.match(installer, /ROOT=\/opt\/yonghong/);
   assert.match(installer, /PORT:-8911/);
   assert.match(quickstart, /reset-data\.sh/);
+});
+
+test("Docker 一键安装：restart=always、数据卷、失败自动换腾讯云基础镜像", async () => {
+  const installer = await readFile(new URL("../deploy/install-docker.sh", import.meta.url), "utf8");
+  assert.match(installer, /--restart=always/);
+  assert.match(installer, /-v "\$\{ROOT\}\/data:\/data"/);
+  assert.match(installer, /mirror\.ccs\.tencentyun\.com/);
+  // Docker Hub 拉不动时自动换腾讯云官方镜像副本重试，不让用户手工处理
+  assert.match(installer, /BASE_IMAGE=ccr\.ccs\.tencentyun\.com\/library\/node:22-bookworm-slim/);
+  assert.match(installer, /healthz/);
+  assert.match(installer, /安全组/);
+  // 免 Docker 脚本的 Node 兜底：dnf 失败后从 npmmirror 下二进制，而不是直接放弃
+  const sysd = await readFile(new URL("../deploy/install-tencentos.sh", import.meta.url), "utf8");
+  assert.match(sysd, /install_node_binary/);
+  assert.match(sysd, /registry\.npmmirror\.com\/-\/binary\/node/);
+  assert.match(sysd, /install-docker\.sh/);
+  // 重置脚本兼容两种部署
+  const reset = await readFile(new URL("../deploy/reset-data.sh", import.meta.url), "utf8");
+  assert.match(reset, /docker inspect/);
+  assert.match(reset, /systemctl stop/);
 });

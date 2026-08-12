@@ -15,10 +15,14 @@ printf "确认请输入 yes："
 read -r answer
 [ "${answer}" = "yes" ] || { echo "已取消"; exit 0; }
 
-systemctl stop "${SERVICE}" 2>/dev/null || true
+# 两种部署方式都支持：Docker 容器优先，其次 systemd 服务
+uses_docker=0
+if command -v docker >/dev/null 2>&1 && docker inspect "${SERVICE}" >/dev/null 2>&1; then uses_docker=1; fi
+
+if [ "${uses_docker}" = "1" ]; then docker stop "${SERVICE}" >/dev/null; else systemctl stop "${SERVICE}" 2>/dev/null || true; fi
 # 只删数据内容，保留目录本身与属主，避免重启后权限不对
 rm -rf "${DATA_DIR}"/platform.sqlite "${DATA_DIR}"/platform.sqlite-* "${DATA_DIR}"/r2
 chown -R yonghong:yonghong "${DATA_DIR}" 2>/dev/null || true
-systemctl start "${SERVICE}"
+if [ "${uses_docker}" = "1" ]; then docker start "${SERVICE}" >/dev/null; else systemctl start "${SERVICE}"; fi
 
 echo "已重置。数据库迁移会在启动时自动重建，用原来的管理员账号密码登录即可。"

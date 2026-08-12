@@ -27,8 +27,8 @@ ENV NODE_ENV=production \
     LANG=C.UTF-8 \
     NODE_OPTIONS=--disable-warning=ExperimentalWarning
 
-# 基础镜像自带 tzdata，这里只做链接，不联网装包（内网/离线环境也能构建）。
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+# 时区靠上面的 TZ 环境变量即可：Node 直接读 TZ，不依赖 /etc/localtime，
+# 也因此不需要 RUN 步骤——最小化基础镜像（无 shell）同样能构建。
 
 WORKDIR /app
 

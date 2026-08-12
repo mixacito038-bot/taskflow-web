@@ -47,7 +47,7 @@ cat > "${STAGE}/如何部署.txt" <<'NOTE'
     mkdir -p /opt/yonghong/src && \
     tar -xzf /root/yonghong-platform-src-*.tar.gz -C /opt/yonghong/src --strip-components=1 && \
     cd /opt/yonghong/src && \
-    bash deploy/install-tencentos.sh
+    bash deploy/install-docker.sh
 
 然后在腾讯云安全组放行 TCP:8911，浏览器打开 http://<服务器IP>:8911
 
@@ -69,4 +69,4 @@ ls -lh "${OUT_DIR}/${NAME}.tar.gz"
 echo ""
 echo "服务器上执行："
 echo "  tar -xzf ${NAME}.tar.gz && cd ${NAME}"
-echo "  bash deploy/install-tencentos.sh"
+echo "  bash deploy/install-docker.sh"

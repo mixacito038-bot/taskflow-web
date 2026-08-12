@@ -29,13 +29,29 @@ if command -v node >/dev/null 2>&1; then
   minor=$(node -p "process.versions.node.split('.')[1]")
   if [ "$major" -gt 22 ] || { [ "$major" -eq 22 ] && [ "$minor" -ge 13 ]; }; then need_node=0; fi
 fi
+install_node_binary() {
+  # 从 npmmirror（国内镜像）直接下官方二进制，绕开 dnf 源问题
+  echo "    从 npmmirror 下载 Node 22 二进制…"
+  local ver
+  ver="$(curl -fsSL https://registry.npmmirror.com/-/binary/node/index.json 2>/dev/null     | grep -oE '"version":"v22\.[0-9]+\.[0-9]+"' | head -1 | cut -d'"' -f4)"
+  ver="${ver:-v22.16.0}"
+  curl -fL -o /tmp/node22.tar.xz "https://registry.npmmirror.com/-/binary/node/${ver}/node-${ver}-linux-x64.tar.xz" || return 1
+  mkdir -p /usr/local/node22
+  tar -xJf /tmp/node22.tar.xz -C /usr/local/node22 --strip-components=1 || return 1
+  ln -sf /usr/local/node22/bin/node /usr/local/bin/node
+  rm -f /tmp/node22.tar.xz
+  hash -r
+}
+
 if [ "$need_node" -eq 1 ]; then
-  echo "    安装 Node 22（优先系统源，失败再用 NodeSource）"
-  dnf install -y nodejs22 2>/dev/null || dnf install -y nodejs 2>/dev/null || {
-    curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
-    dnf install -y nodejs
-  }
-  command -v node >/dev/null || { echo "Node 安装失败：请离线安装 Node 22 后重跑本脚本"; exit 1; }
+  echo "    安装 Node 22（依次尝试：系统源 → npmmirror 二进制 → NodeSource）"
+  dnf install -y nodejs22 2>/dev/null || dnf install -y nodejs 2>/dev/null || true
+  if ! command -v node >/dev/null 2>&1 || ! node -e "process.exit(process.versions.node.split('.')[0]>=22?0:1)" 2>/dev/null; then
+    install_node_binary || {
+      curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && dnf install -y nodejs
+    } || true
+  fi
+  command -v node >/dev/null || { echo "Node 安装失败。更省事的办法：改用 Docker 方式 → bash deploy/install-docker.sh"; exit 1; }
 fi
 NODE_BIN="$(command -v node)"
 echo "    使用 ${NODE_BIN}（$(node -v)）"
