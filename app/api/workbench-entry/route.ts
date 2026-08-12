@@ -11,6 +11,40 @@ export const dynamic = "force-dynamic";
 const DEFAULT_ENTRY_PASSWORD = "yonghong";
 const MAX_PASSWORD_LENGTH = 128;
 
+/**
+ * 进程内粗粒度限速，仅为挡住脚本对入口口令的匿名爆破。
+ *
+ * 说明：这是“尽力而为”而非强安全边界——Worker 会横向扩展成多个 isolate，
+ * 模块级 Map 只在同一 isolate 内共享，攻击者仍可能被分散到不同 isolate。
+ * 真正的边界仍在 /api/data-workbench 的登录身份、医院成员关系与 data.* 权限校验，
+ * 入口口令本身只是操作捷径。同一来源 1 分钟内失败超过 10 次即返回 429。
+ */
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_FAILURES = 10;
+const failureBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function clientRateKey(request: Request): string {
+  const forwarded = request.headers.get("cf-connecting-ip")
+    ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? "";
+  return forwarded || "shared";
+}
+
+function isRateLimited(key: string, now: number): boolean {
+  const bucket = failureBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) return false;
+  return bucket.count > RATE_LIMIT_MAX_FAILURES;
+}
+
+function recordFailure(key: string, now: number): void {
+  const bucket = failureBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    failureBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return;
+  }
+  bucket.count += 1;
+}
+
 async function resolveEntryPassword(): Promise<string> {
   try {
     const { env } = await import("cloudflare:workers");
@@ -34,6 +68,12 @@ async function passwordMatches(candidate: string, expected: string): Promise<boo
 }
 
 export async function POST(request: Request) {
+  const now = Date.now();
+  const rateKey = clientRateKey(request);
+  if (isRateLimited(rateKey, now)) {
+    return Response.json({ error: "rate_limited" }, { status: 429, headers: { "retry-after": "60" } });
+  }
+
   let payload: unknown;
   try {
     payload = await request.json();
@@ -44,10 +84,12 @@ export async function POST(request: Request) {
     ? (payload as { password: string }).password.trim()
     : "";
   if (!password || password.length > MAX_PASSWORD_LENGTH) {
+    recordFailure(rateKey, now);
     return Response.json({ error: "invalid_entry_password" }, { status: 403 });
   }
   const expected = await resolveEntryPassword();
   if (!(await passwordMatches(password, expected))) {
+    recordFailure(rateKey, now);
     return Response.json({ error: "invalid_entry_password" }, { status: 403 });
   }
   return Response.json({ ok: true }, {

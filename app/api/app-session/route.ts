@@ -122,7 +122,20 @@ async function passwordLogin(request: Request, payload: AppSessionRequest) {
   }
 
   await maybeBootstrapAdminCredential(username, password);
-  const { account } = await verifyPasswordLogin(username, password);
+  let account: Awaited<ReturnType<typeof verifyPasswordLogin>>["account"];
+  try {
+    ({ account } = await verifyPasswordLogin(username, password));
+  } catch (error) {
+    // 失败/锁定路径也要留痕（对齐 MFA 失败写 denied 审计）；账号可能不存在，故
+    // actorAccountId 留空，脱敏用户名与失败原因记入 detail。审计失败不得掩盖鉴权错误。
+    const reason = error instanceof PasswordAuthError ? error.code : "password_login_failed";
+    try {
+      await writeSecurityAudit("", "password_login", "denied", `账号密码登录失败：${reason}（尝试账号 ${maskUsername(username)}）`);
+    } catch {
+      // 审计写入失败时静默，优先向调用方返回原始鉴权错误。
+    }
+    throw error;
+  }
 
   const mfa = await getMfaStatus(account.id);
   if (mfa.enabled) {
@@ -300,6 +313,13 @@ async function statusPayload(inspection: AppSessionInspection) {
 function withNoStore(response: Response) {
   response.headers.set("Cache-Control", "no-store");
   return response;
+}
+
+// 审计里只保留用户名前 2 位，其余以 *** 脱敏，避免把完整登录账号写进日志。
+function maskUsername(username: string): string {
+  const trimmed = username.trim();
+  if (!trimmed) return "***";
+  return `${trimmed.slice(0, 2)}***`;
 }
 
 function assertMfaSnapshotUnchanged(

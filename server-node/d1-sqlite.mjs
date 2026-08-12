@@ -37,6 +37,12 @@ class SqliteD1PreparedStatement {
 
   async raw() {
     const statement = this.database.prepare(this.sql);
+    // 必须按位置取值：join 查询里会出现同名列（如两个 id），
+    // 按列名取值会让后出现的列覆盖前一个，导致字段串位（曾把角色 id 当成医院 id）。
+    if (typeof statement.setReturnArrays === "function") {
+      statement.setReturnArrays(true);
+      return statement.all(...this.params);
+    }
     const results = statement.all(...this.params);
     const columns = statement.columns().map((column) => column.name);
     return results.map((row) => columns.map((column) => row[column]));

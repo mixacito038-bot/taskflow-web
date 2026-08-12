@@ -132,3 +132,12 @@
   font-size: 12px;
   text-align: center;
 }
+
+.alertActionDone,
+.alertActionDone:hover {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 40%, var(--border));
+  background: var(--green-soft);
+  cursor: default;
+  opacity: 1;
+}

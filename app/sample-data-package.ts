@@ -962,6 +962,11 @@ const ANNUAL_TARGETS: ReadonlyArray<{
   { metricCode: "hospital.device.operating_surplus", targetValue: "21500000", budgetAmount: "" },
 ];
 
+/** 金额统一为万元（保留 4 位小数），与平台内部口径一致，避免手工导入与一键发布相差一万倍。 */
+function toWan(amountInYuan: number): string {
+  return (Math.round((amountInYuan / 10000) * 10000) / 10000).toFixed(4);
+}
+
 function createRng(seed: number) {
   let state = seed >>> 0;
   return () => {
@@ -1057,7 +1062,7 @@ function buildSampleDataset(): SampleDataset {
     department: device.department,
     shortName: device.shortName,
     location: device.location,
-    investment: device.investment.toFixed(2),
+    investment: toWan(device.investment),
     purchaseDate: device.purchaseDate,
     enabledDate: device.enabledDate,
     quantity: "1",
@@ -1084,8 +1089,8 @@ function buildSampleDataset(): SampleDataset {
       bodyParts: JSON.stringify(entry.bodyParts),
       isPrimary: "是",
       allocationWeight: multi ? "0.65" : "1.00",
-      examRevenue: String(entry.revenue),
-      examCost: String(entry.cost),
+      examRevenue: toWan(entry.revenue),
+      examCost: toWan(entry.cost),
       department: entry.device.department,
     });
 
@@ -1111,7 +1116,7 @@ function buildSampleDataset(): SampleDataset {
       examId,
       occurredAt: `${datePart} ${pad(hour, 2)}:${pad(minute, 2)}`,
       itemCode,
-      amount: String(entry.revenue),
+      amount: toWan(entry.revenue),
       refundAmount: "",
       department: entry.device.department,
     });
@@ -1127,8 +1132,8 @@ function buildSampleDataset(): SampleDataset {
         examId,
         occurredAt: dateTime(period, refundDay, 10, randomInt(rng, 0, 59)),
         itemCode,
-        amount: String(-entry.revenue),
-        refundAmount: String(entry.revenue),
+        amount: "0",
+        refundAmount: toWan(entry.revenue),
         department: entry.device.department,
       });
     }
@@ -1227,7 +1232,7 @@ function buildSampleDataset(): SampleDataset {
       occurredAt: entry.time,
       eventType: entry.eventType,
       downtimeMinutes: String(entry.downtime),
-      maintenanceCost: entry.cost.toFixed(2),
+      maintenanceCost: toWan(entry.cost),
       status: entry.status,
     };
   });
@@ -1276,7 +1281,7 @@ function buildSampleDataset(): SampleDataset {
           deviceId: device.id,
           period: month.period,
           costType,
-          amount: amount.toFixed(2),
+          amount: toWan(amount),
           sourceRecordId: `PZ-2026-${pad((voucherSequence += 1), 4)}`,
           department: device.department,
         });
@@ -1341,8 +1346,8 @@ function buildSampleDataset(): SampleDataset {
       recordType: "target",
       metricCode: "hospital.device.net_direct_revenue",
       period: month.period,
-      targetValue: String(Math.round((62000000 / 12) * month.factor)),
-      budgetAmount: String(Math.round(9800000 / 12)),
+      targetValue: toWan(Math.round((62000000 / 12) * month.factor)),
+      budgetAmount: toWan(Math.round(9800000 / 12)),
       department: "设备管理部",
       deviceId: "",
       owner: "运营管理科科长",

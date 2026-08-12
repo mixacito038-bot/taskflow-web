@@ -67,9 +67,11 @@ export default function LoginScreen({
   const [password, setPassword] = useState("");
   const [passwordMfaCredential, setPasswordMfaCredential] = useState("");
   const [passwordMfaNeeded, setPasswordMfaNeeded] = useState(false);
+  const [unlockMfaCredential, setUnlockMfaCredential] = useState("");
   const credentialId = useId();
   const usernameId = useId();
   const passwordId = useId();
+  const unlockMfaId = useId();
   const effectiveBusy = busy || submitting;
   const visibleError = error || localError;
   const avatarLabel = (viewer?.displayName || viewer?.email || "账").trim().slice(0, 1).toUpperCase() || "账";
@@ -116,6 +118,10 @@ export default function LoginScreen({
       setLocalError("请输入账号密码。");
       return;
     }
+    if (unlockWithPassword && mfaEnabled && !isMfaCredential(unlockMfaCredential)) {
+      setLocalError("请输入 6 位动态验证码，或完整的恢复码。");
+      return;
+    }
     if (!unlockWithPassword && mfaEnabled && !isMfaCredential(credential)) {
       setLocalError("请输入 6 位动态验证码，或完整的恢复码。");
       return;
@@ -124,7 +130,16 @@ export default function LoginScreen({
     setLocalError("");
     setSubmitting(true);
     try {
-      await onContinue(unlockWithPassword ? credential : mfaEnabled ? normalizedCredential(credential) : "");
+      // 密码会话解锁在账号启用 MFA 时需同时出示账号密码与验证码：沿用 onContinue(credential)
+      // 单参契约，用竖线把两者编码为 `password|mfacode`（密码在前，验证码在最后一个竖线之后）。
+      const outgoing = unlockWithPassword
+        ? mfaEnabled
+          ? `${credential}|${normalizedCredential(unlockMfaCredential)}`
+          : credential
+        : mfaEnabled
+          ? normalizedCredential(credential)
+          : "";
+      await onContinue(outgoing);
     } catch {
       setLocalError("应用会话建立失败，请核对验证信息后重试。");
     } finally {
@@ -179,25 +194,49 @@ export default function LoginScreen({
             </div>
 
             {unlockWithPassword ? (
-              <label className="login-credential-field" htmlFor={credentialId}>
-                <span><KeyRound size={16} />账号密码</span>
-                <input
-                  id={credentialId}
-                  type="password"
-                  value={credential}
-                  onChange={(event) => {
-                    setCredential(event.target.value);
-                    if (localError) setLocalError("");
-                  }}
-                  autoComplete="current-password"
-                  maxLength={128}
-                  disabled={effectiveBusy}
-                  placeholder="重新输入账号密码"
-                  aria-invalid={Boolean(visibleError)}
-                  aria-describedby={`${credentialId}-help${visibleError ? ` ${credentialId}-error` : ""}`}
-                />
-                <small id={`${credentialId}-help`}>为保护医院业务数据，恢复被锁定的会话需要重新输入账号密码。</small>
-              </label>
+              <>
+                <label className="login-credential-field" htmlFor={credentialId}>
+                  <span><KeyRound size={16} />账号密码</span>
+                  <input
+                    id={credentialId}
+                    type="password"
+                    value={credential}
+                    onChange={(event) => {
+                      setCredential(event.target.value);
+                      if (localError) setLocalError("");
+                    }}
+                    autoComplete="current-password"
+                    maxLength={128}
+                    disabled={effectiveBusy}
+                    placeholder="重新输入账号密码"
+                    aria-invalid={Boolean(visibleError)}
+                    aria-describedby={`${credentialId}-help${visibleError ? ` ${credentialId}-error` : ""}`}
+                  />
+                  <small id={`${credentialId}-help`}>为保护医院业务数据，恢复被锁定的会话需要重新输入账号密码。</small>
+                </label>
+                {mfaEnabled ? (
+                  <label className="login-credential-field" htmlFor={unlockMfaId}>
+                    <span><ShieldCheck size={16} />多因素验证</span>
+                    <input
+                      id={unlockMfaId}
+                      value={unlockMfaCredential}
+                      onChange={(event) => {
+                        setUnlockMfaCredential(event.target.value);
+                        if (localError) setLocalError("");
+                      }}
+                      autoComplete="one-time-code"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      maxLength={64}
+                      disabled={effectiveBusy}
+                      placeholder="6 位验证码或恢复码"
+                      aria-invalid={Boolean(visibleError)}
+                      aria-describedby={`${unlockMfaId}-help${visibleError ? ` ${credentialId}-error` : ""}`}
+                    />
+                    <small id={`${unlockMfaId}-help`}>该账号已启用多因素验证，解锁需同时输入账号密码与验证器中的 6 位动态验证码（或一枚恢复码）。</small>
+                  </label>
+                ) : null}
+              </>
             ) : mfaEnabled ? (
               <label className="login-credential-field" htmlFor={credentialId}>
                 <span><KeyRound size={16} />多因素验证</span>

@@ -30,7 +30,8 @@ import {
  * 边界：
  * - 医院已存在任何已发布供数版本时拒绝执行（sample_publish_conflict），绝不覆盖真实数据；
  * - 所有导入批次、血缘与发布清单都带“示范数据包”标识与版本号；
- * - 金额统一换算为万元；派生的设备级汇总字段在清单中declared为 derivedFields。
+ * - 金额沿用示范数据包的万元口径；派生的设备级汇总字段在清单中声明为 derivedFields；
+ * - 全部内部主键按医院隔离，同院上次失败的残留批次会在重试前清理后重放。
  */
 
 const SAMPLE_SERIES_ID = "hospital-current-supply";
@@ -103,9 +104,10 @@ type PublisherInput = {
 
 type PublishedRecord = Record<string, unknown>;
 
-function toWan(value: string | undefined): number | null {
+/** 示范数据包金额字段已统一为万元，这里只做数值化，不再二次换算。 */
+function toMoney(value: string | undefined): number | null {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round((parsed / 10000) * 10000) / 10000 : null;
+  return Number.isFinite(parsed) ? Math.round(parsed * 10000) / 10000 : null;
 }
 
 function toNumber(value: string | undefined): number | null {
@@ -119,7 +121,7 @@ function normalizeRecord(templateCode: string, row: Readonly<Record<string, stri
   record.dataDomain = FILE_BUSINESS_TEMPLATES.find((template) => template.code === templateCode)?.dataDomain ?? templateCode;
   for (const field of MONEY_FIELDS[templateCode] ?? []) {
     if (row[field] !== undefined && row[field] !== "") {
-      const converted = toWan(row[field]);
+      const converted = toMoney(row[field]);
       if (converted !== null) record[field] = converted;
     }
   }
@@ -178,13 +180,14 @@ function enrichDeviceRecords(recordsByTemplate: Map<string, PublishedRecord[]>):
     }
     device.utilization = scheduled > 0 ? Math.round((active / scheduled) * 1000) / 10 : 0;
 
-    // 检查/收费明细为抽样文件：以抽样均价 × 利用表全年检查量推算年度口径，
-    // 推算口径在发布清单 sample.revenueBasis 中声明；无收费事实的设备如实归零。
+    // 检查与收费明细是逐月抽样（每设备每月数条真实事实行），工作量与成本则是全年全量：
+    // 因此设备年收入 = 抽样收费均价 × 利用表全年检查人次，口径写入发布清单 sample.revenueBasis。
+    // 无检查事实的设备（检验流水线、呼吸机等）如实归零，绝不编造。
     device.serviceVolume = annualExamCount > 0 ? annualExamCount : sampledExamCount;
     const revenue = sampledExamCount > 0 && annualExamCount > 0
       ? (sampledRevenue / sampledExamCount) * annualExamCount
       : sampledRevenue;
-    device.revenue = Math.round(revenue * 100) / 100;
+    device.revenue = Math.round(revenue * 10000) / 10000;
 
     const costTotals = { labor: 0, consumables: 0, depreciation: 0, maintenance: 0, energy: 0 };
     for (const row of costs) {
@@ -231,6 +234,20 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
     .limit(1);
   if (existingPublish) throw new SamplePublishError("sample_publish_conflict", 409);
 
+  // 上次执行中途失败会留下同院的示范批次（无已发布版本）；先清理再重放，
+  // rawDatasets 通过 importJobId 外键级联删除，R2 对象内容寻址天然幂等无需处理。
+  const staleImportIds = SAMPLE_TEMPLATE_CODES.map((templateCode) => `import-sample-${hospitalId}-${templateCode}`);
+  for (const staleId of staleImportIds) {
+    await db.delete(dataImportJobs).where(and(
+      eq(dataImportJobs.hospitalId, hospitalId),
+      eq(dataImportJobs.id, staleId),
+    ));
+  }
+  await db.delete(dataPublishVersions).where(and(
+    eq(dataPublishVersions.hospitalId, hospitalId),
+    eq(dataPublishVersions.id, `publish-sample-${hospitalId}-${SAMPLE_DATA_PACKAGE_VERSION.replaceAll(".", "-")}`),
+  ));
+
   const now = new Date().toISOString();
   const files: SamplePublishSummary["files"] = [];
   const sourceImportIds: string[] = [];
@@ -244,7 +261,7 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
     if (!template) throw new SamplePublishError("sample_template_missing", 500);
     const file = buildSampleDataCsv(templateCode);
     const rows = buildSampleDataRows(templateCode);
-    const importId = `import-sample-${templateCode}`;
+    const importId = `import-sample-${hospitalId}-${templateCode}`;
     const bytes = new TextEncoder().encode(file.csv);
 
     const original = await storeImmutableObject({
@@ -362,7 +379,7 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
 
   const { derivedFields } = enrichDeviceRecords(recordsByTemplate);
 
-  const publishId = `publish-sample-${SAMPLE_DATA_PACKAGE_VERSION.replaceAll(".", "-")}`;
+  const publishId = `publish-sample-${hospitalId}-${SAMPLE_DATA_PACKAGE_VERSION.replaceAll(".", "-")}`;
   const publishedRecords: Array<{ sourceRowNumber: number; sourceRecordId: string; record: PublishedRecord }> = [];
   let rowNumber = 0;
   for (const templateCode of SAMPLE_TEMPLATE_CODES) {
@@ -401,6 +418,15 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
 
   const metricId = `metric-sample-revenue-${hospitalId}`;
   const visualizationId = `visual-sample-revenue-${hospitalId}`;
+  // 重放场景下这两条定义可能已存在：先删后插，保证与本次发布清单一致。
+  await db.delete(dataVisualizationDefinitions).where(and(
+    eq(dataVisualizationDefinitions.hospitalId, hospitalId),
+    eq(dataVisualizationDefinitions.id, visualizationId),
+  ));
+  await db.delete(dataMetricDefinitions).where(and(
+    eq(dataMetricDefinitions.hospitalId, hospitalId),
+    eq(dataMetricDefinitions.id, metricId),
+  ));
   await db.insert(dataMetricDefinitions).values({
     id: metricId,
     hospitalId,
@@ -450,7 +476,8 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
       version: SAMPLE_DATA_PACKAGE_VERSION,
       moneyUnit: "万元",
       derivedFields,
-      revenueBasis: "抽样收费均价 × 利用表全年检查量（收费明细为抽样文件）",
+      costAllocationBasis: "空间成本按可控直接成本 2%、间接成本按 3% 示范分摊，正式上线由财务口径替换",
+      revenueBasis: "抽样收费均价（金额 − 退费金额）× 利用表全年检查人次；收费明细为逐月抽样事实，工作量与成本为全年全量",
       note: "示范数据包一键发布：数值为脱敏虚构数据，仅用于演示与验证链路。",
     },
   };

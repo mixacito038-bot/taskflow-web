@@ -114,15 +114,26 @@ test("keeps exam ids unique and billing tied to real exams with few refunds", ()
   assert.equal(examIds.size, examRows.length, "exam ids must be unique");
 
   const billingRows = sampleRows("billing_revenue");
-  const refunds = billingRows.filter((row) => Number(row["金额"]) < 0);
+  const refunds = billingRows.filter((row) => Number(row["退费金额（万元）"]) > 0);
   for (const row of billingRows) {
     assert.ok(examIds.has(row["检查号"]), `billing ${row["来源记录号"]} must reference an exam`);
     assert.ok(String(row["来源记录号"]).length > 0);
   }
   for (const refund of refunds) {
-    assert.ok(Number(refund["退费金额"]) > 0, "refund rows must carry 退费金额");
+    // 退费行冲减由“退费金额”承担，金额列必须为 0，避免消费端 金额−退费金额 双重扣减。
+    assert.equal(Number(refund["金额（万元）"]), 0, "refund rows must zero the gross amount");
   }
   assert.ok(refunds.length > 0, "sample must include refund rows");
+
+  // 被退费的检查净额必须归零。
+  const netByExam = new Map();
+  for (const row of billingRows) {
+    const net = Number(row["金额（万元）"]) - Number(row["退费金额（万元）"] || 0);
+    netByExam.set(row["检查号"], (netByExam.get(row["检查号"]) ?? 0) + net);
+  }
+  for (const refund of refunds) {
+    assert.ok(Math.abs(netByExam.get(refund["检查号"]) ?? 0) < 1e-9, `退费检查 ${refund["检查号"]} 净额必须为 0`);
+  }
   assert.ok(
     refunds.length / billingRows.length <= 0.03,
     `refund share ${refunds.length}/${billingRows.length} must stay <= 3%`,
@@ -180,7 +191,7 @@ test("keeps utilization minutes coherent and aligned with exam seasonality", () 
     [...costTypes].sort(),
     ["人工", "折旧", "维保", "耗材", "能耗"].sort(),
   );
-  for (const row of costRows) assert.ok(Number(row["金额"]) > 0);
+  for (const row of costRows) assert.ok(Number(row["金额（万元）"]) > 0);
 });
 
 test("contains no patient identifiers in any sample file", () => {

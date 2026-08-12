@@ -2004,8 +2004,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .projection-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .projection-actions button { min-height: 32px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 8px; color: #fff; background: rgba(255, 255, 255, .06); display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
 .projection-actions button:hover { background: rgba(255, 255, 255, .15); }
-.projection-actions .projection-exit { border-color: transparent; background: var(--primary); }
-.projection-actions .projection-exit:hover { background: var(--primary-hover); }
+.projection-actions .projection-exit { border-color: transparent; background: var(--primary); color: #fff; font-weight: 600; }
+.projection-actions .projection-exit:hover { background: var(--primary-hover); color: #fff; }
+/* midnight 主题的 --primary 偏亮，白字对比度不足：该主题下改用深色字面。 */
+.theme-midnight .projection-actions .projection-exit,
+.theme-midnight .projection-actions .projection-exit:hover { color: #06222c; }
 .cost-export-note { margin: 10px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.6; display: flex; align-items: center; gap: 6px; }
 .cost-export-note svg { color: var(--primary); flex-shrink: 0; }
 @media (max-width: 900px) {

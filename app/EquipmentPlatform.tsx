@@ -12,6 +12,7 @@ import {
   Building2,
   Cable,
   Check,
+  CircleAlert,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -122,6 +123,7 @@ import CloudOperationsCenter from "./CloudOperationsCenter";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
 import { DATA_WORKBENCH_ENTRY_CLICKS, buildBusinessTemplateCsv, templateFields } from "./data-workbench-model";
+import { menuCatalog } from "./menu-catalog";
 import ConfigurableAnalyticsCanvas from "./ConfigurableAnalyticsCanvas";
 import type { MetricDefinition as ConfigurableMetric, VisualizationDefinition as ConfigurableVisualization } from "./analytics-semantic-layer";
 import { usePublishedDataset } from "./published-data-client";
@@ -198,6 +200,8 @@ const periodMonthIndexes: Record<string, number[]> = {
   "2026年度": monthLabels.map((_, index) => index),
   "2026年上半年": [0, 1, 2, 3, 4, 5],
   "2026年第二季度": [3, 4, 5],
+  // 单月期间：与效益分析报告的月报期间对齐，避免一键月报把全局期间设成驾驶舱不认识的值。
+  ...Object.fromEntries(monthLabels.map((_, index) => [`2026年${index + 1}月`, [index]])),
 };
 const cloudResourceLabels: Record<CloudResource, string> = {
   devices: "设备台账",
@@ -430,7 +434,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [cloudConflict, setCloudConflict] = useState<CloudConflict | null>(null);
   const [cloudConflictAction, setCloudConflictAction] = useState<"server" | "local" | "download" | "">("");
   const initialPreferenceApplied = useRef(false);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone: "info" | "error" } | null>(null);
+  const toastTimer = useRef(0);
   const [equipmentSearch, setEquipmentSearch] = useState("");
   const [equipmentStatus, setEquipmentStatus] = useState("全部状态");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -505,6 +510,16 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const hasPermission = (permission: string) => activePermissions.has(permission);
   const dataWorkbenchPermissions = ["connector.manage", "data.ingest", "data.clean", "data.review", "data.publish"];
   const canOpenDataWorkbench = dataWorkbenchPermissions.some(hasPermission);
+
+  function notify(message: string, tone: "info" | "error" = "info") {
+    // 清掉上一条提示的计时器，避免连续操作时第二条提示被前一条的定时器提前清空。
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    setToast({ message, tone });
+    toastTimer.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimer.current = 0;
+    }, tone === "error" ? 4200 : 2600);
+  }
 
   function brandClick(now: number) {
     if (!brandClickStartedAt.current || now - brandClickStartedAt.current > 4000) {
@@ -1083,19 +1098,24 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setApplicationSessionError("");
     try {
       const passwordSession = applicationSession?.authMethod === "password";
-      const normalized = passwordSession ? credential : credential.trim().replace(/\s+/g, "");
+      const passwordSessionMfa = passwordSession && Boolean(applicationSession?.mfa?.enabled);
+      // 密码会话且启用 MFA 时，登录页把凭据编码为 `password|mfacode`（竖线分隔，
+      // 密码在前、验证码在最后一个竖线之后，兼容密码本身含竖线）；其余情况无竖线。
+      const separatorIndex = passwordSessionMfa ? credential.lastIndexOf("|") : -1;
+      const passwordPart = separatorIndex >= 0 ? credential.slice(0, separatorIndex) : credential;
+      const mfaPart = separatorIndex >= 0 ? credential.slice(separatorIndex + 1).trim().replace(/\s+/g, "") : "";
+      const normalized = passwordSession ? mfaPart : credential.trim().replace(/\s+/g, "");
       const response = await fetch("/api/app-session", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           action: applicationSessionState === "locked" ? "unlock" : "start",
-          ...(passwordSession
-            ? { password: normalized }
-            : normalized
-              ? /^\d{6}$/.test(normalized)
-                ? { totpCode: normalized }
-                : { recoveryCode: normalized }
-              : {}),
+          ...(passwordSession ? { password: passwordPart } : {}),
+          ...(normalized
+            ? /^\d{6}$/.test(normalized)
+              ? { totpCode: normalized }
+              : { recoveryCode: normalized }
+            : {}),
         }),
       });
       const result = await response.json() as ApplicationSessionSnapshot & { error?: string; lockedUntil?: string };
@@ -1268,7 +1288,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
   useEffect(() => {
     // 深链解析：设备档案二维码可携带 ?device=<id>（可选 ?view=<安全视图>）直达单机分析。
+    // 必须等工作区就绪（演示模式已进入，或正式会话已核验）后再消费，
+    // 否则会在登录页阶段被吃掉，密码登录整页刷新后深链就丢了。
     if (deepLinkHandled.current) return;
+    const workspaceReady = demoMode ? demoEntered : sessionState === "verified";
+    if (!workspaceReady) return;
     const params = new URLSearchParams(window.location.search);
     const deviceParam = params.get("device");
     const viewParam = params.get("view");
@@ -1280,16 +1304,41 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     deepLinkHandled.current = true;
     const safeViews: View[] = ["cockpit", "analysis", "equipment", "detail"];
     const timer = window.setTimeout(() => {
-      if (deviceParam && devices.some((device) => device.id === deviceParam)) {
-        setSelectedDeviceId(deviceParam);
-        setView("detail");
+      if (deviceParam) {
+        if (devices.some((device) => device.id === deviceParam)) {
+          setSelectedDeviceId(deviceParam);
+          setView("detail");
+        } else {
+          // 诚实反馈：设备不在当前医院的可见范围（未发布或跨院）时明确告知，不静默吞掉。
+          notify("扫码设备不在当前医院的可见范围，请确认医院或该设备数据是否已发布", "error");
+        }
       } else if (viewParam && safeViews.includes(viewParam as View)) {
-        setView(viewParam as View);
+        // ?view 只能落到当前角色有权限的视图，避免深链绕过左侧菜单的权限过滤。
+        // 权限取自与左侧菜单同源的菜单目录，避免前向引用尚未声明的 navItems。
+        const target = menuCatalog.find((item) => item.id === viewParam);
+        const allowed = !target || !target.permissions.length || target.permissions.some(hasPermission);
+        if (allowed) setView(viewParam as View);
+        else notify("当前角色没有该页面的访问权限", "error");
       }
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [devices]);
+    // navItems/hasPermission 每次渲染重建，加入依赖会导致重复消费；深链只消费一次由 ref 守卫。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoEntered, demoMode, devices, sessionState]);
+
+  useEffect(() => {
+    // 口令弹窗支持 Esc 关闭，与平台其它确认弹窗保持一致的键盘可达性。
+    if (!workbenchEntryPromptOpen) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || workbenchEntryBusy) return;
+      setWorkbenchEntryPromptOpen(false);
+      setWorkbenchEntryPassword("");
+      setWorkbenchEntryError("");
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [workbenchEntryBusy, workbenchEntryPromptOpen]);
 
   useEffect(() => {
     if (!projectionMode) return;
@@ -1505,11 +1554,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         : publishedError
           ? "正式数据读取失败"
           : "正式数据未发布";
-
-  function notify(message: string) {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2600);
-  }
 
   function navigate(nextView: View) {
     setView(nextView);
@@ -1887,6 +1931,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     }
 
     if (module.id === "hospital-compare") {
+      // 正式模式下跨院已发布口径尚未接入（当前只拉取所在医院的发布数据），
+      // 按“正式页面不用演示值补位”的铁律显示明确空态，绝不把体验数据当作各院真实指标。
+      if (sessionState === "verified") {
+        return <EmptyModule text="集团对比需要各院已发布口径。当前版本仅接入所在医院的发布数据，正式模式不展示体验值；跨院对比将在多院供数接入后开放。" />;
+      }
       return (
         <HospitalComparePanel
           hospitals={accessibleHospitals.map((hospital) => ({
@@ -2154,7 +2203,13 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img className="brand-logo" src="/yonghong-logo.png" alt="勇虹医疗 YHONG" />
           <div><strong>勇虹医疗</strong><span>{dataWorkbenchUnlocked ? "数据准备模式已解锁" : "设备效益管理平台"}</span></div>
-          <button className="icon-button sidebar-close" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)}><X size={19} /></button>
+          {/* 阻止冒泡：移动端关闭导航不应计入品牌区连击，否则误触会弹出入口口令框。 */}
+          <button
+            className="icon-button sidebar-close"
+            aria-label="关闭导航"
+            onClick={(event) => { event.stopPropagation(); setMobileNavOpen(false); }}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.stopPropagation(); }}
+          ><X size={19} /></button>
         </div>
         <nav>
           <p className="nav-label">分析展示</p>
@@ -2304,7 +2359,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               </section> : null}
               <div className="filter-bar">
                 <label><Building2 size={16} /><span>使用科室</span><select value={department} onChange={(event) => setDepartmentPreference(event.target.value)}>{departmentOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
-                <label><Clock3 size={16} /><span>分析期间</span><select value={period} onChange={(event) => setPeriodPreference(event.target.value)}><option>2026年度</option><option>2026年上半年</option><option>2026年第二季度</option></select></label>
+                <label><Clock3 size={16} /><span>分析期间</span><select value={period} onChange={(event) => setPeriodPreference(event.target.value)}>{Object.keys(periodMonthIndexes).map((option) => <option key={option}>{option}</option>)}</select></label>
                 <label><Users size={16} /><span>角色视角</span><select value={perspective} onChange={(event) => setPerspectivePreference(event.target.value as Perspective)}><option>管理层</option><option>设备科</option><option>临床科室</option></select></label>
                 <div className="filter-status"><i />{publishedSupplyStatus}</div>
               </div>
@@ -2636,7 +2691,9 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         </div>
       ) : null}
 
-      {toast ? <div className="toast"><Check size={17} />{toast}</div> : null}
+      <div className="toast-live-region" role="status" aria-live="polite">
+        {toast ? <div className={`toast ${toast.tone === "error" ? "toast-error" : ""}`}>{toast.tone === "error" ? <CircleAlert size={17} /> : <Check size={17} />}{toast.message}</div> : null}
+      </div>
     </div>
   );
 }

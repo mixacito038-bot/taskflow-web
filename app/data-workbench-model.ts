@@ -228,10 +228,10 @@ export const FILE_TEMPLATE_FIELDS: Readonly<
     },
     {
       code: "investment",
-      name: "资产原值",
+      name: "资产原值（万元）",
       type: "decimal",
       required: true,
-      aliases: ["购置金额", "原值", "originalValue"],
+      aliases: ["购置金额", "原值", "originalValue", "资产原值", "投资额"],
     },
     {
       code: "purchaseDate",
@@ -403,14 +403,14 @@ export const FILE_TEMPLATE_FIELDS: Readonly<
     },
     {
       code: "amount",
-      name: "金额",
+      name: "金额（万元）",
       type: "decimal",
       required: true,
       aliases: ["收费金额", "收入"],
     },
     {
       code: "refundAmount",
-      name: "退费金额",
+      name: "退费金额（万元）",
       type: "decimal",
       required: false,
       aliases: ["冲销金额"],
@@ -442,7 +442,7 @@ export const FILE_TEMPLATE_FIELDS: Readonly<
     },
     {
       code: "amount",
-      name: "金额",
+      name: "金额（万元）",
       type: "decimal",
       required: true,
       aliases: ["成本", "费用金额"],
@@ -495,7 +495,7 @@ export const FILE_TEMPLATE_FIELDS: Readonly<
     },
     {
       code: "maintenanceCost",
-      name: "维修费用",
+      name: "维修费用（万元）",
       type: "decimal",
       required: false,
       aliases: ["维保成本"],
@@ -1403,7 +1403,11 @@ export class FileWorkbenchApiClient {
   constructor(baseUrl: string, hospitalId: string, fetcher: FetchLike = fetch) {
     this.baseUrl = baseUrl;
     this.hospitalId = hospitalId;
-    this.fetcher = fetcher;
+    // 必须包一层再调用：直接 this.fetcher(...) 会把 this 绑成本实例，
+    // 浏览器原生 fetch 要求 this 为 window 或 undefined，否则抛
+    // "Failed to execute 'fetch' on 'Window': Illegal invocation"，
+    // 导致数据准备中心所有请求发不出去。
+    this.fetcher = (input, init) => fetcher(input, init);
   }
 
   private async json<T>(response: Response): Promise<T> {

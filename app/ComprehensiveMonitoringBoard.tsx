@@ -77,7 +77,10 @@ export default function ComprehensiveMonitoringBoard({ devices }: { devices: Dev
       notes.set("hospital.monitor.cost", "按台账人工+耗材+折旧+维保+能耗归集，不含空间与间接成本");
     }
 
-    const examDevices = devices.filter((device) => device.serviceUnit === "检查人次");
+    // 服务单位在不同来源里写法不一（演示台账用“检查人次”，医院导出常见“人次/例/疗次”），
+    // 按语义匹配人次类单位，避免正式模式下三项人次指标永久显示缺失。
+    const examUnitPattern = /人次|例次|例$|检查/;
+    const examDevices = devices.filter((device) => examUnitPattern.test(device.serviceUnit ?? ""));
     const examCount = examDevices.length
       ? examDevices.reduce((sum, device) => sum + device.serviceVolume, 0)
       : null;
@@ -85,7 +88,7 @@ export default function ComprehensiveMonitoringBoard({ devices }: { devices: Dev
     if (examCount !== null) {
       notes.set(
         "hospital.monitor.exam_count",
-        `仅合计服务单位为“检查人次”的 ${examDevices.length}/${devices.length} 台设备`,
+        `仅合计服务单位为人次类（人次/例次/检查）的 ${examDevices.length}/${devices.length} 台设备`,
       );
       notes.set("hospital.monitor.revenue_per_exam", "分母同检查人次口径，仅覆盖检查类设备");
       notes.set("hospital.monitor.cost_per_exam", "分母同检查人次口径，仅覆盖检查类设备");

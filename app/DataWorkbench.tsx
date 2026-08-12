@@ -445,6 +445,7 @@ export default function DataWorkbench({
     "fields" | "custom" | "metric" | "visual"
   >("fields");
   const [operation, setOperation] = useState("");
+  const [samplePublishConfirm, setSamplePublishConfirm] = useState(false);
   const [cleaningPreview, setCleaningPreview] = useState<ReturnType<
     typeof runCleaningPreview
   > | null>(null);
@@ -1804,6 +1805,8 @@ export default function DataWorkbench({
                 <p>
                   这些文件为脱敏示范数据，与设备台账使用同一套设备编号，可直接走
                   导入→映射→清洗→发布 全流程；不含姓名、证件、手机号等个人信息。
+                  金额类字段（资产原值、金额、退费金额、维修费用、预算金额）统一为
+                  <strong>万元</strong>，与平台内部口径一致；医院上传自有文件时请按同一单位换算。
                 </p>
               </div>
             </div>
@@ -3409,12 +3412,43 @@ export default function DataWorkbench({
               </p>
             </div>
             <button
+              className={styles.primaryButton}
               disabled={!canPublish || Boolean(operation)}
-              onClick={() => void callAction("publish_sample_dataset", {}, "示范数据已完成正式发布，前台稍后自动刷新")
-                .then((result) => { if (result) retryResources(); })}
+              title={canPublish ? "" : "需要 data.publish 权限"}
+              onClick={() => setSamplePublishConfirm(true)}
             >
+              <Rocket size={15} />
               一键载入示范数据并正式发布
             </button>
+          </div>
+        ) : null}
+        {samplePublishConfirm ? (
+          <div
+            className={styles.rowEditor}
+            role="dialog"
+            aria-modal="true"
+            aria-label="确认载入示范数据并正式发布"
+          >
+            <strong>确认把示范数据发布为当前供数版本？</strong>
+            <p>
+              将创建 5 个带“示范数据包”标识的导入批次（设备台账 / 检查 / 收费 / 成本 / 利用），
+              经完整治理链路后发布为 hospital-current-supply 当前供数版本，前台正式模式随即显示这批数据。
+              该操作会写入血缘与审计记录；已有正式发布版本的医院会被服务端拒绝，不会覆盖真实数据。
+            </p>
+            <footer>
+              <button className={styles.secondaryButton} onClick={() => setSamplePublishConfirm(false)}>取消</button>
+              <button
+                className={styles.primaryButton}
+                disabled={Boolean(operation)}
+                onClick={() => {
+                  setSamplePublishConfirm(false);
+                  void callAction("publish_sample_dataset", {}, "示范数据已完成正式发布，前台稍后自动刷新")
+                    .then((result) => { if (result) retryResources(); });
+                }}
+              >
+                确认发布
+              </button>
+            </footer>
           </div>
         ) : null}
         <Panel

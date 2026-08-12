@@ -56,3 +56,20 @@ export function togglePermissionsForMenu(
   }
   return [...next];
 }
+
+/**
+ * 判断“取消勾选某菜单”是否真的能让它从左侧隐藏。
+ *
+ * 当该菜单赖以显示的权限全部被其它已勾选菜单共享时（如“效益驾驶舱”和“采集与分析”
+ * 都需要 dashboard.view），取消其中一个并不会改变其可见性——形成“死复选框”。
+ * 此时返回 false，供 UI 呈现“受共享约束”态并给出说明，避免静默无效的点击。
+ * 若该菜单当前本就不可见，或取消后确实会隐藏，则返回 true。
+ */
+export function canHideMenu(menuId: string, permissionCodes: readonly string[]): boolean {
+  const item = menuCatalog.find((menu) => menu.id === menuId);
+  if (!item) return true;
+  const permissionSet = new Set(permissionCodes);
+  if (!menuVisibleForPermissions(item, permissionSet)) return true;
+  const next = togglePermissionsForMenu(permissionCodes, item, false, permissionSet);
+  return !menuVisibleForPermissions(item, new Set(next));
+}

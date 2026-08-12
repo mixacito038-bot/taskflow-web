@@ -562,10 +562,12 @@ export async function writeSecurityAudit(
 ) {
   const db = await getDb();
   await db.insert(auditLogs).values({
-    actorAccountId: accountId,
+    // 账号不存在时（例如密码登录失败）传空串：外键要求必须写 null，
+    // 否则整条审计插入会因外键失败并把鉴权错误掩盖成 500。
+    actorAccountId: accountId || null,
     action,
     resourceType: "account_security",
-    resourceId: accountId,
+    resourceId: accountId || "unknown_account",
     result,
     detail,
   });

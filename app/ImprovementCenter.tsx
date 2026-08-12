@@ -502,6 +502,27 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
     notify("已生成改进任务，请指认负责人与期限");
   }
 
+  if (!demoMode && devices.length === 0) {
+    return (
+      <>
+        <div className="page-heading improvement-heading">
+          <div>
+            <div className="eyebrow"><Target size={15} />从指标预警到收益兑现</div>
+            <h1>运营改进中心</h1>
+            <p>用“发现差距—测算方案—指派责任—复盘收益”的闭环，把设备效益分析真正转化为管理动作。</p>
+          </div>
+        </div>
+        <section className="panel insight-unavailable">
+          <CircleAlert size={22} />
+          <div>
+            <h3>正式模式下暂无已发布设备</h3>
+            <p>改进中心只使用已发布数据；请先在数据准备中心完成发布，或联系管理员一键载入示范数据。</p>
+          </div>
+        </section>
+      </>
+    );
+  }
+
   if (!selectedDevice || !scenario) return null;
 
   const scenarioBars = [
@@ -597,7 +618,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
                       <span className={alertStyles.alertValues}>指标现值 {alert.currentValue}{alert.unit} · 阈值 {alert.threshold}{alert.unit}</span>
                       <span className={alertStyles.alertMessage}>{alert.message}</span>
                     </div>
-                    <button className="secondary-button" onClick={() => convertAlertToAction(alert)}>{converted ? "已生成任务" : "转为改进任务"}</button>
+                    <button className={`secondary-button${converted ? ` ${alertStyles.alertActionDone}` : ""}`} disabled={converted} onClick={() => convertAlertToAction(alert)}>{converted ? "已生成任务" : "转为改进任务"}</button>
                   </li>
                 );
               })}

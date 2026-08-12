@@ -46,6 +46,27 @@ export function passwordAuthError(error: unknown) {
   return Response.json({ error: "password_auth_failed" }, { status: 500, headers: { "Cache-Control": "no-store" } });
 }
 
+/**
+ * 密码失败锁定的共用判定：verifyPasswordLogin 与 changeAccountPassword 复用同一套
+ * “读 lockedUntil、失败累加、达阈值锁定、成功清零”的机制，避免只在登录侧限速、
+ * 改密侧却能被会话持有者无限爆破当前密码的缺口。
+ */
+export function credentialLockActive(lockedUntil: string | null, now: number): boolean {
+  return Boolean(lockedUntil && Date.parse(lockedUntil) > now);
+}
+
+export function nextCredentialFailureState(
+  currentFailedAttempts: number,
+  now: number,
+): { failedAttempts: number; lockedUntil: string | null } {
+  const failedAttempts = currentFailedAttempts + 1;
+  const lockedUntil = failedAttempts >= PASSWORD_LOCK_THRESHOLD
+    ? new Date(now + PASSWORD_LOCK_MS).toISOString()
+    : null;
+  // 触发锁定时把计数清零，锁定到期后从下一次失败重新计数。
+  return { failedAttempts: lockedUntil ? 0 : failedAttempts, lockedUntil };
+}
+
 export function normalizeUsername(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -239,22 +260,19 @@ export async function verifyPasswordLogin(usernameInput: string, password: strin
   }
 
   const now = Date.now();
-  if (credential.lockedUntil && Date.parse(credential.lockedUntil) > now) {
+  if (credentialLockActive(credential.lockedUntil, now)) {
     throw new PasswordAuthError("credential_locked", 423, credential.lockedUntil);
   }
 
   const candidateHash = await derivePasswordHash(password, credential.passwordSalt, credential.iterations);
   if (!(await hashesMatch(candidateHash, credential.passwordHash))) {
-    const failedAttempts = credential.failedAttempts + 1;
-    const lockedUntil = failedAttempts >= PASSWORD_LOCK_THRESHOLD
-      ? new Date(now + PASSWORD_LOCK_MS).toISOString()
-      : null;
+    const lock = nextCredentialFailureState(credential.failedAttempts, now);
     await db.update(accountCredentials).set({
-      failedAttempts: lockedUntil ? 0 : failedAttempts,
-      lockedUntil,
+      failedAttempts: lock.failedAttempts,
+      lockedUntil: lock.lockedUntil,
       updatedAt: new Date(now).toISOString(),
     }).where(eq(accountCredentials.accountId, credential.accountId));
-    if (lockedUntil) throw new PasswordAuthError("credential_locked", 423, lockedUntil);
+    if (lock.lockedUntil) throw new PasswordAuthError("credential_locked", 423, lock.lockedUntil);
     throw new PasswordAuthError("invalid_credentials", 401);
   }
 
@@ -279,8 +297,21 @@ export async function changeAccountPassword(accountId: string, currentPassword: 
     .limit(1);
   if (!credential) throw new PasswordAuthError("credential_not_found", 404);
 
+  const now = Date.now();
+  // 改密与登录共用同一套失败锁定：否则持有会话的攻击者可无限次猜测当前密码。
+  if (credentialLockActive(credential.lockedUntil, now)) {
+    throw new PasswordAuthError("credential_locked", 423, credential.lockedUntil);
+  }
+
   const currentHash = await derivePasswordHash(currentPassword, credential.passwordSalt, credential.iterations);
   if (!(await hashesMatch(currentHash, credential.passwordHash))) {
+    const lock = nextCredentialFailureState(credential.failedAttempts, now);
+    await db.update(accountCredentials).set({
+      failedAttempts: lock.failedAttempts,
+      lockedUntil: lock.lockedUntil,
+      updatedAt: new Date(now).toISOString(),
+    }).where(eq(accountCredentials.accountId, accountId));
+    if (lock.lockedUntil) throw new PasswordAuthError("credential_locked", 423, lock.lockedUntil);
     throw new PasswordAuthError("invalid_credentials", 401);
   }
   const passwordErrors = validatePasswordStrength(newPassword);
@@ -289,7 +320,7 @@ export async function changeAccountPassword(accountId: string, currentPassword: 
 
   const salt = randomSaltHex();
   const passwordHash = await derivePasswordHash(newPassword, salt, PASSWORD_PBKDF2_ITERATIONS);
-  const now = new Date().toISOString();
+  const nowIso = new Date(now).toISOString();
   await db.update(accountCredentials).set({
     passwordHash,
     passwordSalt: salt,
@@ -298,8 +329,8 @@ export async function changeAccountPassword(accountId: string, currentPassword: 
     mustChangePassword: false,
     failedAttempts: 0,
     lockedUntil: null,
-    passwordUpdatedAt: now,
-    updatedAt: now,
+    passwordUpdatedAt: nowIso,
+    updatedAt: nowIso,
   }).where(eq(accountCredentials.accountId, accountId));
 }
 
