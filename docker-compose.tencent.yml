@@ -1,0 +1,34 @@
+# 勇虹医疗设备效益管理平台 · 腾讯云单机部署编排
+# 用法：
+#   1. 复制 .env.tencent.docker.example 为 .env 并填写引导管理员等变量
+#   2. docker compose -f docker-compose.tencent.yml up -d
+# 数据（SQLite + 报告/数据文件）持久化在命名卷 yonghong-data 中。
+services:
+  platform:
+    image: yonghong-platform:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.tencent
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PORT: "3000"
+      DATA_DIR: /data
+      # 内网 IP 直连试用时置为 "1"；经 nginx 提供 HTTPS 后必须删除或置空。
+      APP_SESSION_ALLOW_INSECURE: "${APP_SESSION_ALLOW_INSECURE:-}"
+      BOOTSTRAP_ADMIN_EMAIL: "${BOOTSTRAP_ADMIN_EMAIL:-}"
+      BOOTSTRAP_ADMIN_USERNAME: "${BOOTSTRAP_ADMIN_USERNAME:-}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-}"
+      DATA_WORKBENCH_ENTRY_PASSWORD: "${DATA_WORKBENCH_ENTRY_PASSWORD:-}"
+      MFA_TOTP_ENCRYPTION_KEY: "${MFA_TOTP_ENCRYPTION_KEY:-}"
+    volumes:
+      - yonghong-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  yonghong-data:
