@@ -6,8 +6,6 @@ import {
   Check,
   CircleAlert,
   Copy,
-  Download,
-  FileClock,
   KeyRound,
   Pencil,
   Plus,
@@ -88,16 +86,7 @@ type AccessControlCenterProps = {
   notify: (message: string) => void;
 };
 
-type AccessTab = "hospitals" | "members" | "roles" | "audit";
-
-const defaultPolicy = (hospitalId: string): AuditPolicy => ({
-  hospitalId,
-  retentionDays: 365,
-  reviewCycleMonths: 3,
-  invitationExpiryDays: 7,
-  denialAlertThreshold: 5,
-  exportFormat: "csv",
-});
+type AccessTab = "hospitals" | "members" | "roles";
 
 const dataScopeOptions: DataScope[] = ["本医院全部", "指定科室", "本人负责设备"];
 const serverScope: Record<DataScope, "platform" | "hospital" | "department" | "self"> = {
@@ -114,20 +103,6 @@ function useSessionConfig<T>(initialValue: T) {
 function roleRisk(role: ConfigurableRole) {
   const highRisk = ["equipment.manage", "cost.manage", "report.export", "source.manage", "hospital.manage", "member.manage"];
   return role.permissions.some((permission) => highRisk.includes(permission));
-}
-
-function actionLabel(action: string) {
-  return ({
-    bootstrap_owner: "初始化平台管理员",
-    invite_member: "保存医院成员",
-    create_hospital: "新增医院",
-    update_hospital: "更新医院配置",
-    update_member_status: "变更成员状态",
-    set_member_credential: "配置登录凭据",
-    save_role: "保存角色权限",
-    save_audit_policy: "更新审计策略",
-    tenant_context: "核验医院权限",
-  } as Record<string, string>)[action] ?? action;
 }
 
 export default function AccessControlCenter({
@@ -156,9 +131,7 @@ export default function AccessControlCenter({
   const [credentialPassword, setCredentialPassword] = useState("");
   const [memberships, setMemberships] = useSessionConfig<Membership[]>(initialMemberships);
   const [roles, setRoles] = useSessionConfig<ConfigurableRole[]>(initialRoles.map((role) => ({ ...role, hospitalId: null })));
-  const [policies, setPolicies] = useSessionConfig<Record<string, AuditPolicy>>(Object.fromEntries(hospitals.map((hospital) => [hospital.id, defaultPolicy(hospital.id)])));
-  const [auditEvents, setAuditEvents] = useSessionConfig<AuditEvent[]>(accessAuditEvents);
-  const [auditDraft, setAuditDraft] = useState<AuditPolicy>(policies[activeHospitalId] ?? defaultPolicy(activeHospitalId));
+  const [, setAuditEvents] = useSessionConfig<AuditEvent[]>(accessAuditEvents);
 
   useEffect(() => {
     if (sessionState !== "verified" || !tenantContext?.accessCatalog) return;
@@ -167,16 +140,10 @@ export default function AccessControlCenter({
       if (!catalog) return;
       setRoles(catalog.roles);
       setMemberships(catalog.members);
-      if (Object.keys(catalog.auditPolicies).length) setPolicies((current) => ({ ...current, ...catalog.auditPolicies }));
       if (catalog.auditEvents.length) setAuditEvents(catalog.auditEvents);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [sessionState, setAuditEvents, setMemberships, setPolicies, setRoles, tenantContext]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setAuditDraft(policies[activeHospitalId] ?? defaultPolicy(activeHospitalId)), 0);
-    return () => window.clearTimeout(timer);
-  }, [activeHospitalId, policies]);
+  }, [sessionState, setAuditEvents, setMemberships, setRoles, tenantContext]);
 
   const activeHospital = hospitals.find((hospital) => hospital.id === activeHospitalId) ?? hospitals[0];
   const activeServerMembership = tenantContext?.memberships.find((membership) => membership.hospitalId === activeHospitalId);
@@ -191,10 +158,6 @@ export default function AccessControlCenter({
     const text = `${membership.name}${membership.email}${role?.name ?? ""}`.toLowerCase();
     return membership.hospitalId === activeHospitalId && membership.email !== viewer.email && text.includes(memberSearch.toLowerCase());
   }), [activeHospitalId, memberSearch, memberships, roles, viewer.email]);
-  const currentPolicy = policies[activeHospitalId] ?? defaultPolicy(activeHospitalId);
-  const highRiskRoles = currentHospitalRoles.filter(roleRisk).length;
-  const visibleAuditEvents = auditEvents.filter((event) => event.hospital === activeHospital?.shortName || event.hospital === "全平台");
-  const recentDenials = visibleAuditEvents.filter((event) => event.result === "已拒绝").length;
 
   async function postConfiguration(payload: Record<string, unknown>) {
     if (sessionState !== "verified") return {} as Record<string, unknown>;
@@ -357,33 +320,6 @@ export default function AccessControlCenter({
     finally { setSaving(false); }
   }
 
-  async function saveAuditPolicy(event: FormEvent) {
-    event.preventDefault();
-    if (!canManageMembers) return notify("当前账号只有审计查看权限，不能修改安全策略");
-    setSaving(true);
-    try {
-      await postConfiguration({ action: "save_audit_policy", ...auditDraft });
-      setPolicies((current) => ({ ...current, [activeHospitalId]: { ...auditDraft, hospitalId: activeHospitalId } }));
-      recordAudit("更新审计策略", `${auditDraft.retentionDays}天保留 · 每${auditDraft.reviewCycleMonths}个月复核`);
-      notify("审计与权限复核策略已保存");
-    } catch (error) { notify(error instanceof Error ? error.message : "审计策略保存失败"); }
-    finally { setSaving(false); }
-  }
-
-  function exportAuditLog() {
-    const header = ["时间", "操作者", "医院", "动作", "对象", "结果"];
-    const rows = visibleAuditEvents.map((event) => [event.time, event.actor, event.hospital, actionLabel(event.action), event.target, event.result]);
-    const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
-    const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `${activeHospital?.shortName ?? "医院"}-权限审计日志.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    recordAudit("导出审计日志", `${visibleAuditEvents.length}条`);
-    notify("审计日志已导出");
-  }
-
   return (
     <>
       <div className="page-heading access-heading compact-access-heading">
@@ -400,7 +336,6 @@ export default function AccessControlCenter({
         <button className={tab === "hospitals" ? "active" : ""} onClick={() => setTab("hospitals")}><Building2 size={16} />医院</button>
         <button className={tab === "members" ? "active" : ""} onClick={() => setTab("members")}><Users size={16} />成员</button>
         <button className={tab === "roles" ? "active" : ""} onClick={() => setTab("roles")}><KeyRound size={16} />角色权限</button>
-        <button className={tab === "audit" ? "active" : ""} onClick={() => setTab("audit")}><FileClock size={16} />审计策略</button>
       </div>
 
       {tab === "hospitals" ? <section className="panel access-panel"><div className="panel-heading"><div><h3>医院配置</h3><p>维护名称、简称、等级、院区和运行状态。</p></div>{platformAdmin ? <button className="primary-button" onClick={openNewHospital}><Plus size={16} />新增医院</button> : <span className="chart-note">仅平台管理员可配置</span>}</div><div className="hospital-config-list">{hospitals.map((hospital) => <article key={hospital.id} className={hospital.id === activeHospitalId ? "active" : ""}><header><span><Building2 size={18} /></span><div><strong>{hospital.name}</strong><small>{hospital.code} · {hospital.level} · {hospital.region}</small></div><i className={`hospital-status status-${hospital.status}`}>{hospital.status}</i></header><div className="hospital-config-metrics"><span>数据完整率<strong>{hospital.dataCompleteness.toFixed(1)}%</strong></span><span>已准备文件来源<strong>{hospital.connectedSources} 个</strong></span><span>租户隔离键<strong>{hospital.tenantKey}</strong></span></div><footer><button className="text-button" disabled={hospital.id === activeHospitalId || hospital.status === "已停用"} onClick={() => onSwitchHospital(hospital.id)}>进入</button>{platformAdmin ? <><button className="secondary-button compact-action" onClick={() => openHospitalEditor(hospital)}><Pencil size={14} />编辑</button><button className={`secondary-button compact-action ${hospital.status === "已停用" ? "success-action" : "danger-action"}`} disabled={hospital.id === activeHospitalId && hospital.status !== "已停用"} onClick={() => setPendingHospitalStatusChange(hospital)}>{hospital.status === "已停用" ? <ShieldCheck size={14} /> : <ShieldOff size={14} />}{hospital.status === "已停用" ? "启用" : "停用"}</button></> : null}</footer></article>)}</div></section> : null}
@@ -408,8 +343,6 @@ export default function AccessControlCenter({
       {tab === "members" ? <section className="panel access-panel"><div className="panel-heading"><div><h3>{activeHospital?.shortName}成员</h3><p>为账号分配医院内角色，并按需限定科室数据范围。</p></div>{canManageMembers ? <button className="primary-button" onClick={openNewMember}><UserPlus size={16} />添加成员</button> : <span className="chart-note">只读权限</span>}</div><div className="table-toolbar"><label className="search-field"><Search size={16} /><input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="搜索姓名、邮箱或角色" /></label><span className="chart-note">{visibleMembers.length + 1} 个账号</span></div><div className="table-scroll"><table className="data-table member-table configurable-member-table"><thead><tr><th>账号</th><th>角色</th><th>数据范围</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead><tbody><tr className="current-viewer-row"><td><div className="member-identity"><span>{viewer.displayName.slice(0, 1)}</span><div><strong>{viewer.displayName}</strong><small>{viewer.email} · 当前账号</small></div></div></td><td>{effectiveRole}</td><td>{activeServerMembership?.dataScope === "department" ? activeServerMembership.departmentScope.join("、") : "医院范围"}</td><td><span className="status-pill success">正常</span></td><td>本次访问</td><td><span className="muted-action">不可修改自己</span></td></tr>{visibleMembers.map((member) => { const role = roles.find((item) => item.id === member.roleId); const manageable = assignableRoles.some((item) => item.id === role?.id); return <tr key={member.id}><td><div className="member-identity"><span>{member.name.slice(0, 1)}</span><div><strong>{member.name}</strong><small>{member.email}</small><small className={member.username ? "member-username" : "member-username missing"}>{member.username ? `登录账号：${member.username}${member.mustChangePassword ? "（待改密）" : ""}` : "未分配登录账号"}</small></div></div></td><td>{role?.name ?? "未配置"}</td><td>{member.departmentScope.length ? member.departmentScope.join("、") : role?.dataScope ?? "医院范围"}</td><td><span className={`status-pill ${member.status === "正常" ? "success" : member.status === "待激活" ? "warning" : "neutral"}`}>{member.status}</span></td><td>{member.lastLogin}</td><td>{manageable ? <div className="row-actions"><button className="text-button" onClick={() => openMemberEditor(member)}>编辑</button><button className="text-button" onClick={() => openCredentialEditor(member)}>{member.username ? "重置密码" : "分配账号"}</button><button className="text-button danger-text" onClick={() => setPendingMemberStatusChange(member)}>{member.status === "已停用" ? "启用" : "停用"}</button></div> : <span className="muted-action">权限高于当前账号</span>}</td></tr>; })}</tbody></table></div></section> : null}
 
       {tab === "roles" ? <section className="panel access-panel"><div className="panel-heading"><div><h3>角色与权限</h3><p>内置角色作为模板使用；复制后可按本医院需要配置权限。</p></div>{canManageMembers ? <button className="primary-button" onClick={() => openRoleCopy()}><Plus size={16} />新增自定义角色</button> : <span className="chart-note">只读权限</span>}</div><div className="role-config-list">{currentHospitalRoles.map((role) => { const manageable = assignableRoles.some((item) => item.id === role.id); return <article key={role.id}><div className="role-config-head"><span className={roleRisk(role) ? "risk" : "standard"}><UserCog size={17} /></span><div><strong>{role.name}</strong><small>{role.code} · {role.builtIn ? "内置模板" : "本医院自定义"}</small></div><i>{memberships.filter((member) => member.roleId === role.id && member.hospitalId === activeHospitalId).length} 人</i></div><p>{role.description}</p><div className="role-config-meta"><span>{role.dataScope}</span><span>{role.permissions.length} 项权限</span>{roleRisk(role) ? <span className="risk-label">含高风险权限</span> : null}</div><div className="role-permission-preview">{permissionColumns.map((permission) => <span key={permission.code} className={role.permissions.includes(permission.code) ? "allowed" : "denied"}>{role.permissions.includes(permission.code) ? <Check size={12} /> : null}{permission.label}</span>)}</div>{canManageMembers ? <footer>{manageable ? role.builtIn ? <button className="secondary-button" onClick={() => openRoleCopy(role)}><Copy size={14} />复制为自定义角色</button> : <button className="secondary-button" onClick={() => openRoleEditor(role)}><Settings2 size={14} />配置角色</button> : <span className="muted-action">权限高于当前账号，不可配置</span>}</footer> : null}</article>; })}</div></section> : null}
-
-      {tab === "audit" ? <div className="audit-config-layout"><form className="panel audit-policy-panel" onSubmit={saveAuditPolicy}><div className="panel-heading"><div><h3>审计与复核策略</h3><p>设置当前医院的日志保留、账号邀请和权限复核规则。</p></div><span className="page-badge"><FileClock size={15} />当前生效</span></div><div className="audit-policy-fields"><label>日志保留期<select disabled={!canManageMembers} value={auditDraft.retentionDays} onChange={(event) => setAuditDraft((current) => ({ ...current, retentionDays: Number(event.target.value) }))}><option value={180}>180 天</option><option value={365}>365 天</option><option value={730}>2 年</option><option value={1095}>3 年</option></select><small>到期后按医院制度归档或清理</small></label><label>权限复核周期<select disabled={!canManageMembers} value={auditDraft.reviewCycleMonths} onChange={(event) => setAuditDraft((current) => ({ ...current, reviewCycleMonths: Number(event.target.value) }))}><option value={1}>每月</option><option value={3}>每季度</option><option value={6}>每半年</option><option value={12}>每年</option></select><small>高风险角色建议每季度复核</small></label><label>待激活有效期<select disabled={!canManageMembers} value={auditDraft.invitationExpiryDays} onChange={(event) => setAuditDraft((current) => ({ ...current, invitationExpiryDays: Number(event.target.value) }))}><option value={3}>3 天</option><option value={7}>7 天</option><option value={14}>14 天</option><option value={30}>30 天</option></select><small>验证邮箱首次登录自动激活，过期则拒绝</small></label><label>拒绝访问告警阈值<select disabled={!canManageMembers} value={auditDraft.denialAlertThreshold} onChange={(event) => setAuditDraft((current) => ({ ...current, denialAlertThreshold: Number(event.target.value) }))}><option value={3}>3 次/小时</option><option value={5}>5 次/小时</option><option value={10}>10 次/小时</option><option value={20}>20 次/小时</option></select><small>达到阈值后进入消息中心</small></label></div><footer className="audit-policy-actions"><span>上次更新：{currentPolicy.updatedAt ? new Date(currentPolicy.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "使用默认策略"}</span><button className="primary-button" disabled={saving || !canManageMembers}><Save size={16} />{canManageMembers ? "保存策略" : "只读"}</button></footer></form><section className="panel audit-log-panel"><div className="panel-heading"><div><h3>授权与访问日志</h3><p>记录配置变更、允许访问和拒绝访问。</p></div><button className="secondary-button" onClick={exportAuditLog}><Download size={16} />导出日志</button></div><div className="audit-config-kpis"><div><span>高风险角色</span><strong>{highRiskRoles}</strong></div><div><span>待激活账号</span><strong>{memberships.filter((member) => member.hospitalId === activeHospitalId && member.status === "待激活").length}</strong></div><div><span>拒绝记录</span><strong>{recentDenials}</strong></div></div><div className="table-scroll"><table className="data-table audit-table"><thead><tr><th>时间</th><th>操作者</th><th>医院</th><th>动作</th><th>对象</th><th>结果</th></tr></thead><tbody>{visibleAuditEvents.map((event) => <tr key={`${event.time}-${event.actor}-${event.action}`}><td>{event.time}</td><td>{event.actor}</td><td>{event.hospital}</td><td>{actionLabel(event.action)}</td><td>{event.target}</td><td><span className={`status-pill ${event.result === "成功" ? "success" : "danger"}`}>{event.result}</span></td></tr>)}</tbody></table></div></section></div> : null}
 
       {hospitalDraft ? <div className="modal-backdrop access-modal"><form className="access-dialog" onSubmit={saveHospital}><header><div><span>{hospitalIsNew ? "新增医院" : "编辑医院"}</span><h2>{hospitalIsNew ? "创建医院配置" : hospitalDraft.shortName}</h2></div><button type="button" className="icon-button" onClick={() => setHospitalDraft(null)} aria-label="关闭医院配置"><X size={18} /></button></header><div className="access-dialog-body"><label>医院全称<input required value={hospitalDraft.name} onChange={(event) => setHospitalDraft((current) => current ? { ...current, name: event.target.value } : current)} placeholder="例如：某某市中心医院" /></label><div className="form-row two"><label>医院编码<input required disabled={!hospitalIsNew} value={hospitalDraft.code} onChange={(event) => setHospitalDraft((current) => current ? { ...current, code: event.target.value.toUpperCase() } : current)} /></label><label>显示简称<input value={hospitalDraft.shortName} onChange={(event) => setHospitalDraft((current) => current ? { ...current, shortName: event.target.value } : current)} /></label></div><div className="form-row two"><label>医院等级<select value={hospitalDraft.level} onChange={(event) => setHospitalDraft((current) => current ? { ...current, level: event.target.value } : current)}>{HOSPITAL_LEVELS.every((option) => option.value !== hospitalDraft.level) ? <option value={hospitalDraft.level}>{hospitalDraft.level}（原有取值）</option> : null}{HOSPITAL_LEVELS.map((option) => <option key={option.value} value={option.value}>{option.value}</option>)}</select><small>《医院分级管理办法》三级十等；已定级未定等选“（未定等）”。</small></label><label>医院类别<select value={hospitalDraft.category} onChange={(event) => setHospitalDraft((current) => current ? { ...current, category: event.target.value } : current)}>{HOSPITAL_CATEGORIES.every((option) => option !== hospitalDraft.category) ? <option value={hospitalDraft.category}>{hospitalDraft.category}（原有取值）</option> : null}{HOSPITAL_CATEGORIES.map((option) => <option key={option} value={option}>{option}</option>)}</select><small>《医疗机构管理条例实施细则》医疗机构类别。</small></label></div><div className="form-row two"><label>院区/区域<input value={hospitalDraft.region} onChange={(event) => setHospitalDraft((current) => current ? { ...current, region: event.target.value } : current)} /></label><label>资产编号简码<input value={hospitalDraft.assetCodePrefix} onChange={(event) => setHospitalDraft((current) => current ? { ...current, assetCodePrefix: normalizeAssetCodePrefix(event.target.value) } : current)} placeholder="例如：YHZX" /><small>{hospitalDraft.assetCodePrefix ? `新增设备将自动编号为 ${hospitalDraft.assetCodePrefix}0000001 起，可在台账里手工覆盖。` : "留空则新增设备时需手工填写资产编号。"}</small></label></div><div className="dialog-warning"><CircleAlert size={16} />医院编码创建后不可修改；医院停启用请在医院列表中单独操作。</div></div><footer><button type="button" className="secondary-button" onClick={() => setHospitalDraft(null)}>取消</button><button className="primary-button" disabled={saving}><Save size={16} />保存医院</button></footer></form></div> : null}
 

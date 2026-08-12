@@ -2038,3 +2038,33 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 900px) {
   .admin-stats.single { grid-template-columns: 1fr; }
 }
+
+/* ── 指标字典面板：分类彩标、长文本折行与展开 ──────────────────────────── */
+.metric-tag { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 5px; color: var(--muted); background: var(--surface-soft); border: 1px solid var(--border); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.metric-tag.tone-blue { color: var(--primary); background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 22%, transparent); }
+.metric-tag.tone-green { color: var(--green); background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 22%, transparent); }
+.metric-tag.tone-orange { color: var(--orange); background: var(--orange-soft); border-color: color-mix(in srgb, var(--orange) 22%, transparent); }
+.metric-tag.tone-purple { color: var(--violet); background: var(--violet-soft); border-color: color-mix(in srgb, var(--violet) 22%, transparent); }
+.metric-tag.tone-red { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 22%, transparent); }
+.metric-tag.tone-slate { color: var(--slate); background: color-mix(in srgb, var(--slate) 10%, transparent); border-color: color-mix(in srgb, var(--slate) 22%, transparent); }
+
+/* 医院原文带手工换行，pre-line 保留段落又允许自动折行 */
+.metric-multiline { white-space: pre-line; font-size: 12px; line-height: 1.6; }
+.metric-source { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.metric-source-text { white-space: pre-line; font-size: 12px; line-height: 1.6; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.metric-source-text.expanded { display: block; overflow: visible; }
+.metric-source-toggle { padding: 0; border: 0; border-radius: 4px; color: var(--primary); background: transparent; font-size: 12px; font-weight: 600; }
+.metric-source-toggle:hover { text-decoration: underline; }
+.metric-source-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* 六列布局与旧的八列不同，覆盖上面的 .dictionary-table 列宽 */
+.metric-dictionary .dictionary-table { min-width: 1440px; }
+.metric-dictionary .dictionary-table th:nth-child(1) { width: 180px; }
+.metric-dictionary .dictionary-table th:nth-child(2) { width: 300px; }
+.metric-dictionary .dictionary-table th:nth-child(3) { width: 140px; }
+.metric-dictionary .dictionary-table th:nth-child(4) { width: 420px; }
+.metric-dictionary .dictionary-table th:nth-child(5) { width: 220px; }
+.metric-dictionary .dictionary-table th:nth-child(6) { width: 180px; }
+.metric-dictionary .dictionary-table td { font-size: 12px; }
+.metric-dictionary .dictionary-table td .status-pill { white-space: normal; text-align: center; line-height: 1.5; }
+.dictionary-empty { padding: 32px 12px; color: var(--muted); text-align: center; font-size: 12px; }

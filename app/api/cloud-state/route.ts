@@ -53,6 +53,8 @@ const maxResourceItems: Record<CloudResourceName, number> = {
   dataSources: 2_000,
   analysisProfiles: 200,
   ledgerFields: 200,
+  metricDictionary: 500,
+  metricCategories: 50,
 };
 const maxResourceBytes = 1_500_000;
 const notificationPreferenceKeys = [
@@ -178,8 +180,10 @@ function applyDataScope(shared: CloudSharedState, access: CloudAccess) {
       )),
       dataSources: [],
       analysisProfiles: [],
-      // 台账列定义是全院统一口径：按科室裁剪会让科室用户少看到列，表格直接缺列。
+      // 台账列定义与指标口径都是全院统一口径：按科室裁剪会让科室用户少看到列/少看到指标。
       ledgerFields: shared.ledgerFields,
+      metricDictionary: shared.metricDictionary,
+      metricCategories: shared.metricCategories,
     };
   }
   const departments = access.departmentScope;

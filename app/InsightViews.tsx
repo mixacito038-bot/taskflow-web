@@ -40,16 +40,18 @@ import {
 } from "recharts";
 import { cloneDevicesForHospital, Device, netBenefit, roi, totalCost } from "./mock-data";
 import {
-  auditCorrections,
-  collectionPaths,
   DeviceInsight,
   deviceInsights,
   dimensionMeta,
   DimensionId,
   insightFor,
-  metricDefinitions,
-  responsibilityMatrix,
 } from "./metric-definitions";
+import {
+  evidenceTone,
+  metricCategory,
+  type MetricCategory,
+  type MetricDictionaryEntry,
+} from "./metric-dictionary";
 import type { PublishedDatasetView } from "./published-data";
 import styles from "./DeviceDossier.module.css";
 
@@ -480,41 +482,66 @@ export function SingleEquipmentDetail({
   );
 }
 
-export function MetricGovernanceCenter() {
-  const [dimension, setDimension] = useState<DimensionId | "all">("all");
+export function MetricGovernanceCenter({ entries, categories }: {
+  entries: MetricDictionaryEntry[];
+  categories: MetricCategory[];
+}) {
+  const [categoryId, setCategoryId] = useState("all");
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => metricDefinitions.filter((metric) => {
-    const matchesDimension = dimension === "all" || metric.dimension === dimension;
-    const haystack = `${metric.metric}${metric.definition}${metric.formula}${metric.source}${metric.owner}`.toLowerCase();
-    return matchesDimension && haystack.includes(query.toLowerCase());
-  }), [dimension, query]);
+  // 出处是几百字原文，一次只允许展开一条，避免整张表被撑成滚动地狱
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return entries.filter((entry) => {
+      if (categoryId !== "all" && entry.categoryId !== categoryId) return false;
+      if (!keyword) return true;
+      return `${entry.name}${entry.formula}${entry.system}${entry.note}`.toLowerCase().includes(keyword);
+    });
+  }, [categoryId, entries, query]);
 
   return (
-    <>
-      <section className="panel audit-panel">
-        <div className="panel-heading"><div><h3>口径评审记录</h3><p>已将需求材料中的口径歧义逐项转为可执行的数据规则</p></div><span className="status-pill success">6 项已修正</span></div>
-        <div className="audit-grid">{auditCorrections.map((item, index) => <div key={item}><span>{index + 1}</span><p>{item}</p></div>)}</div>
-      </section>
-
-      <section className="panel collection-panel">
-        <div className="panel-heading"><div><h3>三类数据采集路径</h3><p>先重点设备，再扩展全品类；普适性与精度分层建设</p></div></div>
-        <div className="collection-grid">{collectionPaths.map((path) => <article key={path.name}><span>{path.phase}</span><h4>{path.name}</h4><p>{path.scope}</p><dl><div><dt>可获得数据</dt><dd>{path.data}</dd></div><div><dt>责任边界</dt><dd>{path.owner}</dd></div></dl><strong>{path.status}</strong></article>)}</div>
-      </section>
-
-      <section className="panel metric-dictionary">
-        <div className="panel-heading"><div><h3>指标字典：值从哪里来、怎么算、谁确认</h3><p>共 {metricDefinitions.length} 个核心指标；信息部负责取数过程，业务部门负责口径签字</p></div><span className="chart-note">示例值均为模拟</span></div>
-        <div className="dictionary-toolbar">
-          <div className="dimension-tabs"><button className={dimension === "all" ? "active" : ""} onClick={() => setDimension("all")}>全部</button>{dimensionMeta.map((item) => <button className={dimension === item.id ? "active" : ""} onClick={() => setDimension(item.id)} key={item.id}>{item.label}</button>)}</div>
-          <label className="search-field"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索指标、公式、系统或部门" /></label>
+    <section className="panel metric-dictionary">
+      <div className="panel-heading"><div><h3>指标字典</h3><p>口径由各院在「指标字典配置」中维护，此处按当前生效版本只读展示。</p></div></div>
+      <div className="dictionary-toolbar">
+        <div className="dimension-tabs">
+          <button className={categoryId === "all" ? "active" : ""} onClick={() => setCategoryId("all")}>全部</button>
+          {categories.map((category) => <button className={categoryId === category.id ? "active" : ""} onClick={() => setCategoryId(category.id)} key={category.id}>{category.label}</button>)}
         </div>
-        <div className="table-scroll"><table className="data-table dictionary-table"><thead><tr><th>维度/指标</th><th>定义</th><th>计算公式</th><th>来源系统</th><th>提供/确认部门</th><th>频率</th><th>示例值</th><th>审核说明</th></tr></thead><tbody>{filtered.map((metric) => <tr key={`${metric.dimension}-${metric.metric}`}><td><span className={`dimension-pill dimension-${metric.dimension}`}>{dimensionMeta.find((item) => item.id === metric.dimension)?.label}</span><strong>{metric.metric}</strong></td><td>{metric.definition}</td><td><code>{metric.formula}</code></td><td>{metric.source}</td><td>{metric.owner}</td><td>{metric.frequency}</td><td>{metric.example}</td><td>{metric.audit ?? "—"}</td></tr>)}</tbody></table></div>
-      </section>
-
-      <section className="panel responsibility-panel">
-        <div className="panel-heading"><div><h3>部门责任矩阵</h3><p>文件提供、口径确认和发布复核分开，形成可追责的数据治理闭环</p></div></div>
-        <div className="table-scroll"><table className="data-table"><thead><tr><th>部门/角色</th><th>需要提供</th><th>需要确认</th><th>建议频率</th></tr></thead><tbody>{responsibilityMatrix.map((row) => <tr key={row.department}><td><strong>{row.department}</strong></td><td>{row.provides}</td><td>{row.confirms}</td><td>{row.cadence}</td></tr>)}</tbody></table></div>
-      </section>
-    </>
+        <label className="search-field"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索指标名称、计算口径、取数系统或备注" /></label>
+      </div>
+      <div className="table-scroll">
+        <table className="data-table dictionary-table">
+          <thead><tr><th>指标名称</th><th>计算口径</th><th>是否找到理论依据</th><th>理论依据出处（详细）</th><th>数据来源/取数系统</th><th>备注</th></tr></thead>
+          <tbody>
+            {filtered.map((entry) => {
+              const category = metricCategory(categories, entry.categoryId);
+              const expanded = expandedId === entry.id;
+              return (
+                <tr key={entry.id}>
+                  <td>
+                    {category ? <span className={`metric-tag tone-${category.tone}`}>{category.label}</span> : null}
+                    <strong>{entry.name}</strong>
+                  </td>
+                  <td><div className="metric-multiline">{entry.formula || "—"}</div></td>
+                  <td><span className={`status-pill ${evidenceTone(entry.evidence)}`}>{entry.evidence || "未标注"}</span></td>
+                  <td>
+                    {entry.source ? (
+                      <div className="metric-source">
+                        <div className={expanded ? "metric-source-text expanded" : "metric-source-text"}>{entry.source}</div>
+                        <button type="button" className="metric-source-toggle" onClick={() => setExpandedId(expanded ? null : entry.id)}>{expanded ? "收起" : "展开全文"}</button>
+                      </div>
+                    ) : "—"}
+                  </td>
+                  <td><div className="metric-multiline">{entry.system || "—"}</div></td>
+                  <td><div className="metric-multiline">{entry.note || "—"}</div></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {filtered.length ? null : <div className="dictionary-empty">没有匹配的指标，换个关键词或切换分类再试。</div>}
+    </section>
   );
 }
 

@@ -231,7 +231,9 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
 
   assert.match(accessComponent, /医院配置/);
   assert.match(accessComponent, /角色与权限/);
-  assert.match(accessComponent, /审计与复核策略/);
+  // 审计策略板块已按需求整体移除；服务端仍在写审计记录，只是不在这个页面展示。
+  assert.doesNotMatch(accessComponent, /审计与复核策略/);
+  assert.doesNotMatch(accessComponent, /授权与访问日志/);
   assert.match(accessComponent, /保存医院/);
   assert.match(accessComponent, /保存成员/);
   assert.match(accessComponent, /保存角色/);
@@ -341,7 +343,6 @@ test("requires an application session and provides real TOTP account security", 
     tenantRoute,
     cloudRoute,
     artifactRoute,
-    healthRoute,
   ] = await Promise.all([
     readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LoginScreen.tsx", import.meta.url), "utf8"),
@@ -356,7 +357,6 @@ test("requires an application session and provides real TOTP account security", 
     readFile(new URL("../app/api/tenant-context/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/cloud-state/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/report-artifacts/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/system-health/route.ts", import.meta.url), "utf8"),
   ]);
 
   // SSO identity is only the first layer. Every business API must require the
@@ -366,7 +366,6 @@ test("requires an application session and provides real TOTP account security", 
     ["tenant-context API", tenantRoute],
     ["cloud-state API", cloudRoute],
     ["report-artifacts API", artifactRoute],
-    ["system-health API", healthRoute],
   ]) {
     assertAppSessionProtected(route, routeName);
   }
@@ -545,7 +544,11 @@ test("uses hospital-scoped D1 state and account-scoped preferences for authentic
   assert.match(component, /persistCloudResource\("costEntries"/);
   assert.match(component, /persistCloudResource\("improvementActions"/);
   assert.match(component, /persistCloudResource\("modules"/);
-  assert.match(component, /persistCloudResource\("dataSources"/);
+  // 文件来源的编辑界面已随「文件数据清单」一起移除，不再有写入点；
+  // 但资源本身仍被采集与分析、报告读取，所以保留读取侧断言。
+  assert.match(component, /result\.shared\.dataSources/);
+  assert.match(component, /persistCloudResource\("ledgerFields"/);
+  assert.match(component, /persistCloudResource\("metricDictionary"/);
   assert.match(component, /persistCloudResource\("analysisProfiles"/);
   // 常驻的云同步状态展示（"云端已同步"徽章、"云端数据已同步"小字、"重新同步云端"按钮）
   // 已按需求移除；底层 persistCloudResource 同步机制保留（上方断言仍在守护）。
@@ -686,7 +689,7 @@ test("rejects stale cloud resource writes with atomic optimistic concurrency con
 });
 
 test("provides configurable category-specific collection, quality, and benefit rules", async () => {
-  const [studio, profiles, reportCenter, reportModel, definitions, styles, cloudRoute, healthRoute, governance, reportExport] = await Promise.all([
+  const [studio, profiles, reportCenter, reportModel, definitions, styles, cloudRoute, governance, reportExport] = await Promise.all([
     readFile(new URL("../app/BenefitAnalysisStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/benefit-analysis-config.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/BenefitReportCenter.tsx", import.meta.url), "utf8"),
@@ -694,7 +697,6 @@ test("provides configurable category-specific collection, quality, and benefit r
     readFile(new URL("../app/metric-definitions.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/api/cloud-state/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/system-health/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/report-governance.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/benefit-report-export.ts", import.meta.url), "utf8"),
   ]);
@@ -744,7 +746,6 @@ test("provides configurable category-specific collection, quality, and benefit r
 
   // The new configuration is hospital-scoped in D1 and feeds the report's actual source readiness.
   assert.match(cloudRoute, /analysisProfiles: 200/);
-  assert.match(healthRoute, /analysisProfiles: "采集分析配置"/);
   assert.match(reportCenter, /dataSources: DataSource\[\]/);
   assert.match(reportCenter, /analysisProfiles: BenefitAnalysisProfile\[\]/);
   assert.match(reportModel, /dataSources: DataSource\[\] = defaultDataSources/);
@@ -860,46 +861,24 @@ test("stores report artifacts in hospital-scoped R2 with validated metadata", as
   assert.match(migration, /CREATE UNIQUE INDEX `report_artifacts_file_key_unique`/);
 });
 
-test("provides an administrator-only cloud operations and backup center", async () => {
-  const [component, operations, healthRoute, styles, globalStyles, runbook, readme] = await Promise.all([
+test("云端运维已整体移除，且不留悬空引用", async () => {
+  const { existsSync } = await import("node:fs");
+  for (const relative of ["../app/CloudOperationsCenter.tsx", "../app/CloudOperationsCenter.module.css", "../app/api/system-health/route.ts"]) {
+    assert.equal(existsSync(new URL(relative, import.meta.url)), false, `${relative} 应已删除`);
+  }
+  const [component, menu, guide] = await Promise.all([
     readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/CloudOperationsCenter.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/system-health/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/CloudOperationsCenter.module.css", import.meta.url), "utf8"),
-    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
-    readFile(new URL("../DEMO-RUNBOOK.md", import.meta.url), "utf8"),
-    readFile(new URL("../README.md", import.meta.url), "utf8"),
+    readFile(new URL("../app/menu-catalog.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/GuideCenter.tsx", import.meta.url), "utf8"),
   ]);
-
-  assert.match(component, /CloudOperationsCenter/);
-  assert.match(component, /id: "operations", label: "云端运维"/);
-  assert.match(component, /permissions: \["member\.manage"\]/);
+  // 删菜单最容易留下的就是悬空 import、路由分支和引导步骤
+  for (const [name, source] of [["EquipmentPlatform", component], ["menu-catalog", menu], ["GuideCenter", guide]]) {
+    assert.doesNotMatch(source, /CloudOperationsCenter/, `${name} 仍引用已删组件`);
+    assert.doesNotMatch(source, /云端运维/, `${name} 仍有云端运维文案`);
+    assert.doesNotMatch(source, /"operations"/, `${name} 仍有 operations 视图或菜单`);
+    assert.doesNotMatch(source, /system-health/, `${name} 仍调用已删接口`);
+  }
+  // 侧边栏医院切换是独立能力，不能被一起删掉
   assert.match(component, /sidebar-hospital-switcher/);
   assert.match(component, /移动端当前医院/);
-  assert.match(operations, /云端运维与演示自检/);
-  assert.match(operations, /运行云端自检/);
-  assert.match(operations, /下载医院备份/);
-  assert.match(operations, /api\/system-health/);
-  assert.match(styles, /@media \(max-width: 720px\)/);
-  assert.match(globalStyles, /\.sidebar-hospital-switcher/);
-
-  assertAppSessionProtected(healthRoute, "system-health API");
-  assert.match(healthRoute, /requireHospitalAdministrator/);
-  assert.match(healthRoute, /access\.permissions\.has\("member\.manage"\)/);
-  assert.match(healthRoute, /eq\(hospitalCloudResources\.hospitalId, hospitalId\)/);
-  assert.match(healthRoute, /REPORT_FILES/);
-  assert.match(healthRoute, /bucket\.head/);
-  assert.match(healthRoute, /maximumBackupBytes = 20 \* 1024 \* 1024/);
-  assert.match(healthRoute, /withoutSensitiveValues/);
-  assert.match(healthRoute, /sensitiveKeyPattern/);
-  assert.match(healthRoute, /x-backup-sha256/);
-  assert.match(healthRoute, /download_hospital_backup/);
-  assert.match(healthRoute, /cache-control": "private, no-store"/);
-
-  assert.match(readme, /正式账号/);
-  assert.match(readme, /云端 D1/);
-  assert.match(readme, /匿名演示/);
-  assert.match(runbook, /演示前一天/);
-  assert.match(runbook, /建议的 12 分钟演示脚本/);
-  assert.match(runbook, /禁止录入患者个人信息/);
 });

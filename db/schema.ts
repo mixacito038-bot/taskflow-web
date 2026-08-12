@@ -151,7 +151,7 @@ export const reportArtifacts = sqliteTable("report_artifacts", {
 export const hospitalCloudResources = sqliteTable("hospital_cloud_resources", {
   hospitalId: text("hospital_id").notNull().references(() => hospitals.id, { onDelete: "cascade" }),
   resource: text("resource", {
-    enum: ["devices", "costEntries", "notifications", "improvementActions", "modules", "dataSources", "analysisProfiles", "ledgerFields"],
+    enum: ["devices", "costEntries", "notifications", "improvementActions", "modules", "dataSources", "analysisProfiles", "ledgerFields", "metricDictionary", "metricCategories"],
   }).notNull(),
   valueJson: text("value_json").notNull().default("[]"),
   revision: integer("revision").notNull().default(1),

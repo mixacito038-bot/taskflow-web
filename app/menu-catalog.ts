@@ -25,7 +25,6 @@ export const menuCatalog: readonly MenuCatalogItem[] = [
   { id: "sources", label: "文件口径说明", group: "manage", permissions: ["source.manage"] },
   { id: "workbench", label: "数据准备中心（隐藏入口）", group: "manage", permissions: ["connector.manage", "data.ingest", "data.clean", "data.review", "data.publish"], note: "通过品牌区连击加口令进入" },
   { id: "access", label: "医院与权限", group: "manage", permissions: ["hospital.manage", "member.manage"] },
-  { id: "operations", label: "云端运维", group: "manage", permissions: ["member.manage"] },
 ] as const;
 
 export function menuVisibleForPermissions(item: MenuCatalogItem, permissionCodes: ReadonlySet<string>): boolean {

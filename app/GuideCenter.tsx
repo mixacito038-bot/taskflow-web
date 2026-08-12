@@ -12,7 +12,6 @@ import {
   CircleDollarSign,
   CircleHelp,
   Clock3,
-  CloudCog,
   Database,
   FileSpreadsheet,
   FileText,
@@ -39,7 +38,6 @@ export type GuideTarget =
   | "layout"
   | "sources"
   | "access"
-  | "operations"
   | "messages";
 
 export type GuideStatus = {
@@ -133,7 +131,6 @@ const roleRoutes: Array<{
     steps: [
       { title: "准备来源文件", description: "登记设备、业务收入、成本、运行、保障和质量文件模板。", target: "sources", outcome: "责任人、更新频率和最近导入批次清楚" },
       { title: "验证导入与匹配", description: "查看设备绑定、最小事件集、完整率和对账容差。", target: "analysis", outcome: "阻断性映射和文件异常已分类" },
-      { title: "检查云端运行", description: "查看数据库、报告文件、备份和服务健康状态。", target: "operations", outcome: "演示或生产环境具备可说明的运行状态" },
     ],
   },
   {
@@ -145,7 +142,6 @@ const roleRoutes: Array<{
       { title: "配置医院与成员", description: "建立医院、分配成员、角色和科室数据范围。", target: "access", outcome: "不同账号只进入授权医院与科室" },
       { title: "发布数据与指标规则", description: "配置数据来源、设备品类模板和指标口径。", target: "sources", outcome: "口径有负责人、版本和生效期" },
       { title: "配置展示布局", description: "按医院和管理角色调整驾驶舱模块与信息密度。", target: "layout", outcome: "首页聚焦当前医院的管理重点" },
-      { title: "完成演示前自检", description: "检查云端同步、备份、报告文件和私有访问门禁。", target: "operations", outcome: "现场演示的账号、医院与数据状态可验证" },
     ],
   },
 ];
@@ -178,7 +174,6 @@ const pageGuides: Array<{
   { target: "improvement", title: "运营改进中心", audience: "设备科、科室、运营部门", problem: "把异常转成有责任、有期限、有目标的行动。", source: "驾驶舱预警、单机分析和人工复核结论。", done: "措施包含原因、责任人、目标值、期限和复评结果。" },
   { target: "access", title: "医院与权限", audience: "平台管理员、医院管理员", problem: "确定谁能进入哪家医院、看到哪些科室并执行什么操作。", source: "登录身份、医院成员、角色权限和数据范围。", done: "最小权限生效，高风险操作有审计记录。" },
   { target: "messages", title: "消息中心", audience: "全部角色", problem: "集中处理数据质量、成本、效益、安全和系统提醒。", source: "业务规则、任务状态和系统事件。", done: "需要行动的消息已进入对应页面处理。" },
-  { target: "operations", title: "云端运维", audience: "平台管理员、信息科", problem: "检查数据库、报告文件、备份和服务健康。", source: "云端运行状态、备份记录和审计事件。", done: "关键服务可用，异常有处理记录和恢复路径。" },
   { target: "layout", title: "驾驶舱配置", audience: "医院管理员", problem: "按医院管理重点调整模块、主题和信息密度。", source: "医院配置和账号显示偏好。", done: "首页只保留角色真正需要的管理信息。" },
 ];
 
@@ -221,7 +216,6 @@ function targetIcon(target: GuideTarget) {
   if (target === "layout") return <Settings2 {...props} />;
   if (target === "sources") return <Database {...props} />;
   if (target === "access") return <ShieldCheck {...props} />;
-  if (target === "operations") return <CloudCog {...props} />;
   return <Bell {...props} />;
 }
 

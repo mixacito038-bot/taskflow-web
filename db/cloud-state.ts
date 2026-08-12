@@ -17,6 +17,8 @@ export const cloudResourceNames = [
   "dataSources",
   "analysisProfiles",
   "ledgerFields",
+  "metricDictionary",
+  "metricCategories",
 ] as const;
 
 export type CloudResourceName = (typeof cloudResourceNames)[number];
@@ -48,6 +50,9 @@ const resourcePermission: Record<CloudResourceName, string> = {
   analysisProfiles: "source.manage",
   // 台账列定义决定设备台账长什么样，跟着设备台账的管理权限走
   ledgerFields: "equipment.manage",
+  // 指标口径属于文件/口径治理范畴，跟着数据源管理权限走
+  metricDictionary: "source.manage",
+  metricCategories: "source.manage",
 };
 
 const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
@@ -60,6 +65,9 @@ const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
   analysisProfiles: ["source.manage", "report.manage", "report.review", "report.approve", "report.export"],
   // 能看设备台账的都要能读列定义，否则表格会缺列
   ledgerFields: ["dashboard.view", "equipment.manage", "improvement.manage", "report.manage", "report.review", "report.approve", "report.export"],
+  // 指标字典是全院公开口径，能看分析页面的都要能读，否则表格会缺行
+  metricDictionary: ["dashboard.view", "source.manage", "report.manage", "report.review", "report.approve", "report.export"],
+  metricCategories: ["dashboard.view", "source.manage", "report.manage", "report.review", "report.approve", "report.export"],
 };
 
 export function emptySharedState(): CloudSharedState {
@@ -69,6 +77,8 @@ export function emptySharedState(): CloudSharedState {
     notifications: [],
     improvementActions: [],
     ledgerFields: [],
+    metricDictionary: [],
+    metricCategories: [],
     modules: [],
     dataSources: [],
     analysisProfiles: [],

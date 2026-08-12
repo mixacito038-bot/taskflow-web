@@ -20,7 +20,6 @@ import {
   CircleDollarSign,
   Clock3,
   Cloud,
-  CloudCog,
   CloudOff,
   Database,
   Download,
@@ -121,10 +120,10 @@ import {
   initialBenefitAnalysisProfiles,
   type BenefitAnalysisProfile,
 } from "./benefit-analysis-config";
-import CloudOperationsCenter from "./CloudOperationsCenter";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
 import LedgerFieldSettings from "./LedgerFieldSettings";
+import MetricDictionarySettings from "./MetricDictionarySettings";
 import { DATA_WORKBENCH_ENTRY_CLICKS, buildBusinessTemplateCsv, templateFields } from "./data-workbench-model";
 import {
   DEVICE_DATA_SOURCES,
@@ -136,6 +135,12 @@ import {
   validateCustomFieldValues,
   validateFieldValue,
 } from "./device-ledger-fields";
+import {
+  DEFAULT_METRIC_CATEGORIES,
+  DEFAULT_METRIC_DICTIONARY,
+  MetricCategory,
+  MetricDictionaryEntry,
+} from "./metric-dictionary";
 import { normalizeHospitalTaxonomy } from "./hospital-catalog";
 import { menuCatalog } from "./menu-catalog";
 import ConfigurableAnalyticsCanvas from "./ConfigurableAnalyticsCanvas";
@@ -152,7 +157,7 @@ import type {
   CloudUserPreferences,
 } from "./cloud-state";
 
-type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "ledger-fields" | "detail" | "costs" | "layout" | "sources" | "access" | "operations" | "messages" | "account" | "guide";
+type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "ledger-fields" | "metric-dictionary" | "detail" | "costs" | "layout" | "sources" | "access" | "messages" | "account" | "guide";
 type Perspective = "管理层" | "设备科" | "临床科室";
 type ThemeId = "clinical" | "teal" | "midnight";
 type Density = "comfortable" | "compact";
@@ -190,6 +195,7 @@ type ApplicationSessionSnapshot = {
 
 function guideTargetFor(view: View): GuideTarget {
   if (view === "detail" || view === "ledger-fields") return "equipment";
+  if (view === "metric-dictionary") return "sources";
   if (view === "capital") return "improvement";
   if (view === "workbench") return "sources";
   if (view === "account") return "access";
@@ -226,6 +232,8 @@ const cloudResourceLabels: Record<CloudResource, string> = {
   dataSources: "文件口径配置",
   analysisProfiles: "采集分析配置",
   ledgerFields: "台账字段配置",
+  metricDictionary: "指标字典",
+  metricCategories: "指标分类",
 };
 
 const themeOptions: Array<{ id: ThemeId; name: string; note: string }> = [
@@ -428,6 +436,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [improvementStore, setImprovementStoreLocal] = useDemoState<Record<string, ImprovementAction[]>>("equip-benefit-improvement-actions-by-hospital-v2", demoMode ? initialImprovementStore() : {}, demoMode);
   const [sourceStore, setSourceStoreLocal] = useDemoState<Record<string, typeof initialDataSources>>("equip-benefit-data-sources-by-hospital-v1", demoMode ? initialSourceStore() : {}, demoMode);
   const [ledgerFieldStore, setLedgerFieldStoreLocal] = useDemoState<Record<string, LedgerFieldDefinition[]>>("equip-benefit-ledger-fields-by-hospital-v1", {}, demoMode);
+  const [metricStore, setMetricStoreLocal] = useDemoState<Record<string, MetricDictionaryEntry[]>>("equip-benefit-metric-dictionary-by-hospital-v1", {}, demoMode);
+  const [metricCategoryStore, setMetricCategoryStoreLocal] = useDemoState<Record<string, MetricCategory[]>>("equip-benefit-metric-categories-by-hospital-v1", {}, demoMode);
   const [analysisProfileStore, setAnalysisProfileStoreLocal] = useDemoState<Record<string, BenefitAnalysisProfile[]>>("equip-benefit-analysis-profiles-by-hospital-v1", demoMode ? initialAnalysisProfileStore() : {}, demoMode);
   const [notificationPreferences, setNotificationPreferencesLocal] = useDemoState<NotificationPreferences>("equip-benefit-notification-preferences-v1", defaultNotificationPreferences, demoMode);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
@@ -543,6 +553,9 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const improvementActions = improvementStore[effectiveHospitalId] ?? (demoMode ? initialActions : []);
   const currentDataSources = sourceStore[effectiveHospitalId] ?? (demoMode ? initialDataSources : []);
   const currentLedgerFields = ledgerFieldStore[effectiveHospitalId] ?? [];
+  // 医院还没自定义过就用出厂口径；一旦配置过（哪怕清空成 0 条）就以医院的为准。
+  const currentMetricEntries = metricStore[effectiveHospitalId] ?? DEFAULT_METRIC_DICTIONARY;
+  const currentMetricCategories = metricCategoryStore[effectiveHospitalId] ?? DEFAULT_METRIC_CATEGORIES;
   const currentAnalysisProfiles = analysisProfileStore[effectiveHospitalId] ?? (demoMode ? initialBenefitAnalysisProfiles : []);
   const activeMembership = tenantContext?.memberships.find((membership) => membership.hospitalId === effectiveHospitalId);
   const currentRoleName = activeMembership?.roleName ?? (viewer.authenticated ? "平台超级管理员" : "体验角色");
@@ -628,6 +641,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       modules: initialModules.map((module) => ({ ...module })),
       dataSources: [],
       ledgerFields: [],
+      metricDictionary: DEFAULT_METRIC_DICTIONARY,
+      metricCategories: DEFAULT_METRIC_CATEGORIES,
       analysisProfiles: [],
     };
   }
@@ -689,6 +704,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setImprovementStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.improvementActions }));
     setSourceStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.dataSources }));
     setLedgerFieldStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.ledgerFields ?? [] }));
+    if (result.shared.metricDictionary?.length) setMetricStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.metricDictionary }));
+    if (result.shared.metricCategories?.length) setMetricCategoryStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.metricCategories }));
     setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.analysisProfiles }));
     setModulesLocal(result.shared.modules);
     setNotificationsLocal((current) => [
@@ -849,6 +866,10 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       setSourceStoreLocal((current) => ({ ...current, [hospitalId]: value as typeof initialDataSources }));
     } else if (resource === "ledgerFields") {
       setLedgerFieldStoreLocal((current) => ({ ...current, [hospitalId]: value as LedgerFieldDefinition[] }));
+    } else if (resource === "metricDictionary") {
+      setMetricStoreLocal((current) => ({ ...current, [hospitalId]: value as MetricDictionaryEntry[] }));
+    } else if (resource === "metricCategories") {
+      setMetricCategoryStoreLocal((current) => ({ ...current, [hospitalId]: value as MetricCategory[] }));
     } else {
       setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: value as BenefitAnalysisProfile[] }));
     }
@@ -972,15 +993,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     });
   };
 
-  const setCurrentDataSources: Dispatch<SetStateAction<typeof initialDataSources>> = (update) => {
-    setSourceStoreLocal((currentStore) => {
-      const current = currentStore[effectiveHospitalId] ?? (demoMode ? initialDataSources : []);
-      const next = resolveStateUpdate(update, current);
-      void persistCloudResource("dataSources", next);
-      return { ...currentStore, [effectiveHospitalId]: next };
-    });
-  };
-
   const setCurrentLedgerFields: Dispatch<SetStateAction<LedgerFieldDefinition[]>> = (update) => {
     setLedgerFieldStoreLocal((currentStore) => {
       const current = currentStore[effectiveHospitalId] ?? [];
@@ -988,6 +1000,16 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       void persistCloudResource("ledgerFields", next);
       return { ...currentStore, [effectiveHospitalId]: next };
     });
+  };
+
+  const setCurrentMetricEntries = (next: MetricDictionaryEntry[]) => {
+    setMetricStoreLocal((current) => ({ ...current, [effectiveHospitalId]: next }));
+    void persistCloudResource("metricDictionary", next);
+  };
+
+  const setCurrentMetricCategories = (next: MetricCategory[]) => {
+    setMetricCategoryStoreLocal((current) => ({ ...current, [effectiveHospitalId]: next }));
+    void persistCloudResource("metricCategories", next);
   };
 
   const setCurrentAnalysisProfiles: Dispatch<SetStateAction<BenefitAnalysisProfile[]>> = (update) => {
@@ -1973,11 +1995,9 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     { id: "sources", label: "文件口径说明", icon: <Database size={18} />, group: "manage", permissions: ["source.manage"] },
     ...(dataWorkbenchUnlocked ? [{ id: "workbench" as View, label: "数据准备中心", icon: <Cable size={18} />, group: "manage" as const, permissions: dataWorkbenchPermissions }] : []),
     { id: "access", label: "医院与权限", icon: <ShieldCheck size={18} />, group: "manage", permissions: ["hospital.manage", "member.manage"] },
-    { id: "operations", label: "云端运维", icon: <CloudCog size={18} />, group: "manage", permissions: ["member.manage"] },
   ];
   const permittedNavItems = navItems.filter((item) =>
-    (item.id !== "operations" || sessionState === "verified")
-    && (!item.permissions.length || item.permissions.some(hasPermission)));
+    !item.permissions.length || item.permissions.some(hasPermission));
   const guideAvailableTargets = permittedNavItems
     .map((item) => item.id)
     .filter((id): id is GuideTarget => id !== "guide" && id !== "capital" && id !== "workbench");
@@ -2193,8 +2213,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     costs: "成本填报中心",
     layout: "驾驶舱配置",
     sources: "文件模板与指标口径",
+    "metric-dictionary": "指标字典配置",
     access: "医院与权限管理",
-    operations: "云端运维与演示自检",
     messages: "消息中心",
     account: "个人中心",
     guide: "使用指南",
@@ -2550,6 +2570,18 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
             />
           ) : null}
 
+          {view === "metric-dictionary" ? (
+            <MetricDictionarySettings
+              entries={currentMetricEntries}
+              categories={currentMetricCategories}
+              onEntriesChange={setCurrentMetricEntries}
+              onCategoriesChange={setCurrentMetricCategories}
+              canManage={hasPermission("source.manage")}
+              notify={notify}
+              onBack={() => navigate("sources")}
+            />
+          ) : null}
+
           {view === "improvement" ? (
             <ImprovementCenter
               devices={devices}
@@ -2613,7 +2645,13 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           ) : null}
 
           {view === "sources" ? (
-            <DataSourceManagement sources={currentDataSources} setSources={setCurrentDataSources} notify={notify} />
+            <DataSourceManagement
+              metricEntries={currentMetricEntries}
+              metricCategories={currentMetricCategories}
+              notify={notify}
+              onConfigureMetrics={() => navigate("metric-dictionary")}
+              canConfigureMetrics={hasPermission("source.manage")}
+            />
           ) : null}
 
           {view === "access" ? (
@@ -2626,14 +2664,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               onSwitchHospital={switchHospital}
               onHospitalsChange={setHospitalsLocal}
               notify={notify}
-            />
-          ) : null}
-
-          {view === "operations" ? (
-            <CloudOperationsCenter
-              hospitalId={effectiveHospitalId}
-              hospitalName={activeHospital.name}
-              canManage={sessionState === "verified" && hasPermission("member.manage")}
             />
           ) : null}
 
@@ -3097,17 +3127,18 @@ function LayoutConfiguration({
 }
 
 function DataSourceManagement({
-  sources,
-  setSources,
+  metricEntries,
+  metricCategories,
   notify,
+  onConfigureMetrics,
+  canConfigureMetrics,
 }: {
-  sources: typeof initialDataSources;
-  setSources: Dispatch<SetStateAction<typeof initialDataSources>>;
+  metricEntries: MetricDictionaryEntry[];
+  metricCategories: MetricCategory[];
   notify: (message: string) => void;
+  onConfigureMetrics: () => void;
+  canConfigureMetrics: boolean;
 }) {
-  const [ruleSource, setRuleSource] = useState<(typeof initialDataSources)[number] | null>(null);
-  const [configSource, setConfigSource] = useState<(typeof initialDataSources)[number] | null>(null);
-  const sourceCounts = sources.reduce((result, source) => ({ ...result, [source.status]: (result[source.status] ?? 0) + 1 }), {} as Record<string, number>);
   const mappingRows = [
     ["设备基础信息", "资产编号、型号、原值、启用日期", "设备主数据文件", "资产部/设备科"],
     ["收入", "有效收费－退费；归因收入单列", "收入明细文件", "财务部/医保办"],
@@ -3132,62 +3163,16 @@ function DataSourceManagement({
     URL.revokeObjectURL(link.href);
     notify("文件字段模板已导出");
   }
-  function saveSourceConfig(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!configSource) return;
-    setSources((current) => current.map((source) => source.name === configSource.name ? configSource : source));
-    setConfigSource(null);
-    notify("文件责任、频率与状态已保存到医院云端");
-  }
   return (
     <>
       <div className="page-heading">
-        <div><div className="eyebrow"><Database size={15} />文件准备</div><h1>文件模板与指标口径</h1><p>明确每类 Excel/CSV/JSON 文件的字段、责任人、更新频率与指标计算口径；正式分析只读取审核后发布的文件快照。</p></div>
-        <button className="secondary-button" onClick={downloadFieldTemplate}><FileSpreadsheet size={17} />下载文件字段模板</button>
+        <div><h1>文件模板与指标口径</h1></div>
+        <div className="heading-actions">
+          {canConfigureMetrics ? <button className="secondary-button" onClick={onConfigureMetrics}><SlidersHorizontal size={16} />指标字典配置</button> : null}
+          <button className="secondary-button" onClick={downloadFieldTemplate}><FileSpreadsheet size={17} />下载文件字段模板</button>
+        </div>
       </div>
-      <Panel title="文件数据清单" description="这里记录数据责任与更新计划；实际文件请在数据准备中心上传、清洗、复核并发布" action={<span className="chart-note">{sourceCounts["已连接"] ?? 0} 已准备 · {sourceCounts["待配置"] ?? 0} 待准备 · {sourceCounts["人工填报"] ?? 0} 人工文件</span>}>
-        <div className="source-grid">
-          {sources.map((source) => (
-            <article className="source-card" key={source.name}>
-              <div className="source-top"><span className="source-icon"><Database size={18} /></span><span className={`status-pill ${source.status === "已连接" ? "success" : source.status === "人工填报" ? "warning" : "neutral"}`}>{source.status === "已连接" ? "模板已准备" : source.status}</span></div>
-              <h3>{source.category}文件</h3><p>{source.fields}</p>
-              <dl><div><dt>业务责任</dt><dd>{source.owner}</dd></div><div><dt>更新频率</dt><dd>{source.frequency}</dd></div><div><dt>最近文件</dt><dd>{source.lastSync}</dd></div></dl>
-              <div className="source-card-actions"><button className="secondary-button compact-action" onClick={() => setConfigSource({ ...source })}><Pencil size={14} />配置</button><button className="source-action" onClick={() => setRuleSource(source)}>查看文件规则</button></div>
-            </article>
-          ))}
-        </div>
-      </Panel>
-      <Panel title="核心字段映射与责任人" description="业务部门确认字段与口径，上传文件经质量门禁和复核后才能发布">
-        <div className="table-scroll"><table className="data-table"><thead><tr><th>数据域</th><th>关键字段/计算</th><th>建议文件模板</th><th>业务责任部门</th></tr></thead><tbody>{mappingRows.map((row) => <tr key={row[0]}>{row.map((cell) => <td key={cell}>{cell}</td>)}</tr>)}</tbody></table></div>
-      </Panel>
-      <MetricGovernanceCenter />
-      {configSource ? (
-        <div className="modal-backdrop source-rule-modal" role="dialog" aria-modal="true" aria-labelledby="source-config-title">
-          <form className="source-rule-dialog source-config-dialog" onSubmit={saveSourceConfig}>
-            <header><div><span>医院级文件配置</span><h2 id="source-config-title">{configSource.category}文件</h2></div><button type="button" className="icon-button" onClick={() => setConfigSource(null)} aria-label="关闭文件配置"><X size={18} /></button></header>
-            <div className="source-rule-body">
-              <label>业务责任部门<input value={configSource.owner} onChange={(event) => setConfigSource((current) => current ? { ...current, owner: event.target.value } : current)} /></label>
-              <div className="form-row two"><label>更新频率<select value={configSource.frequency} onChange={(event) => setConfigSource((current) => current ? { ...current, frequency: event.target.value } : current)}><option>实时</option><option>每日</option><option>每周</option><option>每月</option><option>按需</option></select></label><label>准备状态<select value={configSource.status} onChange={(event) => setConfigSource((current) => current ? { ...current, status: event.target.value as (typeof initialDataSources)[number]["status"] } : current)}><option>待配置</option><option>人工填报</option><option value="已连接">模板已准备</option></select></label></div>
-              <label>最近文件说明<input value={configSource.lastSync} onChange={(event) => setConfigSource((current) => current ? { ...current, lastSync: event.target.value } : current)} placeholder="例如：2026-07-23 月度文件或尚未准备" /></label>
-              <div className="dialog-warning"><AlertTriangle size={16} />这里仅保存文件责任、频率和准备状态；不会保存任何外部系统账号或密码。</div>
-            </div>
-            <footer><button type="button" className="secondary-button" onClick={() => setConfigSource(null)}>取消</button><button className="primary-button"><Save size={16} />保存云端配置</button></footer>
-          </form>
-        </div>
-      ) : null}
-      {ruleSource ? (
-        <div className="modal-backdrop source-rule-modal" role="dialog" aria-modal="true" aria-labelledby="source-rule-title">
-          <section className="source-rule-dialog">
-            <header><div><span>人工数据采集规范</span><h2 id="source-rule-title">{ruleSource.name}填报规则</h2></div><button className="icon-button" onClick={() => setRuleSource(null)} aria-label="关闭填报规则"><X size={18} /></button></header>
-            <div className="source-rule-body">
-              <div className="rule-summary"><span><Database size={17} /></span><div><strong>{ruleSource.fields}</strong><small>责任部门：{ruleSource.owner} · 更新频率：{ruleSource.frequency}</small></div></div>
-              <ol><li><strong>下载并使用标准字段模板</strong><span>不得修改字段编码、期间格式和设备资产编号。</span></li><li><strong>业务部门完成初审</strong><span>核对数量、单价、责任科室和数据期间，避免重复填报。</span></li><li><strong>上传前执行质量校验</strong><span>空值、重复记录和异常金额进入隔离区，不直接写入正式口径。</span></li><li><strong>保留来源与复核记录</strong><span>记录填报人、复核人、文件版本和导入时间，便于审计追溯。</span></li></ol>
-              <div className="dialog-warning"><AlertTriangle size={16} />正式文件请进入数据准备中心上传；发布前会保留原始快照、清洗规则、复核人与来源行。</div>
-            </div>
-            <footer><button className="secondary-button" onClick={() => setRuleSource(null)}>关闭</button><button className="primary-button" onClick={downloadFieldTemplate}><Download size={16} />下载字段模板</button></footer>
-          </section>
-        </div>
-      ) : null}
+      <MetricGovernanceCenter entries={metricEntries} categories={metricCategories} />
     </>
   );
 }
