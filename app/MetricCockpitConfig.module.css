@@ -1,0 +1,698 @@
+/* 指标字典驾驶舱配置页 + 看板渲染器的自有样式。
+   页面骨架类（panel / modal-backdrop / editor-drawer / data-table 等）沿用 globals.css，
+   这里只放本页新增的部分；颜色一律引用主题变量，深浅主题不各写一份。
+   字号下限 12px：驾驶舱经常投在会议室大屏上，再小就没人看得清了。 */
+
+.layout {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.sideColumn {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ------------------------------------------------ 左栏一：维度 */
+
+.presetGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.presetCard {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--primary);
+  text-align: left;
+}
+
+.presetCard:hover {
+  border-color: var(--border-strong);
+}
+
+.presetActive {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.presetCard span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.presetCard strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.presetCard small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.departmentField {
+  margin-top: 12px;
+}
+
+.switchRow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(23, 32, 51, .25);
+  transition: transform .15s ease;
+}
+
+.switchOn {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.switchOn i {
+  transform: translateX(16px);
+}
+
+.switchRow span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.switchRow strong {
+  font-size: 13px;
+}
+
+.switchRow small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------ 左栏二：指标清单 */
+
+.metricList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.metricRow {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.metricRow:hover {
+  background: var(--surface-soft);
+}
+
+.metricRowSelected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.metricRow input[type="checkbox"] {
+  accent-color: var(--primary);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.metricName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.toneDot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
+}
+
+.toneBlue { background: var(--primary); }
+.toneGreen { background: var(--green); }
+.toneOrange { background: var(--orange); }
+.tonePurple { background: var(--violet); }
+.toneRed { background: var(--red); }
+.toneSlate { background: var(--slate); }
+
+.bindBadge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bindOk {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.bindNone {
+  color: var(--muted);
+  background: var(--surface-soft);
+  border: 1px dashed var(--border);
+}
+
+/* ------------------------------------------------ 左栏三：模板库 */
+
+.libraryToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.chevron,
+.chevronOpen {
+  color: var(--muted);
+  transition: transform .15s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.templateList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.templateRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.templateCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.templateTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.templateTitle strong {
+  font-size: 13px;
+}
+
+.templateCopy small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.kindTag {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.builtinTag {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.templateActions {
+  display: flex;
+  gap: 2px;
+}
+
+/* ------------------------------------------------ 右栏：看板 */
+
+.previewPanel {
+  min-width: 0;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.boardCompact {
+  gap: 9px;
+}
+
+.boardEmpty {
+  padding: 34px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  text-align: center;
+  font-size: 13px;
+}
+
+.card {
+  position: relative;
+  min-width: 0;
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.cardCompact {
+  min-height: 150px;
+  padding: 10px 11px;
+}
+
+.cardSmall { grid-column: span 1; }
+.cardMedium { grid-column: span 2; }
+.cardWide { grid-column: span 4; }
+
+.cardSelected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.cardDragging {
+  opacity: .5;
+  border-style: dashed;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* 指标名允许折两行再省略：截成「医院设备总…」等于三张卡片长得一模一样，
+   看板上分不清哪张是收入哪张是成本，比多占一行高度糟糕得多。 */
+.cardTitle {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.cardGrip {
+  margin-left: auto;
+  color: var(--muted-light);
+  cursor: grab;
+}
+
+/* 操作角标平时藏着，悬停或选中卡片时浮出来，避免一屏角标把图表淹了。 */
+/* 操作条钉在卡片底部并用 left/right 双向约束：只写 right 的话，
+   八个按钮排出来比「小卡」还宽，工具条会整条溢到左边邻居的卡片上。
+   放底部而不是顶部，是因为顶部压的是指标名——认不出这是哪张卡就没法操作。 */
+.cardActions {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+
+.card:hover .cardActions,
+.card:focus-within .cardActions,
+.cardSelected .cardActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.kindButton,
+.actionButton {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.kindButton:hover,
+.actionButton:hover {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.kindButtonActive {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.actionDivider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+}
+
+.actionDanger:hover {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: color-mix(in srgb, var(--red) 30%, var(--border));
+}
+
+/* ------------------------------------------------ 卡片内容：数据与空态 */
+
+.statBox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.statValue {
+  color: var(--text);
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.statValueCompact {
+  font-size: 24px;
+}
+
+.statUnit {
+  margin-left: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.noDataHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.noData {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 未接入空态：灰、不显示任何数字——0 也是数字，绝不编。 */
+.unavailableBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 7px;
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.unavailableBadge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.unavailableReason {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.chartSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.pieBox {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pieSvg {
+  flex: 0 0 auto;
+  height: auto;
+}
+
+.legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.legendRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.legendLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.legendValue {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tableWrap {
+  min-width: 0;
+  overflow: auto;
+  max-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+/* ------------------------------------------------ 抽屉补充 */
+
+.smallDrawer {
+  width: min(460px, 100%);
+}
+
+.templatePick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+}
+
+.templatePick:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.templatePickActive {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.templatePick strong {
+  font-size: 13px;
+}
+
+.templatePick small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rateBox {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.percentField {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.percentField input {
+  accent-color: var(--primary);
+  width: 15px;
+  height: 15px;
+}
+
+/* ------------------------------------------------ 响应式 */
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .board {
+    grid-template-columns: 1fr;
+  }
+
+  .cardSmall,
+  .cardMedium,
+  .cardWide {
+    grid-column: span 1;
+  }
+
+  .pieBox {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -75,15 +75,25 @@ test("the group hospital comparison module is registered and wired to HospitalCo
   assert.match(platform, /onSwitchHospital=\{switchHospital\}/);
 });
 
-test("cost center exports the current hospital's entries in the cost_detail template shape", async () => {
-  const platform = await readFile(platformUrl, "utf8");
-  assert.match(platform, /导出成本明细文件/);
-  assert.match(platform, /buildBusinessTemplateCsv\("cost_detail"\)/);
-  assert.match(platform, /templateFields\("cost_detail"\)/);
-  assert.match(platform, /notify\("当前医院暂无成本记录"\)/);
-  assert.match(platform, /导出文件符合数据准备中心 cost_detail 模板，可直接导入走正式发布流程。/);
-  // Download flows through the shared Blob + anchor pattern.
-  assert.match(platform, /function exportCostEntriesCsv\(\)[\s\S]{0,1600}URL\.createObjectURL\(blob\)[\s\S]{0,400}URL\.revokeObjectURL\(link\.href\)/);
+test("设备数据填报接管旧成本填报页，并保留旧记录的迁移出口", async () => {
+  const [platform, center] = await Promise.all([
+    readFile(platformUrl, "utf8"),
+    readFile(new URL("../app/DeviceReportCenter.tsx", import.meta.url), "utf8"),
+  ]);
+  // 旧的三段式成本表单（人工/耗材/固定）整体退场，页面换成按设备+期间的填报
+  assert.doesNotMatch(platform, /function CostManagement/);
+  assert.doesNotMatch(platform, /导出成本明细文件/);
+  assert.match(platform, /<DeviceReportCenter/);
+  // 旧记录不能凭空消失：仍然传进去供归并，且归并逻辑在数据层有对照表
+  assert.match(platform, /oldCostEntries=\{costEntries\}/);
+  assert.match(center, /migrateCostEntries/);
+  // 业务量三项走已发布数据，查不到返回 undefined 让界面显示「—」，绝不回退成 0
+  assert.match(platform, /const workloadOf = \(deviceId: string, periodKey: string\) =>\s*\n\s*workloadIndex\.get/);
+  // 演示兜底只在演示模式生效：正式模式查不到就是查不到，不许拿演示数编进正式口径
+  assert.match(platform, /demoMode \? cloneDeviceWorkloadForHospital\(effectiveHospitalId\) : null/);
+  // 填报记录、填报字段按医院存云端，跨设备可见
+  assert.match(platform, /persistCloudResource\("deviceReports", next\)/);
+  assert.match(platform, /persistCloudResource\("reportFields", next\)/);
 });
 
 test("筛选条允许换行：平板宽度不会把整页顶出横向滚动条", async () => {

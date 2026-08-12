@@ -1,0 +1,951 @@
+/* 设备数据填报页样式。
+   颜色一律走 globals.css 的主题变量：本页在浅色、teal、midnight 三套主题下都要能用，
+   写死十六进制会在深色主题下变成刺眼的白块（半透明阴影用 rgba 是例外，它跟着底色走）。 */
+
+/* 左期间轴 + 右设备清单。期间轴宽度固定，是因为它只放年份/粒度/期间列表这些定宽控件，
+   跟着窗口一起伸缩只会让期间条越拉越长、右边表格越挤越窄。 */
+.layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+/* 两栏各自成板：期间轴和设备清单是两件独立的事（选期间 / 填数据），
+   共用一个大板子会让人以为右边表格是期间列表的一部分。板样式对齐 globals 的 .panel。 */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: var(--panel-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* 控件区和下面的期间列表用一条分隔线断开：切年份/粒度是「换一批期间」，
+   点期间是「选一个期间」，两种动作混在一起容易误点。 */
+.railControls {
+  display: grid;
+  gap: 9px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.controlRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.controlRow > span {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.controlRow select {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.controlRow select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+/* 五档粒度做成胶囊分段而不是下拉：粒度是要一眼看见「现在按月填」的状态，
+   收进下拉里就得点开才知道，填报时来回切换的成本也高。允许换行，
+   「自定义区间」四个多字在 250px 轨里放不下时不至于被压扁。 */
+.granularitySeg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.segButton {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 27px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background .16s ease, color .16s ease;
+}
+
+.segButton:hover {
+  color: var(--text-soft);
+}
+
+/* 选中态用「浮起的白片」而不是纯变色：分段控件里只有抬起来的那片才像被按下的档位 */
+.segActive,
+.segActive:hover {
+  color: var(--primary);
+  background: var(--surface);
+  font-weight: 650;
+  box-shadow: 0 1px 3px rgba(23, 32, 51, .1);
+}
+
+.rangeControls {
+  display: grid;
+  gap: 6px;
+}
+
+.rangeControls input {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.rangeControls input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+/* 周粒度一年 53 条、日粒度一月 31 条，不给列表自己的滚动区就会把整页顶得很长，
+   右边的设备表格被推到屏幕外。滚动条压细，免得 250px 的轨里再被吃掉一块。 */
+.periodList {
+  flex: 1;
+  min-height: 0;
+  max-height: 430px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.periodList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.periodList::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.periodList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.periodItem {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  transition: background .16s ease, border-color .16s ease;
+}
+
+.periodItem:hover {
+  background: var(--surface-soft);
+}
+
+/* 选中期间是整页的上下文（右边表格、抽屉全跟着它变），所以给足底色 + 边框 + 主色字，
+   只描个边在长列表里扫一眼容易看丢。 */
+.periodActive,
+.periodActive:hover {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
+}
+
+.periodTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.periodName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.periodActive .periodName {
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.periodCount {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 只写轨道和条的形状，宽度与颜色由组件按完成率 inline 传（满格绿、低于三成橙、其余主色）：
+   完成率是数据，不是样式，塞进 CSS 得写死几档阈值。 */
+.progressTrack {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.progressTrack > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width .25s ease;
+}
+
+.railSummary {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.railEmpty {
+  margin: 0;
+  padding: 20px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+/* 搜索框优先吃掉剩余宽度、科室下拉和视图切换按钮定宽：
+   科室名最长也就几个字，搜索关键字才需要看得见全文。 */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+
+/* 用 flex-basis 而不是 width 覆盖全局 .search-field 的定宽：
+   同为单类选择器时谁后加载谁赢，flex-basis 在弹性布局里稳定压过 width。 */
+.searchBox {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.deptSelect {
+  height: 38px;
+  min-width: 148px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  outline: 0;
+  color: var(--text-soft);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.deptSelect:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+/* 状态筛选做成带计数的 chip 行：科室最关心「还有几台没填」，
+   数字直接长在筛选按钮上，就不用先切一遍再数行数。 */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 12px;
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.chip i {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.chipActive,
+.chipActive:hover {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.chipActive i {
+  color: var(--primary);
+}
+
+/* 勾选列压到最窄并居中：它只承载一个复选框，按内容宽度会被表头文字撑开 */
+.checkCol {
+  width: 44px;
+  padding-left: 8px;
+  padding-right: 8px;
+  text-align: center;
+}
+
+.checkCol input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--primary);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+/* 名称和型号叠两行：同名设备（比如三台同型号 DR）只靠名称分不出来，
+   型号跟着名称走比单开一列省一整列宽度。 */
+.deviceCell {
+  display: grid;
+  gap: 2px;
+}
+
+.deviceCell strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deviceCell small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 操作列保持表格单元格身份（不改 display，避免行高对不齐），靠 margin 拉开按钮；
+   nowrap 是因为「查看 / 确认 / 退回」被折成两行后行高会跳。 */
+.rowActions {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.rowActions > button:not(:last-child) {
+  margin-right: 10px;
+}
+
+/* globals 的 .status-pill 只有 success/warning/danger/neutral，「已提交」需要一档中性偏蓝，
+   在这里补而不是去改全局样式表。 */
+.pillInfo {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+/* 结余为负标红是这张表最关键的一眼信息：亏损设备要能在一屏里被扫出来 */
+.netPositive {
+  color: var(--green);
+  font-weight: 650;
+}
+
+.netNegative {
+  color: var(--red);
+  font-weight: 650;
+}
+
+/* 勾选后才出现的批量条：用主色软底把它和表格分开，说明这里的操作作用于「选中的那几台」，
+   不是整页。计数在左、动作在右，避免误点。 */
+.batchBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+  border-radius: 10px;
+  background: var(--primary-soft);
+  font-size: 12px;
+}
+
+.batchBar > span {
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.batchBar > button:first-of-type {
+  margin-left: auto;
+}
+
+/* 合计条贴在表格下沿，用一条分隔线接上：它是上面这批行的和，不是新的一块内容。
+   每项做成小卡片，数字之间不会连成一串读不断。 */
+.summaryBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
+
+.summaryBar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.summaryBar strong {
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标题不是数据项，去掉卡片外壳，免得读者以为「本期合计」也是个可比的数 */
+.summaryBar > .summaryTitle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  font-weight: 650;
+}
+
+.summaryBar > .summaryFill {
+  margin-left: auto;
+}
+
+/* 归并旧数据是一次性动作，做成可关闭横幅而不是常驻面板：关掉后本页不再打扰 */
+.migrateBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: 11px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.migrateBanner > svg {
+  flex: none;
+}
+
+.migrateBanner p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 抽屉沿用全局 .editor-drawer 的骨架（三段式头/体/脚），这里只放宽：
+   分组表单是多列网格，620px 只能排两列，字段一多就拖成长条。
+   用 flex-basis 而不是 width 覆盖，避免和 globals 的同权重规则抢加载顺序。 */
+.reportDrawer {
+  flex: 0 0 min(780px, 100%);
+  max-width: 100%;
+}
+
+.drawerMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 每组字段单独框起来：一屏里有六组、二十来个输入框，没有边框就是一片输入框的海，
+   填报的人分不清哪几个属于「房屋与场地」。 */
+.groupSection {
+  display: grid;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+/* 组名、来源标签、口径提示同排；提示占满一行落到第二行，长句子不会把标签挤走。
+   来源标签的两种颜色（手工填报主色 / 导入紫色）由组件按组 inline 传，这里只管排布。 */
+.groupHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.groupHead strong {
+  font-size: 13px;
+}
+
+.groupHead small {
+  flex: 1 1 100%;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* 自适应列数而不是写死几列：抽屉在窄屏会缩到一列，宽屏能排三列，
+   190px 是「日均开机小时」这类标签加输入框不折行的下限。 */
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 11px;
+}
+
+/* 导入值用虚线灰框和输入框区分开：形状还在原位便于对照，但一眼看得出点不进去，
+   业务量三项只认数据准备中心的口径，本页改了会造出第二份数。 */
+.importValue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.importValue > i {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+/* 缺数说明用弱色：没导入是常态（导入还没跑），不该长得像错误 */
+.importMissing {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 校验警告是「这个数看着不对，确认一下」，不是「不许提交」——所以用橙色而不是红色，
+   红色会让人以为提交被拦住了。 */
+.warnBox {
+  display: flex;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--orange) 32%, var(--border));
+  border-radius: 10px;
+  background: var(--orange-soft);
+  color: var(--orange);
+}
+
+.warnBox > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.warnBox p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.warnBox p + p {
+  margin-top: 5px;
+}
+
+/* 派生指标是系统算的、不能改，做成卡片而不是输入框形状，从视觉上就断掉「能填」的暗示 */
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 9px;
+}
+
+.metricCard {
+  display: grid;
+  gap: 5px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.metricCard small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* 数字列等宽，几张卡片并排时小数点上下对齐，扫一眼能比大小 */
+.metricCard strong {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--text);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.metricCard strong i {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+/* 确认/退回是管理侧动作，推到抽屉底栏最左边，和右边的「保存/提交」拉开距离，防误点 */
+.footerLeft {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.confirmedTip {
+  margin: 0 auto 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 退回原因是必须被读到的信息（科室要照着它改），红色系 + 独立框，放在抽屉正文最上方 */
+.returnBanner {
+  display: flex;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--red) 32%, var(--border));
+  border-radius: 10px;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.returnBanner > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.returnBanner strong {
+  font-size: 13px;
+}
+
+.returnBanner p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* 退回原因要写清「改什么」，默认高度给够三行，太矮会诱导只写两个字 */
+.returnReasonField {
+  margin-top: 12px;
+}
+
+.returnReasonField textarea {
+  min-height: 78px;
+}
+
+/* 宽表只让自己横向滚，绝不让页面主体横向滚：主体一滚，左边期间轴和顶部导航都会跟着跑掉 */
+.gridWrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.gridWrap::-webkit-scrollbar {
+  height: 8px;
+}
+
+.gridWrap::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+/* 表格下面那条粒度提示钉在左侧：横向滚到最右边时它仍要能被看见，
+   否则「日/周不展示费用字段」的解释等于没写。 */
+.gridWrap > div {
+  position: sticky;
+  left: 0;
+  margin: 10px;
+}
+
+/* Excel 观感：细网格线 + 窄内边距，一屏塞得下更多台设备，批量填报才有意义 */
+.gridTable {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.gridGroupTh {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.gridFieldTh {
+  min-width: 96px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.gridFieldTh span {
+  display: block;
+}
+
+/* 单位单独一行且弱化：它是读数的注脚，和字段名同粗会把表头读成两个词 */
+.gridFieldTh small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 设备列冻结在最左：宽表有二十来列，滚到「计量检测费」时如果设备名跟着滚走，
+   填数的人就不知道自己在给哪台机器填。collapse 表格里 sticky 单元格的边框不会跟着走，
+   所以右侧那条竖线用 box-shadow 画。 */
+.gridDeviceTh {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 178px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+  box-shadow: 1px 0 0 var(--border);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.gridDeviceCell {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 178px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border);
+  font-weight: 400;
+  text-align: left;
+}
+
+.gridDeviceCell strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gridDeviceCell small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gridDeviceCell > span {
+  margin-top: 5px;
+}
+
+/* 输入格自己不留内边距，交给里面的 input 撑满，点格子任意位置都能落到光标上 */
+.gridInputCell {
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
+/* 平时无边框、聚焦才显边框和主色环：几百个格子同时描边就是一堵墙，
+   聚焦态需要明确到「我正在改这一格」。 */
+.cellInput {
+  width: 100%;
+  min-width: 88px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cellInput:hover:not(:read-only) {
+  background: var(--surface-soft);
+}
+
+.cellInput:focus {
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.cellInput:read-only {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* 导入列灰底只读：和手工格拉开质感，避免有人对着业务量格子一直点也点不出光标 */
+.gridImportCell {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 合计列加粗并给底色：它是每行的落点，和中间一堆待填格子要分得开 */
+.gridTotalTh {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.gridTotalCell {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 已确认/已提交的行整行压灰：这些行改不动，长得和可填行一样只会让人白点一遍 */
+.gridLockedRow td,
+.gridLockedRow th {
+  background: color-mix(in srgb, var(--surface-soft) 70%, var(--border));
+  color: var(--muted);
+}
+
+.gridTable tbody tr:hover td {
+  background: color-mix(in srgb, var(--primary-soft) 55%, transparent);
+}
+
+/* 冻结列不能透明：底下的格子会从它后面滚过去，透明就叠成一团 */
+.gridTable tbody tr:hover .gridDeviceCell {
+  background: var(--primary-soft);
+}
+
+/* 窄屏（笔记本分屏、平板）下两栏挤不开：期间轴折到顶部，期间条改横向滑动，
+   一次仍能看到四五个期间和它们的完成度。 */
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .periodList {
+    flex-direction: row;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-right: 0;
+    padding-bottom: 6px;
+  }
+
+  .periodItem {
+    flex: 0 0 136px;
+  }
+
+  .periodList::-webkit-scrollbar {
+    height: 6px;
+  }
+}
+
+@media (max-width: 640px) {
+  .searchBox {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .deptSelect {
+    flex: 1;
+  }
+
+  .fieldGrid,
+  .metricsGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summaryBar > .summaryFill {
+    margin-left: 0;
+  }
+}

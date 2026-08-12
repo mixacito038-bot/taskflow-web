@@ -122,7 +122,7 @@ test("台账表格按新口径出列，且去掉了效益列与本机保存提�
   // 年度收入/总成本/使用率不再出现在台账表头。
   // 只截 EquipmentManagement 这一段来断言：驾驶舱的「设备效益明细」表本来就该有这几列。
   const ledgerStart = platform.indexOf("function EquipmentManagement(");
-  const ledgerEnd = platform.indexOf("function CostManagement(", ledgerStart);
+  const ledgerEnd = platform.indexOf("function LayoutConfiguration(", ledgerStart);
   assert.ok(ledgerStart > 0 && ledgerEnd > ledgerStart, "取不到设备台账组件源码");
   const ledger = platform.slice(ledgerStart, ledgerEnd);
   assert.doesNotMatch(ledger, /年度收入/);

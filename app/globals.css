@@ -2090,3 +2090,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .metric-tag.tone-slate { color: var(--slate); background: color-mix(in srgb, var(--slate) 10%, transparent); border-color: color-mix(in srgb, var(--slate) 22%, transparent); }
 
 .dictionary-empty { padding: 32px 12px; color: var(--muted); text-align: center; font-size: 12px; }
+
+/* 驾驶舱配置的两大类切换：行业驾驶舱与指标字典驾驶舱是两套完全不同的编排对象，
+   用并排大按钮而不是小标签，避免用户配错了地方还不知道自己在配哪一套。 */
+.cockpit-kind-tabs { margin-bottom: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cockpit-kind-tabs button { min-height: 62px; padding: 12px 15px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); color: var(--text-soft); display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 4px 9px; text-align: left; font-size: 14px; font-weight: 650; }
+.cockpit-kind-tabs button small { grid-column: 2; color: var(--muted); font-size: 12px; font-weight: 400; }
+.cockpit-kind-tabs button:hover { border-color: var(--border-strong); background: var(--surface-soft); }
+.cockpit-kind-tabs button.active { border-color: color-mix(in srgb, var(--primary) 52%, var(--border)); color: var(--primary); background: var(--primary-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent); }
+.cockpit-kind-tabs button.active small { color: color-mix(in srgb, var(--primary) 72%, var(--text-soft)); }
+@media (max-width: 720px) { .cockpit-kind-tabs { grid-template-columns: 1fr; } }

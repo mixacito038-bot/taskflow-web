@@ -56,7 +56,7 @@ test("server-renders a default-deny boundary before hospital permissions resolve
   assert.match(html, /应用会话确认完成前不会加载医院业务数据/);
   assert.match(html, /设备管理员/);
   const renderedBody = html.slice(html.indexOf("<body"), html.indexOf('<script id="_R_">'));
-  assert.doesNotMatch(renderedBody, /设备台账|成本填报|医院与权限|消息中心|角色视角/);
+  assert.doesNotMatch(renderedBody, /设备台账|设备数据填报|医院与权限|消息中心|角色视角/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
@@ -121,12 +121,13 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   ]);
 
   assert.match(component, /function EquipmentManagement/);
-  assert.match(component, /function CostManagement/);
+  assert.match(component, /function DeviceReportCenter|<DeviceReportCenter/);
   assert.match(component, /function LayoutConfiguration/);
   assert.match(component, /function DataSourceManagement/);
-  assert.match(component, /addLabor/);
-  assert.match(component, /addConsumable/);
-  assert.match(component, /saveFixedCosts/);
+  assert.match(component, /function MetricCockpitConfig|<MetricCockpitConfig/);
+  assert.match(component, /<ReportFieldSettings/);
+  // 驾驶舱配置分两大类：行业驾驶舱与指标字典驾驶舱
+  assert.match(component, /cockpitConfigKind/);
   assert.match(component, /dropModule/);
   assert.match(component, /const demoMode = !viewer\.authenticated/);
   assert.match(component, /function useDemoState/);
@@ -419,7 +420,7 @@ test("uses hospital-scoped D1 state and account-scoped preferences for authentic
   assert.match(component, /action: "save_preferences"/);
   assert.match(component, /sessionState !== "verified" \|\| !cloudHydrated/);
   assert.match(component, /persistCloudResource\("devices"/);
-  assert.match(component, /persistCloudResource\("costEntries"/);
+  assert.match(component, /persistCloudResource\("deviceReports"/);
   assert.match(component, /persistCloudResource\("improvementActions"/);
   assert.match(component, /persistCloudResource\("modules"/);
   // 文件来源的编辑界面已随「文件数据清单」一起移除，不再有写入点；

@@ -1,3 +1,5 @@
+import type { DeviceReportRecord } from "./device-report-fields";
+
 export type DeviceStatus = "运行良好" | "需要关注" | "效益预警";
 
 export type CostBreakdown = {
@@ -832,4 +834,256 @@ export function netBenefit(device: Device) {
 
 export function roi(device: Device) {
   return (netBenefit(device) / device.investment) * 100;
+}
+
+/* ------------------------------------------------------------------ 设备数据填报演示数据 */
+
+/**
+ * 「设备数据填报」的演示数据。
+ *
+ * 演示环境里台账、成本、驾驶舱都有数，唯独填报是空的，指标字典驾驶舱整屏「未接入」，
+ * 看不出效果。这里按台账已有的年度口径反推出逐月填报值，让演示环境有真实数据可算。
+ *
+ * 三条硬约束：
+ * - 只写手工填报的 15 项。examVolume / positiveCount / totalRevenue 的口径是「数据准备中心表格导入」，
+ *   把它们写进填报记录等于凭空造出第二份业务量口径，和导入的表格互相打架。
+ * - 全部确定性：不用 Math.random()、不用 new Date()。演示数据每次渲染都变会触发 React 水合告警。
+ * - 逐月加总必须等于台账年度值，一分不差；对不上账的演示数据比没有演示数据更糟。
+ */
+
+const DEMO_REPORT_YEAR = 2026;
+
+/** 填报操作人；演示数据统一署名，避免看起来像真人填的。 */
+const DEMO_REPORT_OPERATOR = "设备科 · 演示数据";
+
+/**
+ * 各类设备的日均开机工时，用来把「使用天数」折算成「使用时长」。
+ * 检验流水线和呼吸机组接近全天运行，手术、内镜跟着排班走，所以按类别取值而不是一刀切。
+ */
+const DEMO_DAILY_HOURS_BY_CATEGORY: Record<string, number> = {
+  "诊断类（放射）": 12.5,
+  "诊断类（超声）": 9.5,
+  "诊断类（内镜）": 8,
+  "检验类": 16,
+  "治疗类（放疗）": 11,
+  "手术治疗类": 8.5,
+  "手术治疗类（介入）": 8,
+  "生命支持类": 20,
+};
+
+/** 台账没写类别的设备按单班 8 小时算。 */
+const DEMO_DAILY_HOURS_FALLBACK = 8;
+
+/** 故障时长的放大系数：预警设备故障多，演示时「设备完好率」才有高低之分。 */
+const DEMO_FAULT_RATIO_BY_STATUS: Record<DeviceStatus, number> = {
+  运行良好: 1,
+  需要关注: 2.2,
+  效益预警: 3,
+};
+
+/**
+ * 台账七项年度成本（万元）→ 填报口径的 12 项（元）的拆分。
+ *
+ * share 之和为 1，且每组最后一项直接拿剩余额，拆完仍等于原额，不会因为四舍五入漏掉几块钱。
+ * straightLine 的项按平均年限法逐月等额，不跟月度波动——折旧是会计口径，不该随用量起伏。
+ */
+const DEMO_COST_SPLITS: { source: keyof CostBreakdown; parts: { key: string; share: number; straightLine?: boolean }[] }[] = [
+  { source: "consumables", parts: [{ key: "consumableCost", share: 1 }] },
+  { source: "depreciation", parts: [{ key: "deviceDepreciation", share: 1, straightLine: true }] },
+  { source: "labor", parts: [{ key: "laborCost", share: 1 }] },
+  // 医疗设备机房的能耗以电为主，水主要是冷却与清洗，按 15 / 85 拆。
+  { source: "energy", parts: [{ key: "waterFee", share: 0.15 }, { key: "powerFee", share: 0.85 }] },
+  // 空间成本的大头是房屋折旧，物业只占日常保洁与安保的分摊。
+  { source: "space", parts: [{ key: "buildingDepreciation", share: 0.7, straightLine: true }, { key: "propertyFee", share: 0.3 }] },
+  // 维保合同占大头，其次是故障维修；日常保养与计量检定金额小但每年都有。
+  {
+    source: "maintenance",
+    parts: [
+      { key: "repairFee", share: 0.22 },
+      { key: "maintenanceFee", share: 0.52 },
+      { key: "upkeepFee", share: 0.16 },
+      { key: "meteringFee", share: 0.1 },
+    ],
+  },
+  { source: "indirect", parts: [{ key: "otherFee", share: 1 }] },
+];
+
+/** 平均年限法的月度权重：12 个月一样重。 */
+const DEMO_STRAIGHT_LINE_WEIGHTS = Array.from({ length: 12 }, () => 1);
+
+/**
+ * 演示用的填报进度：1–6 月已确认，7 月待复核，8 月还在填，9–12 月不生成记录。
+ * 未来月份本来就没数，凭空造反而不真实；全绿也看不出填报流程。
+ */
+const DEMO_REPORT_STATUS_BY_MONTH: (DeviceReportRecord["status"] | null)[] = [
+  "confirmed", "confirmed", "confirmed", "confirmed", "confirmed", "confirmed",
+  "submitted", "draft", null, null, null, null,
+];
+
+/** 挑两台设备的 6 月做「已退回」，否则演示里根本看不到这个状态。 */
+const DEMO_RETURNED_JUNE_REASONS: Record<string, string> = {
+  "ct-01": "电费与后勤台账对不上，请核对分摊系数",
+  "endo-gastro-01": "维修费与维保合同金额重复入账，请拆分后重报",
+};
+
+/**
+ * 把全年总额（元）按月度权重摊到 12 个月。
+ *
+ * 逐月各自四舍五入的话，12 个月加起来会和全年差几块钱，报表上就是「合计对不上」。
+ * 所以前 11 个月按权重取整，12 月直接用全年总额减掉前 11 个月——舍入余数由末月吸收，
+ * 保证逐月求和 === 全年总额。权重非负且末月权重不算低，末月不会被减成负数。
+ */
+function spreadAnnualAmountByMonth(totalYuan: number, weights: readonly number[]): number[] {
+  const weightSum = weights.reduce((sum, value) => sum + value, 0);
+  const months: number[] = [];
+  let allocated = 0;
+  for (let index = 0; index < weights.length - 1; index += 1) {
+    const amount = weightSum > 0 ? Math.round((totalYuan * weights[index]) / weightSum) : 0;
+    months.push(amount);
+    allocated += amount;
+  }
+  months.push(totalYuan - allocated);
+  return months;
+}
+
+function demoDaysInMonth(monthIndex: number): number {
+  // 走 UTC：本地时区解析会让月末掉到下个月，天数一错使用率就全错。
+  return new Date(Date.UTC(DEMO_REPORT_YEAR, monthIndex + 1, 0)).getUTCDate();
+}
+
+/**
+ * 单台设备全年 12 个月的填报值（手工填报的 15 项）。
+ *
+ * 单独导出是为了让「逐月加总 === 台账年度成本」这条口径一致性能被直接验证：
+ * 演示记录只落 1–8 月，光看记录是加不出全年的。
+ */
+export function deviceReportValuesByMonth(device: Device): Record<string, string>[] {
+  const monthly: Record<string, string>[] = Array.from({ length: 12 }, () => ({}));
+
+  // 成本：台账是「万元/年」，填报是「元/期」，先 ×10000 拆成填报口径的各项，再按月摊。
+  for (const split of DEMO_COST_SPLITS) {
+    const annualYuan = Math.round(device.cost[split.source] * 10000);
+    let remaining = annualYuan;
+    split.parts.forEach((part, partIndex) => {
+      const partYuan = partIndex === split.parts.length - 1 ? remaining : Math.round(annualYuan * part.share);
+      remaining -= partYuan;
+      const weights = part.straightLine ? DEMO_STRAIGHT_LINE_WEIGHTS : costFactors;
+      spreadAnnualAmountByMonth(partYuan, weights).forEach((amount, monthIndex) => {
+        monthly[monthIndex][part.key] = String(amount);
+      });
+    });
+  }
+
+  // 使用情况
+  const dailyHours = DEMO_DAILY_HOURS_BY_CATEGORY[device.category ?? ""] ?? DEMO_DAILY_HOURS_FALLBACK;
+  const faultRatio = DEMO_FAULT_RATIO_BY_STATUS[device.status];
+  for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+    const days = demoDaysInMonth(monthIndex);
+    // 使用率是 0–100，折算成当月开机天数；再兜一次上限，免得高使用率的设备算出 32 天。
+    const usageDays = Math.min(days, Math.round((days * device.utilization) / 100));
+    const usageHours = Math.round(usageDays * dailyHours * 10) / 10;
+    // 故障时长取使用时长的千分之几，用 costFactors 做确定性的月度波动，再按设备状态放大。
+    // 系数恒小于 1，故障时长绝不会超过使用时长——超了填报页会一片橙色告警。
+    const faultHours = Math.round(usageHours * (0.006 + (costFactors[monthIndex] - 0.9) * 0.02) * faultRatio * 10) / 10;
+    monthly[monthIndex].usageDays = String(usageDays);
+    monthly[monthIndex].usageHours = usageHours.toFixed(1);
+    monthly[monthIndex].faultHours = faultHours.toFixed(1);
+  }
+
+  return monthly;
+}
+
+/**
+ * 只有出具阳性/阴性结论的检查设备才谈得上「检阳性数」。
+ * 介入手术平台做的是治疗性操作、直线加速器做的是放疗、呼吸机是生命支持，
+ * 它们根本不产生阳性判读；给这类设备编一个阳性数，医院拿去算阳性率就是假结论。
+ */
+const DEMO_POSITIVE_READING_CATEGORIES = new Set([
+  "诊断类（放射）",
+  "诊断类（超声）",
+  "诊断类（内镜）",
+  "检验类",
+]);
+
+/** 阳性率区间参考影像与检验科室的常见检出水平；上限远小于 1，阳性数必然不超过检查人次。 */
+const DEMO_POSITIVE_RATE_BASE = 0.08;
+const DEMO_POSITIVE_RATE_SPAN = 0.14;
+
+export type DemoDeviceWorkload = { examVolume?: string; positiveCount?: string; totalRevenue?: string };
+
+/**
+ * 演示模式下的「业务量与收入」三项。
+ *
+ * 正式模式里这三项来自数据准备中心发布的 device_workload 行，填报页只读回显；
+ * 演示模式没有发布数据，若不给一份，字典驾驶舱上的收入、结余、阳性率会全是空卡，
+ * 演示时看不出这套口径是怎么串起来的。
+ *
+ * 口径与演示台账保持同源：年度 serviceVolume / revenue 按既有的 revenueFactors 月度权重分摊，
+ * 前 11 个月取整、末月吃掉舍入余数，12 个月加总分毫不差地等于年度值——
+ * 否则驾驶舱按月加出来的合计会和台账对不上。
+ */
+export function cloneDeviceWorkloadForHospital(hospitalId: string): Map<string, DemoDeviceWorkload> {
+  const index = new Map<string, DemoDeviceWorkload>();
+  const weightTotal = revenueFactors.reduce((sum, factor) => sum + factor, 0);
+  for (const device of cloneDevicesForHospital(hospitalId)) {
+    const positiveReading = DEMO_POSITIVE_READING_CATEGORIES.has(device.category ?? "");
+    // 收入在台账里是万元，填报与驾驶舱一律按元
+    const revenueYuan = Math.round(device.revenue * 10000);
+    const spread = (total: number) => {
+      const parts: number[] = [];
+      let used = 0;
+      for (let monthIndex = 0; monthIndex < 11; monthIndex += 1) {
+        const part = Math.round((total * revenueFactors[monthIndex]) / weightTotal);
+        parts.push(part);
+        used += part;
+      }
+      parts.push(total - used);
+      return parts;
+    };
+    const volumes = spread(device.serviceVolume);
+    const revenues = spread(revenueYuan);
+    DEMO_REPORT_STATUS_BY_MONTH.forEach((status, monthIndex) => {
+      if (!status) return;
+      const examVolume = volumes[monthIndex];
+      const rate = DEMO_POSITIVE_RATE_BASE + (revenueFactors[monthIndex] - 0.64) * DEMO_POSITIVE_RATE_SPAN;
+      const entry: DemoDeviceWorkload = {
+        examVolume: String(examVolume),
+        totalRevenue: String(revenues[monthIndex]),
+      };
+      if (positiveReading) entry.positiveCount = String(Math.round(examVolume * rate));
+      index.set(`${device.id}|${DEMO_REPORT_YEAR}-${String(monthIndex + 1).padStart(2, "0")}`, entry);
+    });
+  }
+  return index;
+}
+
+/**
+ * 某家医院的全部演示填报记录。
+ *
+ * 设备取 cloneDevicesForHospital(hospitalId)，成本与使用率本就按医院打了折，
+ * 填报值跟着分院走，不同医院的驾驶舱不会算出一模一样的数。
+ */
+export function cloneDeviceReportsForHospital(hospitalId: string): DeviceReportRecord[] {
+  const records: DeviceReportRecord[] = [];
+  for (const device of cloneDevicesForHospital(hospitalId)) {
+    const monthly = deviceReportValuesByMonth(device);
+    DEMO_REPORT_STATUS_BY_MONTH.forEach((status, monthIndex) => {
+      if (!status) return;
+      const returnReason = monthIndex === 5 ? DEMO_RETURNED_JUNE_REASONS[device.id] : undefined;
+      const month = String(monthIndex + 1).padStart(2, "0");
+      const record: DeviceReportRecord = {
+        deviceId: device.id,
+        periodKey: `${DEMO_REPORT_YEAR}-${month}`,
+        values: monthly[monthIndex],
+        status: returnReason ? "returned" : status,
+        // 固定时间戳（次月 5 日填报，退回记录晚几小时）：用 new Date() 会让演示数据每次渲染都变，
+        // 既触发 React 水合告警，也让测试无法断言。
+        updatedAt: `${DEMO_REPORT_YEAR}-${String(monthIndex + 2).padStart(2, "0")}-05T${returnReason ? "15:30" : "09:00"}:00.000Z`,
+        updatedBy: DEMO_REPORT_OPERATOR,
+      };
+      if (returnReason) record.returnReason = returnReason;
+      records.push(record);
+    });
+  }
+  return records;
 }

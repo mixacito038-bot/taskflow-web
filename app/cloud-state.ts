@@ -1,6 +1,8 @@
 import type { BenefitAnalysisProfile } from "./benefit-analysis-config";
 import type { ImprovementAction } from "./ImprovementCenter";
 import type { LedgerFieldDefinition } from "./device-ledger-fields";
+import type { ChartTemplate, MetricCockpitConfigState } from "./chart-template-catalog";
+import type { DeviceReportRecord, ReportFieldDefinition } from "./device-report-fields";
 import type { MetricCategory, MetricDictionaryEntry } from "./metric-dictionary";
 import type { CostEntry, DashboardModule, DataSource, Device } from "./mock-data";
 
@@ -13,7 +15,11 @@ export type CloudResource =
   | "analysisProfiles"
   | "ledgerFields"
   | "metricDictionary"
-  | "metricCategories";
+  | "metricCategories"
+  | "deviceReports"
+  | "reportFields"
+  | "chartTemplates"
+  | "metricCockpit";
 
 export type CloudSharedState = {
   devices: Device[];
@@ -25,6 +31,11 @@ export type CloudSharedState = {
   ledgerFields: LedgerFieldDefinition[];
   metricDictionary: MetricDictionaryEntry[];
   metricCategories: MetricCategory[];
+  deviceReports: DeviceReportRecord[];
+  reportFields: ReportFieldDefinition[];
+  chartTemplates: ChartTemplate[];
+  /** 驾驶舱配置只有一份，但云端资源统一按数组存，取第 0 条 */
+  metricCockpit: MetricCockpitConfigState[];
 };
 
 export type CloudResourceRevisions = Record<CloudResource, number>;

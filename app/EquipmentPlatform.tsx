@@ -26,6 +26,7 @@ import {
   FileSpreadsheet,
   FileText,
   GripVertical,
+  BookOpen,
   LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
@@ -49,7 +50,6 @@ import {
   Target,
   UserRound,
   Users,
-  Wrench,
   X,
   ZoomIn,
   ZoomOut,
@@ -91,6 +91,8 @@ import {
   revenueFactors,
   roi,
   totalCost,
+  cloneDeviceReportsForHospital,
+  cloneDeviceWorkloadForHospital,
 } from "./mock-data";
 import {
   CategoryPerformancePanel,
@@ -117,9 +119,12 @@ import {
 } from "./benefit-analysis-config";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
+import DeviceReportCenter, { DeviceReportWorkload } from "./DeviceReportCenter";
 import LedgerFieldSettings from "./LedgerFieldSettings";
+import MetricCockpitConfig from "./MetricCockpitConfig";
 import MetricDictionarySettings from "./MetricDictionarySettings";
-import { DATA_WORKBENCH_ENTRY_CLICKS, buildBusinessTemplateCsv, templateFields } from "./data-workbench-model";
+import ReportFieldSettings from "./ReportFieldSettings";
+import { DATA_WORKBENCH_ENTRY_CLICKS } from "./data-workbench-model";
 import {
   DEVICE_DATA_SOURCES,
   LedgerFieldDefinition,
@@ -130,6 +135,20 @@ import {
   validateCustomFieldValues,
   validateFieldValue,
 } from "./device-ledger-fields";
+import {
+  DeviceReportRecord,
+  listPeriods,
+  mergeReportFields,
+  ReportFieldDefinition,
+} from "./device-report-fields";
+import {
+  ChartComputeContext,
+  ChartTemplate,
+  DEFAULT_CHART_TEMPLATES,
+  defaultMetricCockpitConfig,
+  MetricCockpitConfigState,
+  normalizeCockpitConfig,
+} from "./chart-template-catalog";
 import {
   activeMetrics,
   DEFAULT_METRIC_CATEGORIES,
@@ -153,11 +172,13 @@ import type {
   CloudUserPreferences,
 } from "./cloud-state";
 
-type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "ledger-fields" | "metric-dictionary" | "detail" | "costs" | "layout" | "sources" | "access" | "account";
+// 空覆盖层复用同一引用：每渲染新建 [] 会让依赖它的 useMemo 每次都重算
+const EMPTY_REPORT_FIELDS: ReportFieldDefinition[] = [];
+
+type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "ledger-fields" | "metric-dictionary" | "detail" | "costs" | "report-fields" | "layout" | "sources" | "access" | "account";
 type Perspective = "管理层" | "设备科" | "临床科室";
 type ThemeId = "clinical" | "teal" | "midnight";
 type Density = "comfortable" | "compact";
-type CostTab = "labor" | "consumables" | "fixed";
 type CloudConflict = CloudRevisionConflictResponse & {
   hospitalId: string;
   localValue: unknown[];
@@ -205,6 +226,10 @@ const periodMonthIndexes: Record<string, number[]> = {
 const cloudResourceLabels: Record<CloudResource, string> = {
   devices: "设备台账",
   costEntries: "成本明细",
+  deviceReports: "设备填报记录",
+  reportFields: "填报字段配置",
+  chartTemplates: "图表模板",
+  metricCockpit: "指标字典驾驶舱",
   improvementActions: "改进任务",
   modules: "驾驶舱布局",
   dataSources: "文件口径配置",
@@ -414,6 +439,10 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [ledgerFieldStore, setLedgerFieldStoreLocal] = useDemoState<Record<string, LedgerFieldDefinition[]>>("equip-benefit-ledger-fields-by-hospital-v1", {}, demoMode);
   const [metricStore, setMetricStoreLocal] = useDemoState<Record<string, MetricDictionaryEntry[]>>("equip-benefit-metric-dictionary-by-hospital-v1", {}, demoMode);
   const [metricCategoryStore, setMetricCategoryStoreLocal] = useDemoState<Record<string, MetricCategory[]>>("equip-benefit-metric-categories-by-hospital-v1", {}, demoMode);
+  const [deviceReportStore, setDeviceReportStoreLocal] = useDemoState<Record<string, DeviceReportRecord[]>>("equip-benefit-device-reports-by-hospital-v1", {}, demoMode);
+  const [reportFieldStore, setReportFieldStoreLocal] = useDemoState<Record<string, ReportFieldDefinition[]>>("equip-benefit-report-fields-by-hospital-v1", {}, demoMode);
+  const [chartTemplateStore, setChartTemplateStoreLocal] = useDemoState<Record<string, ChartTemplate[]>>("equip-benefit-chart-templates-by-hospital-v1", {}, demoMode);
+  const [metricCockpitStore, setMetricCockpitStoreLocal] = useDemoState<Record<string, MetricCockpitConfigState[]>>("equip-benefit-metric-cockpit-by-hospital-v1", {}, demoMode);
   const [analysisProfileStore, setAnalysisProfileStoreLocal] = useDemoState<Record<string, BenefitAnalysisProfile[]>>("equip-benefit-analysis-profiles-by-hospital-v1", demoMode ? initialAnalysisProfileStore() : {}, demoMode);
   const [cloudSyncState, setCloudSyncState] = useState<CloudSyncState>(viewer.authenticated ? "idle" : "ready");
   const [cloudHydrated, setCloudHydrated] = useState(!viewer.authenticated);
@@ -433,12 +462,12 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [equipmentSearch, setEquipmentSearch] = useState("");
   // 台账“眼睛”入口带过来的设备：进入设备数据填报时直接打开这台设备的抽屉
   const [reportFocusDeviceId, setReportFocusDeviceId] = useState("");
+  // 驾驶舱配置分两类：行业驾驶舱（现有模块编排）与指标字典驾驶舱（17 条口径成图）
+  const [cockpitConfigKind, setCockpitConfigKind] = useState<"industry" | "dictionary">("industry");
   const [equipmentStatus, setEquipmentStatus] = useState("全部状态");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
   const [deviceDraft, setDeviceDraft] = useState<Device>(cloneDevices()[0]);
-  const [costTab, setCostTab] = useState<CostTab>("labor");
-  const [costDeviceId, setCostDeviceId] = useState(initialDevices[0].id);
   const [draggingModule, setDraggingModule] = useState<string | null>(null);
   const [layoutEditing, setLayoutEditing] = useState(false);
   const [projectionMode, setProjectionMode] = useState(false);
@@ -527,6 +556,29 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   // 医院还没自定义过就用出厂口径；一旦配置过（哪怕清空成 0 条）就以医院的为准。
   const currentMetricEntries = metricStore[effectiveHospitalId] ?? DEFAULT_METRIC_DICTIONARY;
   const currentMetricCategories = metricCategoryStore[effectiveHospitalId] ?? DEFAULT_METRIC_CATEGORIES;
+  const currentDeviceReports = deviceReportStore[effectiveHospitalId] ?? (demoMode ? cloneDeviceReportsForHospital(effectiveHospitalId) : []);
+  // 覆盖层里存的是医院改写过/新增的字段，合并出厂 18 项才是最终生效清单
+  const currentReportFieldOverrides = useMemo(
+    () => reportFieldStore[effectiveHospitalId] ?? EMPTY_REPORT_FIELDS,
+    [reportFieldStore, effectiveHospitalId],
+  );
+  const currentReportFields = useMemo(() => mergeReportFields(currentReportFieldOverrides), [currentReportFieldOverrides]);
+  // 医院没自定义过就用出厂模板；每渲染新建一份数组会让下游 useMemo 永远失效
+  const currentChartTemplates = useMemo(
+    () => (chartTemplateStore[effectiveHospitalId]?.length
+      ? chartTemplateStore[effectiveHospitalId]
+      : [...DEFAULT_CHART_TEMPLATES]),
+    [chartTemplateStore, effectiveHospitalId],
+  );
+  // 云端按数组存（资源统一是数组），驾驶舱配置只有一份，取第 0 条
+  const currentMetricCockpit = useMemo(
+    () => normalizeCockpitConfig(
+      metricCockpitStore[effectiveHospitalId]?.[0],
+      new Set(activeMetrics(currentMetricEntries).map((entry) => entry.id)),
+      currentChartTemplates,
+    ),
+    [metricCockpitStore, effectiveHospitalId, currentMetricEntries, currentChartTemplates],
+  );
   const currentAnalysisProfiles = analysisProfileStore[effectiveHospitalId] ?? (demoMode ? initialBenefitAnalysisProfiles : []);
   const activeMembership = tenantContext?.memberships.find((membership) => membership.hospitalId === effectiveHospitalId);
   const currentRoleName = activeMembership?.roleName ?? (viewer.authenticated ? "平台超级管理员" : "体验角色");
@@ -614,6 +666,10 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       metricDictionary: DEFAULT_METRIC_DICTIONARY,
       metricCategories: DEFAULT_METRIC_CATEGORIES,
       analysisProfiles: [],
+      deviceReports: [],
+      reportFields: [],
+      chartTemplates: [],
+      metricCockpit: [defaultMetricCockpitConfig()],
     };
   }
 
@@ -677,6 +733,10 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     if (result.shared.metricDictionary?.length) setMetricStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.metricDictionary }));
     if (result.shared.metricCategories?.length) setMetricCategoryStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.metricCategories }));
     setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.analysisProfiles }));
+    setDeviceReportStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.deviceReports ?? [] }));
+    setReportFieldStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.reportFields ?? [] }));
+    setChartTemplateStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.chartTemplates ?? [] }));
+    setMetricCockpitStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.metricCockpit ?? [] }));
     setModulesLocal(result.shared.modules);
     const preferences = result.preferences;
     if (preferences.theme) setThemeLocal(preferences.theme);
@@ -828,6 +888,14 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       setMetricStoreLocal((current) => ({ ...current, [hospitalId]: value as MetricDictionaryEntry[] }));
     } else if (resource === "metricCategories") {
       setMetricCategoryStoreLocal((current) => ({ ...current, [hospitalId]: value as MetricCategory[] }));
+    } else if (resource === "deviceReports") {
+      setDeviceReportStoreLocal((current) => ({ ...current, [hospitalId]: value as DeviceReportRecord[] }));
+    } else if (resource === "reportFields") {
+      setReportFieldStoreLocal((current) => ({ ...current, [hospitalId]: value as ReportFieldDefinition[] }));
+    } else if (resource === "chartTemplates") {
+      setChartTemplateStoreLocal((current) => ({ ...current, [hospitalId]: value as ChartTemplate[] }));
+    } else if (resource === "metricCockpit") {
+      setMetricCockpitStoreLocal((current) => ({ ...current, [hospitalId]: value as MetricCockpitConfigState[] }));
     } else {
       setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: value as BenefitAnalysisProfile[] }));
     }
@@ -925,15 +993,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     });
   }
 
-  function setCostEntries(update: CostEntry[] | ((current: CostEntry[]) => CostEntry[])) {
-    setCostEntryStoreLocal((currentStore) => {
-      const current = currentStore[effectiveHospitalId] ?? (demoMode ? cloneCostEntriesForHospital(effectiveHospitalId) : []);
-      const next = typeof update === "function" ? update(current) : update;
-      void persistCloudResource("costEntries", next);
-      return { ...currentStore, [effectiveHospitalId]: next };
-    });
-  }
-
   const setImprovementActions: Dispatch<SetStateAction<ImprovementAction[]>> = (update) => {
     setImprovementStoreLocal((currentStore) => {
       const current = currentStore[effectiveHospitalId] ?? (demoMode ? initialActions : []);
@@ -957,6 +1016,34 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       const next = resolveStateUpdate(update, current);
       void persistCloudResource("ledgerFields", next);
       return { ...currentStore, [effectiveHospitalId]: next };
+    });
+  };
+
+  const setCurrentDeviceReports = (next: DeviceReportRecord[]) => {
+    setDeviceReportStoreLocal((currentStore) => {
+      void persistCloudResource("deviceReports", next);
+      return { ...currentStore, [effectiveHospitalId]: next };
+    });
+  };
+
+  const setCurrentReportFields = (next: ReportFieldDefinition[]) => {
+    setReportFieldStoreLocal((currentStore) => {
+      void persistCloudResource("reportFields", next);
+      return { ...currentStore, [effectiveHospitalId]: next };
+    });
+  };
+
+  const setCurrentChartTemplates = (next: ChartTemplate[]) => {
+    setChartTemplateStoreLocal((currentStore) => {
+      void persistCloudResource("chartTemplates", next);
+      return { ...currentStore, [effectiveHospitalId]: next };
+    });
+  };
+
+  const setCurrentMetricCockpit = (next: MetricCockpitConfigState) => {
+    setMetricCockpitStoreLocal((currentStore) => {
+      void persistCloudResource("metricCockpit", [next]);
+      return { ...currentStore, [effectiveHospitalId]: [next] };
     });
   };
 
@@ -1484,7 +1571,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     .filter((device) => device.status !== "运行良好" || netBenefit(device) < 0 || device.utilization < 60)
     .sort((a, b) => roi(a) - roi(b));
 
-  const currentCostDevice = devices.find((device) => device.id === costDeviceId) ?? devices[0];
   const selectedDevice = ledgerDevices.find((device) => device.id === selectedDeviceId) ?? devices[0];
   const availabilityValues = filteredDevices
     .map((device) => sessionState === "verified" ? publishedData.insights[device.id]?.availabilityRate : insightFor(device.id).availabilityRate)
@@ -1676,110 +1762,60 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     notify(editingDevice ? "设备信息已更新，驾驶舱同步刷新" : "设备已加入台账和驾驶舱");
   }
 
-  function addLabor(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const headcount = Number(form.get("headcount"));
-    const hours = Number(form.get("hours"));
-    const hourlyCost = Number(form.get("hourlyCost"));
-    const amount = (headcount * hours * hourlyCost) / 10000;
-    const selected = devices.find((device) => device.id === String(form.get("deviceId")));
-    if (!selected || amount <= 0) return notify("请完整填写人工成本数据");
-    const entry: CostEntry = {
-      id: `labor-${crypto.randomUUID()}`,
-      type: "人工",
-      deviceId: selected.id,
-      deviceName: selected.name,
-      item: String(form.get("role")),
-      detail: `${headcount} 人 × ${hours} 小时 × ${hourlyCost} 元/小时`,
-      period: String(form.get("period")),
-      amount: Number(amount.toFixed(2)),
-      owner: selected.department,
-      createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
-    };
-    setCostEntries((current) => [entry, ...current]);
-    setDevices((current) => current.map((device) => (device.id === selected.id ? { ...device, cost: { ...device.cost, labor: device.cost.labor + amount } } : device)));
-    event.currentTarget.reset();
-    notify(`已计入 ${amount.toFixed(2)} 万元人工成本`);
-  }
-
-  function addConsumable(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const quantityValue = Number(form.get("quantity"));
-    const unitPrice = Number(form.get("unitPrice"));
-    const amount = (quantityValue * unitPrice) / 10000;
-    const selected = devices.find((device) => device.id === String(form.get("deviceId")));
-    if (!selected || amount <= 0) return notify("请完整填写耗材成本数据");
-    const entry: CostEntry = {
-      id: `material-${crypto.randomUUID()}`,
-      type: "耗材",
-      deviceId: selected.id,
-      deviceName: selected.name,
-      item: String(form.get("item")),
-      detail: `${quantityValue} ${String(form.get("unit"))} × ${unitPrice} 元/${String(form.get("unit"))} · ${String(form.get("chargeMode"))}`,
-      period: String(form.get("period")),
-      amount: Number(amount.toFixed(2)),
-      owner: selected.department,
-      createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
-    };
-    setCostEntries((current) => [entry, ...current]);
-    setDevices((current) => current.map((device) => (device.id === selected.id ? { ...device, cost: { ...device.cost, consumables: device.cost.consumables + amount } } : device)));
-    event.currentTarget.reset();
-    notify(`已计入 ${amount.toFixed(2)} 万元耗材成本`);
-  }
-
-  function saveFixedCosts(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const selectedId = String(form.get("deviceId"));
-    setDevices((current) =>
-      current.map((device) =>
-        device.id === selectedId
-          ? {
-              ...device,
-              cost: {
-                ...device.cost,
-                depreciation: Number(form.get("depreciation")),
-                maintenance: Number(form.get("maintenance")),
-                energy: Number(form.get("energy")),
-                space: Number(form.get("space")),
-                indirect: Number(form.get("indirect")),
-              },
-            }
-          : device,
-      ),
-    );
-    notify("固定成本已保存，驾驶舱同步刷新");
-  }
-
-  function exportCostEntriesCsv() {
-    if (!costEntries.length) {
-      notify("当前医院暂无成本记录");
-      return;
+  /**
+   * 业务量三项（检查人次 / 阳性数 / 总收入）只认数据准备中心发布的 device_workload 行。
+   *
+   * 用 Map 预先按「设备|期间」建索引：填报页每渲染一行都要查一次，
+   * 24 台设备 × 逐格查一遍全量 rows 会在几千行时明显卡顿。
+   * 查不到返回 undefined，界面据此显示「—」——绝不回退成 0，
+   * 「这一格没上传」和「这一格真的是 0」是两回事。
+   */
+  const workloadIndex = useMemo(() => {
+    const index = new Map<string, DeviceReportWorkload>();
+    for (const row of publishedData.rows) {
+      if (row.recordType !== "exam") continue;
+      const deviceId = typeof row.deviceId === "string" ? row.deviceId : "";
+      const period = typeof row.period === "string" ? row.period : "";
+      // 只有带 period 的业务量行才有意义：逐次检查明细没有期间，聚合不到填报周期上
+      if (!deviceId || !period) continue;
+      const asText = (value: unknown) => (typeof value === "string" ? value : typeof value === "number" ? String(value) : "");
+      const examVolume = asText(row.examVolume);
+      const positiveCount = asText(row.positiveCount);
+      const totalRevenue = asText(row.totalRevenue);
+      if (!examVolume && !positiveCount && !totalRevenue) continue;
+      index.set(`${deviceId}|${period}`, {
+        examVolume: examVolume || undefined,
+        positiveCount: positiveCount || undefined,
+        totalRevenue: totalRevenue || undefined,
+      });
     }
-    const fields = templateFields("cost_detail");
-    const rows = costEntries.map((entry) => {
-      const record: Record<string, string> = {
-        recordType: "cost",
-        deviceId: entry.deviceId,
-        period: entry.period,
-        costType: entry.type,
-        amount: entry.amount.toFixed(2),
-        sourceRecordId: entry.id,
-        department: entry.owner,
-      };
-      return fields.map((field) => `"${(record[field.code] ?? "").replaceAll('"', '""')}"`).join(",");
-    });
-    const csv = `${buildBusinessTemplateCsv("cost_detail")}${rows.join("\r\n")}\r\n`;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `${activeHospital?.shortName ?? "医院"}-成本明细-cost_detail-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    notify(`已导出 ${costEntries.length} 条成本明细，符合 cost_detail 模板口径`);
-  }
+    return index;
+  }, [publishedData.rows]);
+
+  // 演示模式没有发布数据，用与演示台账同源的一份兜底；正式模式一律只认已发布行，
+  // 查不到就是查不到，界面显示「—」，绝不拿演示数编进正式口径。
+  const demoWorkloadIndex = useMemo(
+    () => (demoMode ? cloneDeviceWorkloadForHospital(effectiveHospitalId) : null),
+    [demoMode, effectiveHospitalId],
+  );
+
+  const workloadOf = (deviceId: string, periodKey: string) =>
+    workloadIndex.get(`${deviceId}|${periodKey}`) ?? demoWorkloadIndex?.get(`${deviceId}|${periodKey}`);
+
+  /**
+   * 字典驾驶舱的算数上下文：设备与填报记录都取当前医院的，期间默认取本年 12 个月，
+   * 这样看板上的「科室相加 / 时间相加」和填报页看到的是同一批数
+   */
+  const cockpitComputeContext: ChartComputeContext = useMemo(() => ({
+    devices: ledgerDevices.map((device) => ({ id: device.id, department: device.department, name: device.name })),
+    records: currentDeviceReports,
+    onlyConfirmed: currentMetricCockpit.onlyConfirmed,
+    periods: listPeriods("month", new Date().getFullYear()),
+    fields: currentReportFields,
+    workloadOf,
+  // workloadOf 是 workloadIndex 的薄封装，跟着索引一起变，不必单列依赖
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [ledgerDevices, currentDeviceReports, currentMetricCockpit.onlyConfirmed, currentReportFields, workloadIndex, demoWorkloadIndex]);
 
   function moveModule(id: string, direction: -1 | 1) {
     setModules((current) => {
@@ -2059,6 +2095,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     "ledger-fields": "台账字段配置",
     detail: selectedDevice ? `${selectedDevice.shortName}单机分析` : "单机设备分析",
     costs: "设备数据填报",
+    "report-fields": "填报字段配置",
     layout: "驾驶舱配置",
     sources: "指标字典",
     "metric-dictionary": "指标字典配置",
@@ -2443,22 +2480,58 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           ) : null}
 
           {view === "costs" ? (
-            <CostManagement
-              devices={devices}
-              entries={costEntries}
-              tab={costTab}
-              setTab={setCostTab}
-              currentDeviceId={costDeviceId}
-              setCurrentDeviceId={setCostDeviceId}
-              currentDevice={currentCostDevice}
-              onLabor={addLabor}
-              onConsumable={addConsumable}
-              onFixed={saveFixedCosts}
-              onExport={exportCostEntriesCsv}
+            <DeviceReportCenter
+              devices={ledgerDevices}
+              fields={currentReportFields}
+              records={currentDeviceReports}
+              onRecordsChange={setCurrentDeviceReports}
+              workloadOf={workloadOf}
+              oldCostEntries={costEntries}
+              canManage={hasPermission("cost.manage")}
+              notify={notify}
+              currentUser={viewer.displayName}
+              initialDeviceId={reportFocusDeviceId}
+              onConsumedInitialDevice={() => setReportFocusDeviceId("")}
+              onOpenFieldSettings={hasPermission("cost.manage") ? () => navigate("report-fields") : undefined}
+            />
+          ) : null}
+
+          {view === "report-fields" ? (
+            <ReportFieldSettings
+              fields={currentReportFieldOverrides}
+              onChange={setCurrentReportFields}
+              canManage={hasPermission("cost.manage")}
+              notify={notify}
+              onBack={() => navigate("costs")}
             />
           ) : null}
 
           {view === "layout" ? (
+            <div className="cockpit-kind-tabs" role="tablist" aria-label="驾驶舱类别">
+              <button role="tab" aria-selected={cockpitConfigKind === "industry"} className={cockpitConfigKind === "industry" ? "active" : ""} onClick={() => setCockpitConfigKind("industry")}>
+                <LayoutDashboard size={16} />行业驾驶舱<small>通用效益模块编排</small>
+              </button>
+              <button role="tab" aria-selected={cockpitConfigKind === "dictionary"} className={cockpitConfigKind === "dictionary" ? "active" : ""} onClick={() => setCockpitConfigKind("dictionary")}>
+                <BookOpen size={16} />指标字典驾驶舱<small>按字典 {activeMetrics(currentMetricEntries).length} 条口径成图</small>
+              </button>
+            </div>
+          ) : null}
+
+          {view === "layout" && cockpitConfigKind === "dictionary" ? (
+            <MetricCockpitConfig
+              config={currentMetricCockpit}
+              onConfigChange={setCurrentMetricCockpit}
+              templates={currentChartTemplates}
+              onTemplatesChange={setCurrentChartTemplates}
+              entries={activeMetrics(currentMetricEntries)}
+              categories={currentMetricCategories}
+              ctx={cockpitComputeContext}
+              canManage={hasPermission("member.manage")}
+              notify={notify}
+            />
+          ) : null}
+
+          {view === "layout" && cockpitConfigKind === "industry" ? (
             <LayoutConfiguration
               modules={modules}
               setModules={setModules}
@@ -2741,108 +2814,6 @@ function EquipmentManagement({
   );
 }
 
-function CostManagement({
-  devices,
-  entries,
-  tab,
-  setTab,
-  currentDeviceId,
-  setCurrentDeviceId,
-  currentDevice,
-  onLabor,
-  onConsumable,
-  onFixed,
-  onExport,
-}: {
-  devices: Device[];
-  entries: CostEntry[];
-  tab: CostTab;
-  setTab: (tab: CostTab) => void;
-  currentDeviceId: string;
-  setCurrentDeviceId: (id: string) => void;
-  currentDevice?: Device;
-  onLabor: (event: FormEvent<HTMLFormElement>) => void;
-  onConsumable: (event: FormEvent<HTMLFormElement>) => void;
-  onFixed: (event: FormEvent<HTMLFormElement>) => void;
-  onExport: () => void;
-}) {
-  const laborTotal = devices.reduce((sum, device) => sum + device.cost.labor, 0);
-  const materialTotal = devices.reduce((sum, device) => sum + device.cost.consumables, 0);
-  const fixedTotal = devices.reduce((sum, device) => sum + device.cost.depreciation + device.cost.maintenance + device.cost.energy + device.cost.space + device.cost.indirect, 0);
-
-  return (
-    <>
-      <div className="page-heading">
-        <div><div className="eyebrow"><CircleDollarSign size={15} />全成本核算</div><h1>成本填报中心</h1></div>
-        <div className="heading-actions">
-          <button className="secondary-button" onClick={onExport}><Download size={17} />导出成本明细文件</button>
-          <span className="page-badge"><CheckCircle2 size={16} />2026-V1.3 口径</span>
-        </div>
-      </div>
-      <div className="admin-stats cost-stats">
-        <div><span>人工成本</span><strong>{currency.format(laborTotal)}</strong><small>万元 / 年</small></div>
-        <div><span>耗材试剂</span><strong>{currency.format(materialTotal)}</strong><small>万元 / 年</small></div>
-        <div><span>固定运行成本</span><strong>{currency.format(fixedTotal)}</strong><small>万元 / 年</small></div>
-        <div><span>本月填报</span><strong>{entries.length}</strong><small>条记录</small></div>
-      </div>
-      <div className="cost-workspace">
-        <Panel title="新增成本记录" description="保存后立即计入设备全成本">
-          <div className="tab-list">
-            <button className={tab === "labor" ? "active" : ""} onClick={() => setTab("labor")}><Users size={16} />人工成本</button>
-            <button className={tab === "consumables" ? "active" : ""} onClick={() => setTab("consumables")}><Boxes size={16} />耗材/试剂</button>
-            <button className={tab === "fixed" ? "active" : ""} onClick={() => setTab("fixed")}><Wrench size={16} />固定成本</button>
-          </div>
-          {tab === "labor" ? (
-            <form className="entry-form" onSubmit={onLabor}>
-              <FormSelect name="deviceId" label="归属设备" defaultValue={currentDeviceId} onChange={(value) => setCurrentDeviceId(value)} options={devices.map((device) => ({ value: device.id, label: `${device.shortName} · ${device.department}` }))} />
-              <FormInput name="period" label="核算期间" type="month" defaultValue="2026-07" required />
-              <FormInput name="role" label="岗位/人员类型" placeholder="例如：影像技师" required />
-              <div className="form-row three"><FormInput name="headcount" label="投入人数" type="number" min="0" step="1" suffix="人" required /><FormInput name="hours" label="月均工时" type="number" min="0" step="0.5" suffix="小时" required /><FormInput name="hourlyCost" label="小时成本" type="number" min="0" step="0.01" suffix="元" required /></div>
-              <div className="formula-hint"><CircleDollarSign size={16} /><span>系统计算：人数 × 工时 × 小时成本 ÷ 10,000 = 本期人工成本（万元）</span></div>
-              <button className="primary-button submit-button" type="submit"><Save size={17} />保存人工成本</button>
-            </form>
-          ) : null}
-          {tab === "consumables" ? (
-            <form className="entry-form" onSubmit={onConsumable}>
-              <FormSelect name="deviceId" label="归属设备" defaultValue={currentDeviceId} onChange={(value) => setCurrentDeviceId(value)} options={devices.map((device) => ({ value: device.id, label: `${device.shortName} · ${device.department}` }))} />
-              <FormInput name="period" label="核算期间" type="month" defaultValue="2026-07" required />
-              <FormInput name="item" label="耗材/试剂名称" placeholder="例如：增强扫描造影剂" required />
-              <div className="form-row three"><FormInput name="quantity" label="使用数量" type="number" min="0" step="0.01" required /><FormInput name="unit" label="计量单位" placeholder="盒/套/支" required /><FormInput name="unitPrice" label="单位成本" type="number" min="0" step="0.01" suffix="元" required /></div>
-              <FormSelect name="chargeMode" label="收费属性" defaultValue="不可单独收费" options={[{ value: "不可单独收费", label: "不可单独收费" }, { value: "可单独收费", label: "可单独收费" }]} />
-              <div className="formula-hint"><Boxes size={16} /><span>可单独收费与不可单独收费耗材分别记录，便于核对收入归因和医保口径。</span></div>
-              <button className="primary-button submit-button" type="submit"><Save size={17} />保存耗材成本</button>
-            </form>
-          ) : null}
-          {tab === "fixed" && currentDevice ? (
-            <form className="entry-form" onSubmit={onFixed} key={currentDevice.id}>
-              <FormSelect name="deviceId" label="归属设备" defaultValue={currentDeviceId} onChange={(value) => setCurrentDeviceId(value)} options={devices.map((device) => ({ value: device.id, label: `${device.shortName} · ${device.department}` }))} />
-              <div className="form-row two"><FormInput name="depreciation" label="年度折旧费" type="number" min="0" step="0.01" suffix="万元" defaultValue={currentDevice.cost.depreciation} /><FormInput name="maintenance" label="维修维保费" type="number" min="0" step="0.01" suffix="万元" defaultValue={currentDevice.cost.maintenance} /></div>
-              <div className="form-row two"><FormInput name="energy" label="水电气与能耗" type="number" min="0" step="0.01" suffix="万元" defaultValue={currentDevice.cost.energy} /><FormInput name="space" label="房屋及配套" type="number" min="0" step="0.01" suffix="万元" defaultValue={currentDevice.cost.space} /></div>
-              <FormInput name="indirect" label="间接管理成本" type="number" min="0" step="0.01" suffix="万元" defaultValue={currentDevice.cost.indirect} />
-              <div className="formula-hint"><Wrench size={16} /><span>固定成本按年度口径维护；也可在数据准备中心导入财务凭证或能耗计量文件，经复核发布后归集。</span></div>
-              <button className="primary-button submit-button" type="submit"><Save size={17} />保存固定成本</button>
-            </form>
-          ) : null}
-        </Panel>
-        <Panel title="填报说明" description="数据责任与审核建议">
-          <div className="responsibility-list">
-            <div><span className="responsibility-icon blue"><Users size={17} /></span><span><strong>人工成本</strong><small>人力资源部提供薪酬口径，使用科室确认人数与工时，财务部审核。</small></span></div>
-            <div><span className="responsibility-icon orange"><Boxes size={17} /></span><span><strong>耗材/试剂</strong><small>物资部或 SPD 提供出库价与数量，使用科室确认设备归属。</small></span></div>
-            <div><span className="responsibility-icon violet"><Wrench size={17} /></span><span><strong>折旧与维保</strong><small>资产部、设备科和财务部按固定资产卡片及合同提供。</small></span></div>
-            <div><span className="responsibility-icon green"><Database size={17} /></span><span><strong>数据管理员职责</strong><small>负责文件上传、映射、清洗与版本发布，不代替业务部门确认数据口径。</small></span></div>
-          </div>
-        </Panel>
-      </div>
-      <Panel title="最近填报记录" description="演示数据可在本机持续追加">
-        <div className="table-scroll">
-          <table className="data-table"><thead><tr><th>类型</th><th>归属设备</th><th>项目</th><th>计算明细</th><th>期间</th><th className="num">金额(万元)</th><th>责任科室</th><th>填报时间</th></tr></thead><tbody>{entries.map((entry) => <tr key={entry.id}><td><span className={`type-pill ${entry.type === "人工" ? "labor" : "material"}`}>{entry.type}</span></td><td>{entry.deviceName}</td><td>{entry.item}</td><td>{entry.detail}</td><td>{entry.period}</td><td className="num">{entry.amount.toFixed(2)}</td><td>{entry.owner}</td><td>{entry.createdAt}</td></tr>)}</tbody></table>
-        </div>
-        <p className="cost-export-note"><FileSpreadsheet size={14} />导出文件符合数据准备中心 cost_detail 模板，可直接导入走正式发布流程。</p>
-      </Panel>
-    </>
-  );
-}
-
 function LayoutConfiguration({
   modules,
   setModules,
@@ -3113,18 +3084,3 @@ function FormInput({
   );
 }
 
-function FormSelect({
-  label,
-  name,
-  options,
-  defaultValue,
-  onChange,
-}: {
-  label: string;
-  name: string;
-  options: Array<{ value: string; label: string }>;
-  defaultValue?: string;
-  onChange?: (value: string) => void;
-}) {
-  return <label className="form-field"><span>{label}</span><select name={name} defaultValue={defaultValue} onChange={onChange ? (event) => onChange(event.target.value) : undefined}>{options.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>;
-}
