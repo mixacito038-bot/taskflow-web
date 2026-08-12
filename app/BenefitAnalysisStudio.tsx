@@ -463,7 +463,6 @@ export default function BenefitAnalysisStudio({
       <section className="panel analysis-empty">
         <Database size={28} />
         <h1>当前医院尚未初始化采集分析规则</h1>
-        <p>需要先建立按设备品类区分的文件、质量与核算口径，才能生成可复核的效益结论。</p>
         {canManage ? <button className="primary-button" onClick={initializeProfiles}>初始化行业模板</button> : <small>请联系拥有“数据源管理”权限的医院管理员完成初始化。</small>}
       </section>
     );
@@ -476,7 +475,7 @@ export default function BenefitAnalysisStudio({
         <div>
           <div className="eyebrow"><Activity size={15} />医院级文件与核算规则</div>
           <h1>文件采集与效益分析</h1>
-          <p>先证明文件从哪里来、如何绑定、清洗和对账，再计算单机效益；不同设备品类使用不同业务模板与评价口径。</p>
+          <p>不同设备品类使用不同业务模板与评价口径。</p>
         </div>
         <div className="heading-actions">
           {onOpenSources ? <button className="secondary-button" onClick={onOpenSources}><Cable size={17} />文件来源与口径</button> : null}
@@ -509,7 +508,7 @@ export default function BenefitAnalysisStudio({
           {selected ? (
             <section className="analysis-ingestion-flow" aria-label={`${selected.category}采集分析流程`}>
               <header>
-                <div><strong>{selected.category}证据链</strong><small>点击步骤可进入对应配置或查看页面</small></div>
+                <div><strong>{selected.category}证据链</strong></div>
                 <span className={`status-pill ${statusTone(selected.status)}`}>{selected.status}</span>
               </header>
               <div>
@@ -639,7 +638,7 @@ export default function BenefitAnalysisStudio({
       {tab === "metrics" ? (
         <>
           <section className="panel analysis-metric-rules">
-            <div className="panel-heading"><div><h3>可解释的效益指标</h3><p>每个指标都明确分子、分母、前置条件和不可混用的口径</p></div><span className="chart-note">规则版本 2026-V3.0</span></div>
+            <div className="panel-heading"><div><h3>可解释的效益指标</h3></div><span className="chart-note">规则版本 2026-V3.0</span></div>
             <div className="analysis-metric-grid">{metricRules.map((rule) => <article key={rule.metric}><span>{rule.group}</span><h3>{rule.metric}</h3><code>{rule.formula}</code><small>{rule.guard}</small></article>)}</div>
           </section>
           <section className="panel analysis-allocation-table">
@@ -695,7 +694,7 @@ export default function BenefitAnalysisStudio({
       {tab === "custom" ? (
         <>
           <section className="panel configurable-view-toolbar">
-            <div><h3>指标展示配置预览</h3><p>字段、指标和展示定义发布后，同一个指标可切换图表形式；当前数据来自页面已有设备集合。</p></div>
+            <div><h3>指标展示配置预览</h3><p>当前数据来自页面已有设备集合。</p></div>
             <label>展示形式
               <select value={customChartType} onChange={(event) => setCustomChartType(event.target.value as ChartType)}>
                 <option value="kpi">KPI</option><option value="table">表格</option><option value="bar">柱状图</option><option value="line">折线图</option><option value="pie">饼图</option><option value="scatter">散点图</option><option value="heatmap">热力图</option>

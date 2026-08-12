@@ -93,7 +93,7 @@ export default function CapitalPlanningCenter({ devices, onSelectDevice }: Props
   return (
     <div className={styles.root}>
       <header className={styles.heading}>
-        <div><span><CalendarRange size={15} />战略资产管理</span><h1>3—5 年资本计划</h1><p>用寿命、利用率、维护成本和经济表现形成可解释的更新、延寿和共享建议。</p></div>
+        <div><span><CalendarRange size={15} />战略资产管理</span><h1>3—5 年资本计划</h1></div>
         <div className={styles.guardrail}><ShieldCheck size={17} /><b>管理建议，不替代临床安全与预算审批</b></div>
       </header>
 
@@ -105,7 +105,7 @@ export default function CapitalPlanningCenter({ devices, onSelectDevice }: Props
 
       <section className={styles.layout}>
         <div className={styles.tablePanel}>
-          <div className={styles.panelTitle}><div><h2>设备更新优先级</h2><p>点击设备查看评分依据和三种处置情景。</p></div></div>
+          <div className={styles.panelTitle}><div><h2>设备更新优先级</h2></div></div>
           <div className={styles.tableWrap}><table><thead><tr><th>设备</th><th>年限</th><th>利用率</th><th>维护/收入</th><th>风险分</th><th>建议</th></tr></thead>
             <tbody>{candidates.map((item) => <tr key={item.device.id} className={item.device.id === selected.device.id ? styles.selected : ""} onClick={() => setSelectedId(item.device.id)}>
               <td><b>{item.device.shortName}</b><small>{item.device.department}</small></td><td>{item.age} 年<small>剩余 {item.remainingLife} 年</small></td><td>{item.device.utilization}%</td><td>{item.maintenanceRatio.toFixed(1)}%</td><td><strong>{item.riskScore}</strong></td><td><span className={`${styles.band} ${styles[`band${item.band}`]}`}>{item.band}</span></td>

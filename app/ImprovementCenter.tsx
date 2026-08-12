@@ -511,7 +511,6 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
           <div>
             <div className="eyebrow"><Target size={15} />从指标预警到收益兑现</div>
             <h1>运营改进中心</h1>
-            <p>用“发现差距—测算方案—指派责任—复盘收益”的闭环，把设备效益分析真正转化为管理动作。</p>
           </div>
         </div>
         <section className="panel insight-unavailable">
@@ -538,7 +537,6 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
         <div>
           <div className="eyebrow"><Target size={15} />从指标预警到收益兑现</div>
           <h1>运营改进中心</h1>
-          <p>用“发现差距—测算方案—指派责任—复盘收益”的闭环，把设备效益分析真正转化为管理动作。</p>
         </div>
         <div className="heading-actions">
           <span className="page-badge"><ShieldCheck size={16} />示例目标 · 可按院内制度配置</span>
@@ -562,13 +560,13 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
       </section>
 
       <div className="section-heading compact-section-heading">
-        <div><h2>预警中心</h2><p>规则化监测使用率、回本、净收益与可靠性：命中即提示，并可一键转入下方改进行动闭环。</p></div>
+        <div><h2>预警中心</h2></div>
         <span className="chart-note">{enabledAlertRuleCount} 条规则启用 · 命中 {deviceAlerts.length} 条</span>
       </div>
       <section className={alertStyles.alertCenter} aria-label="预警中心">
         <section className="panel">
           <div className="panel-heading">
-            <div><h3>预警规则配置</h3><p>调整阈值即时重算右侧预警；高/中严重度对应改进任务的高/中优先级。</p></div>
+            <div><h3>预警规则配置</h3><p>高/中严重度对应改进任务的高/中优先级。</p></div>
           </div>
           <ul className={alertStyles.ruleList}>
             {alertRules.map((rule) => {
@@ -674,7 +672,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
         </section>
 
         <section className="panel scenario-chart-panel">
-          <div className="panel-heading"><div><h3>方案前后效益对比</h3><p>单位：万元/年 · 为管理测算，不替代财务预算审批</p></div><span className="chart-note">实时联动</span></div>
+          <div className="panel-heading"><div><h3>方案前后效益对比</h3><p>单位：万元/年 · 为管理测算，不替代财务预算审批</p></div></div>
           <div className="scenario-chart">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={scenarioBars} margin={{ top: 12, right: 12, left: -12, bottom: 0 }}>
@@ -694,7 +692,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
 
       {!publishedData ? <section className="panel flow-panel">
         <div className="panel-heading">
-          <div><h3>需求—产能周监测</h3><p>借鉴 NHS 诊断服务改进：活动量不等于利用率，需同时观察转诊、完成量、积压、取消与等待。</p></div>
+          <div><h3>需求—产能周监测</h3><p>活动量不等于利用率，需同时观察转诊、完成量、积压、取消与等待。</p></div>
           <span className="chart-note">CT 改进样例 · 非真实诊疗数据</span>
         </div>
         <div className="flow-summary">
@@ -739,7 +737,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
 
       <section className="panel action-center">
         <div className="panel-heading">
-          <div><h3>管理行动闭环</h3><p>每项任务必须有问题证据、责任人、完成期限、预期收益和状态复盘。</p></div>
+          <div><h3>管理行动闭环</h3></div>
           <div className="action-summary"><span>{activeActions.length} 项进行中</span><strong>预期增益 {currency.format(expectedBenefit)} 万/年</strong><small>已确认收益 {currency.format(confirmedBenefit)} 万/年 · {completedActions.length} 项已完成</small></div>
         </div>
         <div className="action-board">
@@ -795,7 +793,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
         </div>
       </section>
 
-      <div className="section-heading practice-heading"><div><h2>行业优秀实践如何落到系统</h2><p>不照搬厂商大屏，而是把公开方法转成数据字段、管理频率、责任动作和可验证结果。</p></div></div>
+      <div className="section-heading practice-heading"><div><h2>行业优秀实践如何落到系统</h2></div></div>
       <section className="practice-grid">
         {practiceCards.map((practice) => (
           <article key={practice.title}>

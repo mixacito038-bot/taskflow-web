@@ -482,13 +482,40 @@ export function SingleEquipmentDetail({
   );
 }
 
+// 「计算口径」和「理论依据出处」都是几百字原文，折到同样的行数，
+// 行与行之间才有统一的高度节奏，短列的内容也就不会孤零零浮在顶上
+const DICTIONARY_CLAMP_LINES = 5;
+
+/** 按列宽粗估中文折行数：只有真的超过折行上限才给「展开全文」，短文本不该冒出多余的按钮 */
+function wrappedLineCount(text: string, charsPerLine: number) {
+  return text.split("\n").reduce((total, line) => total + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+}
+
+function DictionaryLongText({ text, charsPerLine, expanded, onToggle }: {
+  text: string;
+  charsPerLine: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  // 原文末尾常带一个换行，pre-wrap 会把它渲染成空行凭空拉高整行；这里只在展示时去掉，存的原文一个字不动
+  const body = text.replace(/\s+$/, "");
+  if (!body) return <span className="dictionary-blank">—</span>;
+  const clampable = wrappedLineCount(body, charsPerLine) > DICTIONARY_CLAMP_LINES;
+  return (
+    <div className="dictionary-longtext">
+      <div className={clampable && !expanded ? "dictionary-longtext-body" : "dictionary-longtext-body is-open"}>{body}</div>
+      {clampable ? <button type="button" className="dictionary-toggle" aria-expanded={expanded} onClick={onToggle}>{expanded ? "收起" : "展开全文"}</button> : null}
+    </div>
+  );
+}
+
 export function MetricGovernanceCenter({ entries, categories }: {
   entries: MetricDictionaryEntry[];
   categories: MetricCategory[];
 }) {
   const [categoryId, setCategoryId] = useState("all");
   const [query, setQuery] = useState("");
-  // 出处是几百字原文，一次只允许展开一条，避免整张表被撑成滚动地狱
+  // 长文本一次只允许展开一行，且两列一起展开一起收起，避免整张表被撑成滚动地狱
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -516,24 +543,20 @@ export function MetricGovernanceCenter({ entries, categories }: {
             {filtered.map((entry) => {
               const category = metricCategory(categories, entry.categoryId);
               const expanded = expandedId === entry.id;
+              const toggle = () => setExpandedId(expanded ? null : entry.id);
               return (
                 <tr key={entry.id}>
                   <td>
-                    {category ? <span className={`metric-tag tone-${category.tone}`}>{category.label}</span> : null}
-                    <strong>{entry.name}</strong>
+                    <div className="dictionary-name">
+                      {category ? <span className={`metric-tag tone-${category.tone}`}>{category.label}</span> : null}
+                      <strong>{entry.name}</strong>
+                    </div>
                   </td>
-                  <td><div className="metric-multiline">{entry.formula || "—"}</div></td>
+                  <td><DictionaryLongText text={entry.formula} charsPerLine={16} expanded={expanded} onToggle={toggle} /></td>
                   <td><span className={`status-pill ${evidenceTone(entry.evidence)}`}>{entry.evidence || "未标注"}</span></td>
-                  <td>
-                    {entry.source ? (
-                      <div className="metric-source">
-                        <div className={expanded ? "metric-source-text expanded" : "metric-source-text"}>{entry.source}</div>
-                        <button type="button" className="metric-source-toggle" onClick={() => setExpandedId(expanded ? null : entry.id)}>{expanded ? "收起" : "展开全文"}</button>
-                      </div>
-                    ) : "—"}
-                  </td>
-                  <td><div className="metric-multiline">{entry.system || "—"}</div></td>
-                  <td><div className="metric-multiline">{entry.note || "—"}</div></td>
+                  <td><DictionaryLongText text={entry.source} charsPerLine={20} expanded={expanded} onToggle={toggle} /></td>
+                  <td><div className="dictionary-text">{entry.system || "—"}</div></td>
+                  <td><div className="dictionary-text">{entry.note || "—"}</div></td>
                 </tr>
               );
             })}

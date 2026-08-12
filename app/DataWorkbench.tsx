@@ -384,7 +384,7 @@ function Heading({
 }: {
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
   action?: React.ReactNode;
 }) {
   return (
@@ -395,7 +395,7 @@ function Heading({
           {eyebrow}
         </span>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description ? <p>{description}</p> : null}
       </div>
       {action ? <div>{action}</div> : null}
     </header>
@@ -1426,9 +1426,6 @@ export default function DataWorkbench({
               文件数据准备工作区
             </span>
             <h1>Excel、CSV、JSON 数据中心</h1>
-            <p>
-              从业务模板和文件解析开始，逐步完成画像、映射、清洗、隔离修复、文件对账、双角色审核、发布、更正与回滚。
-            </p>
           </div>
           <div className={styles.heroVersion}>
             <span>当前十步进度</span>
@@ -2097,10 +2094,7 @@ export default function DataWorkbench({
           </Panel>
         ) : null}
         {mappingTab === "custom" ? (
-          <Panel
-            title="自定义字段定义"
-            description="名称、code、类型、单位、字典、必填、校验"
-          >
+          <Panel title="自定义字段定义">
             <form
               className={styles.formGrid}
               onSubmit={(event) => {
@@ -2212,7 +2206,6 @@ export default function DataWorkbench({
         {mappingTab === "metric" ? (
           <Panel
             title="指标配置"
-            description="选择字段、聚合 / 公式、分子、分母、维度和版本"
             action={
               <div
                 style={{
@@ -2383,8 +2376,7 @@ export default function DataWorkbench({
               <div>
                 <strong>医院关注指标激活绑定</strong>
                 <p>
-                  原表存在‘或’口径的项目拆分后共形成 20 个指标。先勾选 active
-                  字段定义和已启用依赖指标，再对 catalog
+                  先勾选 active 字段定义和已启用依赖指标，再对 catalog
                   草稿执行“审核启用”；服务端会返回具体阻断原因。
                 </p>
               </div>
@@ -2501,10 +2493,7 @@ export default function DataWorkbench({
           </Panel>
         ) : null}
         {mappingTab === "visual" ? (
-          <Panel
-            title="展示配置"
-            description="KPI、表格、柱状、折线、饼图、散点、热力图；可选维度、系列和排序"
-          >
+          <Panel title="展示配置">
             <div className={styles.visualizationPicker}>
               {chartTypes.map((item) => (
                 <button
@@ -2660,7 +2649,7 @@ export default function DataWorkbench({
         <Heading
           eyebrow="步骤 6 · 可解释规则"
           title="清洗规则"
-          description="先基于真实预览做本地预检，再由服务端配方执行；每一步保留 before、after 和 affected。"
+          description="先基于真实预览做本地预检，再由服务端配方执行。"
           action={
             <div className={styles.actionRow}>
               <button
@@ -2838,7 +2827,7 @@ export default function DataWorkbench({
         {!demoMode && cleaningPreview ? (
           <Panel
             title="本地预检（未写入正式快照）"
-            description="仅用于执行前检查；正式结果以上方服务端记录为准"
+            description="正式结果以上方服务端记录为准"
           >
             <div className={styles.impactList}>
               {cleaningPreview.steps.map((step, index) => (
@@ -3406,7 +3395,7 @@ export default function DataWorkbench({
             <div>
               <strong>本院尚无正式发布版本</strong>
               <p>
-                可一键把示范数据包（设备台账 / 检查 / 收费 / 成本 / 利用五类文件）按完整治理链路
+                可一键把示范数据包（设备台账 / 检查 / 收费 / 成本 / 利用五类文件）
                 导入并直接发布为当前供数版本；全部批次和血缘都会带“示范数据包”标识，
                 已有正式发布版本的医院会被拒绝以防覆盖真实数据。
               </p>
@@ -3432,7 +3421,7 @@ export default function DataWorkbench({
             <strong>确认把示范数据发布为当前供数版本？</strong>
             <p>
               将创建 5 个带“示范数据包”标识的导入批次（设备台账 / 检查 / 收费 / 成本 / 利用），
-              经完整治理链路后发布为 hospital-current-supply 当前供数版本，前台正式模式随即显示这批数据。
+              并发布为 hospital-current-supply 当前供数版本，前台正式模式随即显示这批数据。
               该操作会写入血缘与审计记录；已有正式发布版本的医院会被服务端拒绝，不会覆盖真实数据。
             </p>
             <footer>
@@ -3825,11 +3814,7 @@ export default function DataWorkbench({
     const snapshotsData = collections.snapshots;
     return (
       <>
-        <Heading
-          eyebrow="步骤 10 · 可追溯版本"
-          title="血缘与回滚"
-          description="从文件原件、解析批次、映射、清洗快照、发布版本追溯到更正与回滚。"
-        />
+        <Heading eyebrow="步骤 10 · 可追溯版本" title="血缘与回滚" />
         {lineage.length ? (
           <Panel title="真实血缘事件" description="按服务端审计时间排序">
             <div className={styles.auditList}>

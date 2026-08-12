@@ -989,7 +989,7 @@ export default function BenefitReportCenter({
   return (
     <>
       <div className="page-heading report-page-heading">
-        <div><div className="eyebrow"><FileCheck2 size={15} />医院级正式报告</div><h1>效益分析报告</h1><p>从数据质检、编制复核到院级签发形成完整证据链；正式版本冻结快照，导出与操作全程留痕。</p></div>
+        <div><div className="eyebrow"><FileCheck2 size={15} />医院级正式报告</div><h1>效益分析报告</h1></div>
         <div className="heading-actions">{canManage ? <button className="secondary-button" disabled={!editable || busyAction === "save"} onClick={() => saveDraft()}><Save size={17} />{busyAction === "save" ? "保存中…" : "保存草稿"}</button> : null}<button className="secondary-button" onClick={() => setTab("templates")}><Archive size={17} />选择模板</button><button className="primary-button" disabled={exporting || !canExport} onClick={exportWord}><Download size={17} />{exporting ? "正在生成…" : currentReport?.status === "issued" ? "导出正式版" : "导出预览版"}</button></div>
       </div>
 
@@ -999,7 +999,7 @@ export default function BenefitReportCenter({
             <span><CalendarClock size={21} /></span>
             <div>
               <strong>一键生成月度报告</strong>
-              <small>目标期间 {monthlyTargetPeriod} · 自动选用本院默认或月度模板，按全院范围生成草稿并直接进入编制</small>
+              <small>目标期间 {monthlyTargetPeriod} · 自动选用本院默认或月度模板，按全院范围生成草稿</small>
             </div>
             <button className="primary-button" disabled={Boolean(busyAction)} onClick={generateMonthlyReport}><CalendarClock size={16} />一键生成月度报告</button>
           </div>
@@ -1162,12 +1162,12 @@ export default function BenefitReportCenter({
           </section>
 
           <section className="template-filter-bar" aria-label="模板分类筛选">
-            <div><strong>按报告用途分类</strong><small>医院等级、设备品类和数据成熟度作为适用条件，不直接复制成模板。</small></div>
+            <div><strong>按报告用途分类</strong></div>
             <nav><button className={templateCategoryFilter === "all" ? "active" : ""} onClick={() => setTemplateCategoryFilter("all")}>全部</button>{templateCategories.map((category) => <button className={templateCategoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setTemplateCategoryFilter(category.id)}>{category.name}</button>)}</nav>
           </section>
 
           <div className="platform-template-grid">
-            {!filteredPlatformTemplates.length ? <div className="panel template-empty-catalog"><Archive size={28} /><strong>该分类尚无已发布模板</strong><p>后续新增 PDF / Word 会先进入该分类的待确认草案，完成字段、公式、数据来源和试算校验后再发布。</p></div> : null}
+            {!filteredPlatformTemplates.length ? <div className="panel template-empty-catalog"><Archive size={28} /><strong>该分类尚无已发布模板</strong></div> : null}
             {filteredPlatformTemplates.map((template) => {
               const category = templateCategories.find((item) => item.id === template.categoryId);
               const matches = template.sourceRequirements.map((item) => {
@@ -1204,10 +1204,10 @@ export default function BenefitReportCenter({
           </div>
 
           <section className="panel hospital-template-assignments">
-            <div className="panel-heading"><div><h3>本院已启用方案</h3><p>这里明确记录“哪家医院用哪个分类和版本”；默认方案会用于该医院新建报告。</p></div><span className="page-badge"><Archive size={15} />{templates.length} 个方案</span></div>
+            <div className="panel-heading"><div><h3>本院已启用方案</h3><p>默认方案用于该医院新建报告。</p></div><span className="page-badge"><Archive size={15} />{templates.length} 个方案</span></div>
             {templates.length ? <div className="hospital-template-table">
               {templates.map((template) => <article key={template.id}><div><strong>{template.name}{template.isDefault ? <i>本院默认</i> : null}</strong><small>{template.config.template.categoryLabel} · V{template.config.template.version} · {template.config.costScope === "non_personnel" ? "非人员成本" : "全成本"}</small></div><p>{template.description || "医院适配配置"}</p><span>{displayTime(template.updatedAt)}</span><div><button className="secondary-button compact-button" disabled={!editable} onClick={() => applyTemplate(template)}>应用</button>{canManage && !template.isDefault ? <button className="secondary-button compact-button" disabled={busyAction === "template"} onClick={() => setHospitalDefault(template)}>设默认</button> : null}</div></article>)}
-            </div> : <div className="report-ledger-empty compact"><Archive size={25} /><strong>本院尚未启用模板</strong><p>从上方平台模板选择“启用到本院”或“设为本院默认”。</p></div>}
+            </div> : <div className="report-ledger-empty compact"><Archive size={25} /><strong>本院尚未启用模板</strong></div>}
           </section>
         </div>
       ) : null}
@@ -1234,7 +1234,7 @@ export default function BenefitReportCenter({
             </fieldset>
           </section>
           <section className="panel report-config-card">
-            <div className="panel-heading"><div><h3>分析阈值</h3><p>阈值同时影响纳入范围、问题识别与评价建议。</p></div><SlidersHorizontal size={20} /></div>
+            <div className="panel-heading"><div><h3>分析阈值</h3></div><SlidersHorizontal size={20} /></div>
             <fieldset className="report-config-fields" disabled={!editable}><label>最低纳入原值（万元）<input type="number" min="0" value={config.minimumInvestment} onChange={(event) => updateConfig("minimumInvestment", Number(event.target.value))} /></label><label>良好使用率管理线（%）<input type="number" min="0" max="100" value={config.goodUtilization} onChange={(event) => updateConfig("goodUtilization", Number(event.target.value))} /></label><label>回本年限预警线（年）<input type="number" min="1" value={config.warningPaybackYears} onChange={(event) => updateConfig("warningPaybackYears", Number(event.target.value))} /></label></fieldset>
             <div className="report-formula-note"><CircleAlert size={16} />会计结余用于经营评价；回收期应优先使用现金贡献，正式出具前需由财务复核。</div>
           </section>
@@ -1250,14 +1250,14 @@ export default function BenefitReportCenter({
               <label className="template-default-check"><input type="checkbox" disabled={!editable} checked={templateAsDefault} onChange={(event) => setTemplateAsDefault(event.target.checked)} /><span>设为 {hospital.shortName} 新建报告的默认模板</span></label>
               <button className="primary-button" disabled={!editable || busyAction === "template"} onClick={saveTemplate}><Save size={16} />保存医院方案</button>
             </div>
-            <div className="report-template-list">{templates.length ? templates.map((template) => <article key={template.id}><div><strong>{template.name}{template.isDefault ? <i>本院默认</i> : null}</strong><small>{template.config.template.categoryLabel} · V{template.config.template.version} · {displayTime(template.updatedAt)}</small></div><button className="secondary-button" disabled={!editable} onClick={() => applyTemplate(template)}>应用</button></article>) : <p>尚未保存医院适配方案，可先到“模板库”启用平台模板。</p>}</div>
+            <div className="report-template-list">{templates.length ? templates.map((template) => <article key={template.id}><div><strong>{template.name}{template.isDefault ? <i>本院默认</i> : null}</strong><small>{template.config.template.categoryLabel} · V{template.config.template.version} · {displayTime(template.updatedAt)}</small></div><button className="secondary-button" disabled={!editable} onClick={() => applyTemplate(template)}>应用</button></article>) : <p>尚未保存医院适配方案。</p>}</div>
           </section>
         </div>
       ) : null}
 
       {tab === "quality" ? (
         <div className="report-quality-layout">
-          <section className="report-quality-score panel"><div className={`quality-score-ring ${quality.blockers ? "blocked" : "ready"}`} style={{ "--quality-score": quality.score } as CSSProperties}><strong>{quality.score}</strong><span>可信度</span></div><div><span className="eyebrow"><ListChecks size={15} />签发前数据门禁</span><h2>{quality.blockers ? "当前报告暂不能提交" : "已通过硬性门禁"}</h2><p>安全合规、设备唯一标识、财务口径和分析范围是硬门槛；经济效益再高也不能抵消安全风险。</p></div><div className="quality-counts"><span><strong>{quality.blockers}</strong>阻断</span><span><strong>{quality.warnings}</strong>预警</span><span><strong>{quality.passed}</strong>通过</span></div></section>
+          <section className="report-quality-score panel"><div className={`quality-score-ring ${quality.blockers ? "blocked" : "ready"}`} style={{ "--quality-score": quality.score } as CSSProperties}><strong>{quality.score}</strong><span>可信度</span></div><div><span className="eyebrow"><ListChecks size={15} />签发前数据门禁</span><h2>{quality.blockers ? "当前报告暂不能提交" : "已通过硬性门禁"}</h2><p>安全合规、设备唯一标识、财务口径和分析范围是硬门槛。</p></div><div className="quality-counts"><span><strong>{quality.blockers}</strong>阻断</span><span><strong>{quality.warnings}</strong>预警</span><span><strong>{quality.passed}</strong>通过</span></div></section>
           <section className="panel report-quality-checks"><div className="panel-heading"><div><h3>检查结果</h3><p>每次保存都会把检查结果与计算快照一并固化到当前版本。</p></div><span className={`page-badge ${quality.blockers ? "warning" : ""}`}>{quality.blockers ? <CircleAlert size={15} /> : <ShieldCheck size={15} />}{quality.blockers ? "需要处理" : "允许提交"}</span></div><div className="quality-check-list">{quality.checks.map((check) => <article className={`quality-${check.level}`} key={check.id}><span>{check.level === "passed" ? <CheckCircle2 size={18} /> : check.level === "warning" ? <CircleAlert size={18} /> : <XCircle size={18} />}</span><div><small>{check.domain}</small><strong>{check.label}</strong><p>{check.detail}</p></div><div className="quality-check-action"><i>{check.level === "passed" ? "通过" : check.level === "warning" ? "预警" : "阻断"}</i>{check.level !== "passed" && ["identity", "safety", "insight-lineage"].includes(check.id) && onOpenEquipment ? <button onClick={onOpenEquipment}>去设备台账</button> : null}{["sources", "collection-profiles"].includes(check.id) && onOpenSources ? <button onClick={onOpenSources}>去数据口径</button> : null}</div></article>)}</div></section>
           <section className={`report-warning-ack panel ${warningAcknowledged ? "acknowledged" : ""}`}><div><ClipboardCheck size={20} /><span><strong>人工与待发布文件复核确认</strong><small>确认仅表示已核对来源、截止时间和调整原因，不会把预警改成“已发布事实”。</small></span></div><label><input type="checkbox" disabled={!editable || !quality.warnings} checked={warningAcknowledged} onChange={(event) => setWarningAcknowledged(event.target.checked)} /><span>{warningAcknowledged ? "已确认本版本预警" : quality.warnings ? "我已复核上述预警并接受披露" : "当前没有需要确认的预警"}</span></label></section>
         </div>
@@ -1266,16 +1266,16 @@ export default function BenefitReportCenter({
       {tab === "ledger" ? (
         <div className="report-ledger-layout">
           <section className="report-readiness-summary"><div><span>我的草稿</span><strong>{reports.filter((report) => report.status === "draft").length}</strong><small>可继续编辑</small></div><div><span>待复核</span><strong>{reports.filter((report) => report.status === "pending_review").length}</strong><small>等待财务 / 运营处理</small></div><div><span>待签发</span><strong>{reports.filter((report) => report.status === "approved").length}</strong><small>等待院级确认</small></div><div><span>已签发</span><strong>{reports.filter((report) => report.status === "issued").length}</strong><small>正式冻结版本</small></div></section>
-          <section className="panel report-ledger-table"><div className="panel-heading"><div><h3>医院报告台账</h3><p>已提交版本不可覆盖；退回或签发后通过“新建修订版”继续完善。</p></div><span className="page-badge"><FileClock size={15} />{ledgerLoading ? "加载中" : `${reports.length} 个版本`}</span></div>{reports.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>报告 / 版本</th><th>期间与范围</th><th>数据质量</th><th>状态</th><th>责任链</th><th>更新时间</th><th /></tr></thead><tbody>{reports.map((report) => <tr key={report.id} className={report.id === currentReportId ? "selected-row" : ""}><td><strong>{report.title}</strong><small>{reportNumber(hospital, report)} · V{report.version}</small></td><td>{report.period}<small>{report.scope === "hospital" ? "全院重点设备" : report.scope === "category" ? `设备品类：${report.config.deviceCategory || "未指定"}` : "单台设备"}</small></td><td><span className={`quality-mini ${report.blockingCount ? "blocked" : "ready"}`}>{report.qualityScore} 分</span><small>{report.blockingCount} 阻断 · {report.warningCount} 预警</small></td><td><span className={`report-status-badge status-${report.status}`}>{reportStatusMeta[report.status].label}</span></td><td>{report.createdBy}<small>{report.reviewedBy ? `复核：${report.reviewedBy}` : "尚未复核"}{report.approvedBy ? ` · 签发：${report.approvedBy}` : ""}</small></td><td>{displayTime(report.updatedAt)}</td><td><button className="secondary-button compact-button" onClick={() => openReport(report)}>打开</button></td></tr>)}</tbody></table></div> : <div className="report-ledger-empty"><FileText size={28} /><strong>当前医院还没有报告版本</strong><p>配置本次报告后点击“保存草稿”，即可进入医院台账。</p></div>}</section>
+          <section className="panel report-ledger-table"><div className="panel-heading"><div><h3>医院报告台账</h3><p>已提交版本不可覆盖；退回或签发后通过“新建修订版”继续完善。</p></div><span className="page-badge"><FileClock size={15} />{ledgerLoading ? "加载中" : `${reports.length} 个版本`}</span></div>{reports.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>报告 / 版本</th><th>期间与范围</th><th>数据质量</th><th>状态</th><th>责任链</th><th>更新时间</th><th /></tr></thead><tbody>{reports.map((report) => <tr key={report.id} className={report.id === currentReportId ? "selected-row" : ""}><td><strong>{report.title}</strong><small>{reportNumber(hospital, report)} · V{report.version}</small></td><td>{report.period}<small>{report.scope === "hospital" ? "全院重点设备" : report.scope === "category" ? `设备品类：${report.config.deviceCategory || "未指定"}` : "单台设备"}</small></td><td><span className={`quality-mini ${report.blockingCount ? "blocked" : "ready"}`}>{report.qualityScore} 分</span><small>{report.blockingCount} 阻断 · {report.warningCount} 预警</small></td><td><span className={`report-status-badge status-${report.status}`}>{reportStatusMeta[report.status].label}</span></td><td>{report.createdBy}<small>{report.reviewedBy ? `复核：${report.reviewedBy}` : "尚未复核"}{report.approvedBy ? ` · 签发：${report.approvedBy}` : ""}</small></td><td>{displayTime(report.updatedAt)}</td><td><button className="secondary-button compact-button" onClick={() => openReport(report)}>打开</button></td></tr>)}</tbody></table></div> : <div className="report-ledger-empty"><FileText size={28} /><strong>当前医院还没有报告版本</strong></div>}</section>
           {serverPersistence && canExport ? (
             <section className="panel report-artifact-ledger">
-              <div className="panel-heading"><div><h3>云端报告文件</h3><p>每个文件均标明报告号、版本和签发状态，正式件不会被不同内容覆盖。</p></div><span className="page-badge"><Archive size={15} />{artifactLoading ? "加载中" : `${artifacts.length} 个文件`}</span></div>
+              <div className="panel-heading"><div><h3>云端报告文件</h3><p>正式件不会被不同内容覆盖。</p></div><span className="page-badge"><Archive size={15} />{artifactLoading ? "加载中" : `${artifacts.length} 个文件`}</span></div>
               {artifacts.length ? (
                 <div className="report-artifact-list">{artifacts.map((artifact) => {
                   const linkedReport = reports.find((report) => report.id === artifact.reportId);
                   return <article key={artifact.id}><span className="source-icon"><FileText size={17} /></span><div><strong>{artifact.fileName}</strong><small>{linkedReport ? `${reportNumber(hospital, linkedReport)} · V${linkedReport.version} · ${reportStatusMeta[linkedReport.status].label}` : "历史文件 · 未关联有效报告版本"}</small><small>{displayFileSize(artifact.sizeBytes)} · {displayTime(artifact.createdAt)} · SHA-256 {artifact.sha256.slice(0, 12)}…</small></div><a className="secondary-button compact-button" href={`/api/report-artifacts?hospitalId=${encodeURIComponent(hospital.id)}&artifactId=${encodeURIComponent(artifact.id)}`}><Download size={14} />下载</a></article>;
                 })}</div>
-              ) : <div className="report-ledger-empty compact"><Archive size={25} /><strong>还没有云端文件</strong><p>保存报告后导出 Word 或 CSV，文件会自动出现在这里。</p></div>}
+              ) : <div className="report-ledger-empty compact"><Archive size={25} /><strong>还没有云端文件</strong></div>}
             </section>
           ) : null}
           <div className="report-ledger-bottom"><section className="panel"><div className="panel-heading"><div><h3>审批与导出记录</h3></div><Clock3 size={19} /></div><div className="report-event-list">{events.length ? events.slice(0, 12).map((event) => <article key={event.id}><i /><div><strong>{event.detail}</strong><small>{event.actor} · {displayTime(event.createdAt)}</small></div><span>{event.action}</span></article>) : <p>暂无操作记录。</p>}</div></section><section className="panel"><div className="panel-heading"><div><h3>职责分离规则</h3><p>服务端在每次状态变更时重新校验医院成员关系。</p></div><ShieldCheck size={19} /></div><div className="report-duty-rules"><p><CheckCircle2 size={16} />编制人不能复核本人提交的报告</p><p><CheckCircle2 size={16} />复核人不能签发本人复核的报告</p><p><CheckCircle2 size={16} />跨医院访问和操作默认拒绝</p><p><CheckCircle2 size={16} />正式签发后内容和快照不可覆盖</p></div></section></div>
@@ -1288,7 +1288,7 @@ export default function BenefitReportCenter({
             <div><span>模板字段总量</span><strong>{totalFields}</strong><small>由参考模板反推的数据项</small></div><div><span>系统字段已建模</span><strong>{coveredFields}</strong><small>{completeness.toFixed(0)}% 建设覆盖；本报告质量见“数据质检”</small></div><div><span>已发布文件包</span><strong>{model.publishedFileCoverage.mode === "published" ? model.publishedFileCoverage.readyIds.length : model.sourceCoverage.connected}</strong><small>{model.publishedFileCoverage.mode === "published" ? `${model.publishedFileCoverage.missingIds.length} 个必需文件待发布` : `${model.sourceCoverage.pending} 待配置 · ${model.sourceCoverage.manual} 人工填报`}</small></div><div><span>相关采集模板</span><strong>{model.analysisProfileCoverage.enabled}/{model.analysisProfileCoverage.total}</strong><small>{model.analysisProfileCoverage.pending} 个尚未启用 · {model.analysisProfileCoverage.missing.length} 个缺失</small></div>
           </section>
           {activePlatformTemplate ? <section className="panel">
-            <div className="panel-heading"><div><h3>当前模板需要的逻辑文件包</h3><p>模板只声明标准字段需求；{hospital.shortName}在“文件口径说明”准备相应 Excel/CSV/JSON，并由数据准备中心映射、复核与发布。</p></div>{onOpenSources ? <button className="secondary-button compact-button" onClick={onOpenSources}><Database size={14} />查看文件口径</button> : null}</div>
+            <div className="panel-heading"><div><h3>当前模板需要的逻辑文件包</h3><p>模板只声明标准字段需求；{hospital.shortName}准备对应 Excel/CSV/JSON，由数据准备中心映射复核后发布。</p></div>{onOpenSources ? <button className="secondary-button compact-button" onClick={onOpenSources}><Database size={14} />查看文件口径</button> : null}</div>
             <div className="template-source-mapping-grid">{activePlatformTemplate.sourceRequirements.map((item) => {
               const matched = sourceMatch(item.sourceId);
               const status = model.publishedFileCoverage.mode === "published" ? model.publishedFileCoverage.statusByRequirement[item.sourceId] ? "已连接" : "待配置" : matched?.match?.status ?? "待配置";
@@ -1296,7 +1296,7 @@ export default function BenefitReportCenter({
             })}</div>
           </section> : null}
           <section className="panel">
-            <div className="panel-heading"><div><h3>可复用字段包</h3><p>字段按业务域公共维护，多个模板复用同一份字段定义和文件映射，避免每新增一个模板就重复整理表格。</p></div><span className="chart-note">{config.template.fieldPackIds.length} 个已启用</span></div>
+            <div className="panel-heading"><div><h3>可复用字段包</h3></div><span className="chart-note">{config.template.fieldPackIds.length} 个已启用</span></div>
             <div className="template-field-pack-grid">{fieldPackCatalog.filter((pack) => config.template.fieldPackIds.includes(pack.id)).map((pack) => <article key={pack.id}><span>{pack.name}</span><strong>{pack.representativeFields.length} 个代表字段</strong><p>{pack.description}</p><small>{pack.representativeFields.join("、")}</small></article>)}</div>
           </section>
           <section className="panel">

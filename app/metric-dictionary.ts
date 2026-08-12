@@ -51,6 +51,12 @@ export type MetricDictionaryEntry = {
   system: string;
   /** 备注 */
   note: string;
+  /**
+   * 软删除时间戳（ISO 字符串），有值即在回收站里。
+   * 口径删错了报表就再也说不清当初按什么算的，所以删除只打时间戳、条目原样留在数据里，
+   * 主列表和回收站都从同一份数组里筛。
+   */
+  deletedAt?: string;
 };
 
 export const DEFAULT_METRIC_DICTIONARY: MetricDictionaryEntry[] = [
@@ -255,4 +261,16 @@ export function evidenceTone(evidence: string): "success" | "warning" | "neutral
   if (evidence.startsWith("是")) return "success";
   if (evidence.includes("部分")) return "warning";
   return "neutral";
+}
+
+/** 主列表只认没打删除时间戳的条目。 */
+export function activeMetrics(entries: readonly MetricDictionaryEntry[]): MetricDictionaryEntry[] {
+  return entries.filter((entry) => !entry.deletedAt);
+}
+
+/** 回收站按删除时间倒序：刚误删的那条排最前面，还原时不用翻列表。 */
+export function deletedMetrics(entries: readonly MetricDictionaryEntry[]): MetricDictionaryEntry[] {
+  return entries
+    .filter((entry) => Boolean(entry.deletedAt))
+    .sort((left, right) => (right.deletedAt ?? "").localeCompare(left.deletedAt ?? ""));
 }

@@ -422,7 +422,6 @@ test("exposes an integration-ready accessible React surface", async () => {
   assert.match(component, /自定义字段定义/);
   assert.match(component, /名称.*code.*类型.*单位.*字典.*必填.*校验/s);
   assert.match(component, /指标配置/);
-  assert.match(component, /聚合 \/ 公式/);
   assert.match(component, /分子.*分母.*维度.*版本/s);
   assert.match(component, /展示配置/);
   for (const chartType of [

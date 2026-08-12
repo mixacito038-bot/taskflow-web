@@ -1,9 +1,13 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, BookOpen, CircleAlert, Plus, Save, Tags, Trash2, X } from "lucide-react";
+import { ArchiveRestore, ArrowDown, ArrowUp, BookOpen, ChevronDown, CircleAlert, Plus, RotateCcw, Save, Tags, Trash2, X } from "lucide-react";
 
 import {
+  activeMetrics,
+  DEFAULT_METRIC_CATEGORIES,
+  DEFAULT_METRIC_DICTIONARY,
+  deletedMetrics,
   evidenceTone,
   METRIC_CATEGORY_TONES,
   MetricCategory,
@@ -71,6 +75,24 @@ function resequence(list: MetricDictionaryEntry[]): MetricDictionaryEntry[] {
   return list.map((item, position) => ({ ...item, seq: position + 1 }));
 }
 
+/**
+ * 删除时间只给到分钟：回收站里判断"是不是刚才误删的那条"够用。
+ * 不用 toLocaleString 是因为服务端和浏览器的默认区域设置可能不一致，会引起水合告警。
+ */
+function formatDeletedAt(value: string | undefined): string {
+  if (!value) return "—";
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())} ${pad(time.getHours())}:${pad(time.getMinutes())}`;
+}
+
+/** 确认弹窗的三种去向：软删除、彻底删除、恢复出厂口径，都走同一个弹窗。 */
+type ConfirmAction =
+  | { kind: "remove"; entry: MetricDictionaryEntry }
+  | { kind: "purge"; entry: MetricDictionaryEntry }
+  | { kind: "reset" };
+
 function emptyEntry(categoryId: string, seq: number): MetricDictionaryEntry {
   return { id: "", seq, name: "", categoryId, formula: "", evidence: "", source: "", system: "", note: "" };
 }
@@ -110,12 +132,14 @@ export default function MetricDictionarySettings({
   notify: (message: string, tone?: "info" | "error") => void;
   onBack: () => void;
 }) {
-  const ordered = useMemo(() => [...entries].sort((left, right) => left.seq - right.seq), [entries]);
+  const ordered = useMemo(() => activeMetrics(entries).sort((left, right) => left.seq - right.seq), [entries]);
+  const trashed = useMemo(() => deletedMetrics(entries), [entries]);
+  // 分类占用数只算在用的条目：回收站里的条目不该拦着分类被删。
   const usage = useMemo(() => {
     const counter = new Map<string, number>();
-    for (const entry of entries) counter.set(entry.categoryId, (counter.get(entry.categoryId) ?? 0) + 1);
+    for (const entry of ordered) counter.set(entry.categoryId, (counter.get(entry.categoryId) ?? 0) + 1);
     return counter;
-  }, [entries]);
+  }, [ordered]);
 
   const [entryDraft, setEntryDraft] = useState<MetricDictionaryEntry | null>(null);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -123,6 +147,16 @@ export default function MetricDictionarySettings({
   const [evidenceExtra, setEvidenceExtra] = useState("");
   const [categoryDraft, setCategoryDraft] = useState<MetricCategory | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+
+  /**
+   * 回收站条目不参与重排：它们的 seq 只是删除前的历史位置，还原时重新接到末尾。
+   * 所有写回都要带上回收站，否则一次上移就会把已删除条目一起抹掉。
+   */
+  function commitEntries(nextActive: MetricDictionaryEntry[], nextTrashed: MetricDictionaryEntry[] = trashed) {
+    onEntriesChange([...resequence(nextActive), ...nextTrashed]);
+  }
 
   function openCreateEntry() {
     const first = categories[0];
@@ -164,9 +198,9 @@ export default function MetricDictionarySettings({
     };
     // 同名不拦：不同院区可能真有同名口径，只在提示里说清楚，让填报人自己判断。
     const duplicated = ordered.some((item) => item.id !== editingEntryId && item.name === name);
-    onEntriesChange(resequence(editingEntryId
+    commitEntries(editingEntryId
       ? ordered.map((item) => item.id === editingEntryId ? candidate : item)
-      : [...ordered, candidate]));
+      : [...ordered, candidate]);
     notify(duplicated
       ? `指标「${name}」已保存；字典里已有同名指标，若不是不同院区的同一口径建议改名区分`
       : editingEntryId ? `指标「${name}」已保存` : `指标「${name}」已加入字典`);
@@ -174,8 +208,43 @@ export default function MetricDictionarySettings({
   }
 
   function removeEntry(entry: MetricDictionaryEntry) {
-    onEntriesChange(resequence(ordered.filter((item) => item.id !== entry.id)));
-    notify(`已删除指标「${entry.name}」`);
+    const stamped: MetricDictionaryEntry = { ...entry, deletedAt: new Date().toISOString() };
+    commitEntries(ordered.filter((item) => item.id !== entry.id), [stamped, ...trashed]);
+    notify(`已把指标「${entry.name}」移入回收站，可在页面下方还原`);
+  }
+
+  function restoreEntry(entry: MetricDictionaryEntry) {
+    // 接到列表末尾：原来的序号早被别的条目占了，硬插回原位会把整张表的顺序搅乱。
+    const restored: MetricDictionaryEntry = { ...entry, seq: ordered.length + 1 };
+    delete restored.deletedAt;
+    commitEntries([...ordered, restored], trashed.filter((item) => item.id !== entry.id));
+    notify(metricCategory(categories, restored.categoryId)
+      ? `指标「${restored.name}」已还原到列表末尾`
+      : `指标「${restored.name}」已还原到列表末尾；它原来的分类已被删除，请重新指定分类`);
+  }
+
+  function purgeEntry(entry: MetricDictionaryEntry) {
+    commitEntries(ordered, trashed.filter((item) => item.id !== entry.id));
+    notify(`已彻底删除指标「${entry.name}」`);
+  }
+
+  /**
+   * 分类必须跟着一起恢复：默认口径挂的是出厂分类 id，只覆盖条目不覆盖分类，
+   * 17 条默认指标会全部变成"分类已删除"的无主指标。
+   * 出厂条目字段都是标量，逐条浅拷贝就是深拷贝，不会让页面改到常量本身。
+   */
+  function restoreDefaults() {
+    onCategoriesChange(DEFAULT_METRIC_CATEGORIES.map((category) => ({ ...category })));
+    onEntriesChange(DEFAULT_METRIC_DICTIONARY.map((entry) => ({ ...entry })));
+    notify(`已恢复平台出厂的 ${DEFAULT_METRIC_DICTIONARY.length} 条默认口径和 ${DEFAULT_METRIC_CATEGORIES.length} 个默认分类`);
+  }
+
+  function runConfirmAction() {
+    if (!confirmAction) return;
+    if (confirmAction.kind === "remove") removeEntry(confirmAction.entry);
+    else if (confirmAction.kind === "purge") purgeEntry(confirmAction.entry);
+    else restoreDefaults();
+    setConfirmAction(null);
   }
 
   function moveEntry(entry: MetricDictionaryEntry, delta: number) {
@@ -184,7 +253,7 @@ export default function MetricDictionarySettings({
     if (index === -1 || target < 0 || target >= ordered.length) return;
     const next = [...ordered];
     [next[index], next[target]] = [next[target], next[index]];
-    onEntriesChange(resequence(next));
+    commitEntries(next);
   }
 
   function openCreateCategory() {
@@ -241,6 +310,7 @@ export default function MetricDictionarySettings({
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={onBack}>返回</button>
+          {canManage ? <button className="secondary-button" onClick={() => setConfirmAction({ kind: "reset" })}><RotateCcw size={16} />恢复默认口径</button> : null}
           {canManage ? <button className="primary-button" onClick={openCreateEntry}><Plus size={17} />新增指标</button> : null}
         </div>
       </div>
@@ -287,7 +357,7 @@ export default function MetricDictionarySettings({
                           <button className="icon-button" aria-label={`上移${entry.name}`} disabled={index === 0} onClick={() => moveEntry(entry, -1)}><ArrowUp size={15} /></button>
                           <button className="icon-button" aria-label={`下移${entry.name}`} disabled={index === ordered.length - 1} onClick={() => moveEntry(entry, 1)}><ArrowDown size={15} /></button>
                           <button className="text-button" onClick={() => openEditEntry(entry)}>编辑</button>
-                          <button className="icon-button danger" aria-label={`删除${entry.name}`} onClick={() => removeEntry(entry)}><Trash2 size={15} /></button>
+                          <button className="icon-button danger" aria-label={`删除${entry.name}`} onClick={() => setConfirmAction({ kind: "remove", entry })}><Trash2 size={15} /></button>
                         </>
                       ) : <span className="chart-note">只读</span>}
                     </td>
@@ -346,6 +416,48 @@ export default function MetricDictionarySettings({
             <p>分类是指标的分组方式，比如「经济效益」「使用效率」「设备保障」。{canManage ? "先建一个分类，才能开始录指标。" : "创建分类需要「数据口径」权限。"}</p>
           </div>
         )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h3>回收站</h3>
+            <p>{trashed.length ? `共 ${trashed.length} 条已删除指标；还原后回到主列表末尾` : "没有已删除的指标"}</p>
+          </div>
+          <button className="secondary-button compact-action" aria-expanded={trashOpen} onClick={() => setTrashOpen((open) => !open)}>
+            <ChevronDown size={15} style={{ transform: trashOpen ? "rotate(180deg)" : "none", transition: "transform .16s ease" }} />
+            {trashOpen ? "收起回收站" : `展开回收站（${trashed.length}）`}
+          </button>
+        </div>
+        {trashOpen ? (trashed.length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>指标名称</th><th>分类</th><th>计算口径</th><th>删除时间</th><th className="action-col action-wide">操作</th></tr></thead>
+              <tbody>{trashed.map((entry) => (
+                <tr key={entry.id}>
+                  <td><strong>{entry.name}</strong></td>
+                  <td><CategoryChip category={metricCategory(categories, entry.categoryId)} /></td>
+                  <td title={entry.formula || undefined}>{preview(entry.formula, 40)}</td>
+                  <td>{formatDeletedAt(entry.deletedAt)}</td>
+                  <td className="action-col action-wide">
+                    {canManage ? (
+                      <>
+                        <button className="text-button" onClick={() => restoreEntry(entry)}><ArchiveRestore size={15} />还原</button>
+                        <button className="icon-button danger" aria-label={`彻底删除${entry.name}`} onClick={() => setConfirmAction({ kind: "purge", entry })}><Trash2 size={15} /></button>
+                      </>
+                    ) : <span className="chart-note">只读</span>}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="ledger-empty">
+            <Trash2 size={26} />
+            <strong>回收站是空的</strong>
+            <p>在指标条目里删除的口径会先落到这里，随时可以还原；确认不再需要时再彻底删除。口径删错会让报表说不清算法，所以删除默认都是可逆的。</p>
+          </div>
+        )) : null}
       </section>
 
       {entryDraft ? (
@@ -449,6 +561,33 @@ export default function MetricDictionarySettings({
               <button className="primary-button" type="submit"><Save size={17} />保存分类</button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {confirmAction ? (
+        <div className="modal-backdrop confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="metric-confirm-title">
+          <section className="confirmation-dialog">
+            <span className="confirmation-icon">{confirmAction.kind === "reset" ? <RotateCcw size={22} /> : <Trash2 size={22} />}</span>
+            <div>
+              <small>{confirmAction.kind === "remove" ? "移入回收站" : confirmAction.kind === "purge" ? "不可恢复" : "覆盖当前口径"}</small>
+              <h2 id="metric-confirm-title">{confirmAction.kind === "remove"
+                ? `删除指标「${confirmAction.entry.name}」？`
+                : confirmAction.kind === "purge"
+                  ? `彻底删除「${confirmAction.entry.name}」？`
+                  : "恢复平台默认口径？"}</h2>
+              <p>{confirmAction.kind === "remove"
+                ? `第 ${confirmAction.entry.seq} 条「${confirmAction.entry.name}」会从指标条目里移除、其余条目的序号自动重排。它不会立刻消失，而是进入页面下方的回收站，需要时可以还原。`
+                : confirmAction.kind === "purge"
+                  ? `「${confirmAction.entry.name}」会从字典里永久移除，回收站里也不再保留，之后无法还原。若这条口径以后可能还要用，建议先留在回收站里。`
+                  : `当前字典会被平台出厂的 ${DEFAULT_METRIC_DICTIONARY.length} 条默认口径整体覆盖：自己新增或改过的条目、以及回收站里已删除的条目都会被直接清空，不进回收站、也无法还原。分类同时恢复为 ${DEFAULT_METRIC_CATEGORIES.length} 个出厂分类，否则默认口径会挂到不存在的分类上变成无主指标。`}</p>
+            </div>
+            <footer>
+              <button className="secondary-button" onClick={() => setConfirmAction(null)}>取消</button>
+              <button className="danger-button" onClick={runConfirmAction}>{confirmAction.kind === "reset"
+                ? "确认恢复默认"
+                : confirmAction.kind === "purge" ? "彻底删除" : "确认删除"}</button>
+            </footer>
+          </section>
         </div>
       ) : null}
     </>

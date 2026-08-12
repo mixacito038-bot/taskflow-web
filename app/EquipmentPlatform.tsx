@@ -131,6 +131,7 @@ import {
   validateFieldValue,
 } from "./device-ledger-fields";
 import {
+  activeMetrics,
   DEFAULT_METRIC_CATEGORIES,
   DEFAULT_METRIC_DICTIONARY,
   MetricCategory,
@@ -2965,7 +2966,7 @@ function DataSourceManagement({
           <button className="secondary-button" onClick={downloadFieldTemplate}><FileSpreadsheet size={17} />下载文件字段模板</button>
         </div>
       </div>
-      <MetricGovernanceCenter entries={metricEntries} categories={metricCategories} />
+      <MetricGovernanceCenter entries={activeMetrics(metricEntries)} categories={metricCategories} />
     </>
   );
 }
