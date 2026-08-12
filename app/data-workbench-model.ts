@@ -86,6 +86,14 @@ export const FILE_BUSINESS_TEMPLATES: readonly FileBusinessTemplate[] = [
     requiredFields: ["检查号", "设备编号", "完成时间"],
   },
   {
+    code: "device_workload",
+    dataDomain: "exam",
+    name: "设备业务量与收入",
+    domain: "服务与效率",
+    description: "按设备和期间上传检查人数、阳性数与收入，供设备数据填报页回填",
+    requiredFields: ["设备编号", "期间", "检查人数/项目"],
+  },
+  {
     code: "billing_revenue",
     dataDomain: "revenue",
     name: "收费与收入",
@@ -365,6 +373,47 @@ export const FILE_TEMPLATE_FIELDS: Readonly<
     {
       code: "department",
       name: "执行科室",
+      type: "string",
+      required: false,
+      aliases: ["科室"],
+    },
+  ],
+  device_workload: [
+    recordType("exam"),
+    commonDevice(),
+    {
+      // 期间是字符串而非 date：需要同时接受月、周、季、日等多种粒度的期间键，
+      // 例如 2026-07 / 2026-W28 / 2026-Q3 / 2026-07-15，date 类型只认得完整日期。
+      code: "period",
+      name: "期间",
+      type: "string",
+      required: true,
+      aliases: ["月份", "统计期间", "会计期间"],
+    },
+    {
+      code: "examVolume",
+      name: "检查人数/项目",
+      type: "integer",
+      required: true,
+      aliases: ["检查人次", "检查例数", "月检查人数", "工作量"],
+    },
+    {
+      code: "positiveCount",
+      name: "检阳性数",
+      type: "integer",
+      required: false,
+      aliases: ["阳性例数", "阳性数"],
+    },
+    {
+      code: "totalRevenue",
+      name: "总收入（元）",
+      type: "decimal",
+      required: false,
+      aliases: ["收入", "设备收入", "总收入"],
+    },
+    {
+      code: "department",
+      name: "责任科室",
       type: "string",
       required: false,
       aliases: ["科室"],

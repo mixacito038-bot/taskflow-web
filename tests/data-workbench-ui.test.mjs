@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -38,7 +38,7 @@ test("declares the complete ten-section data preparation workflow", () => {
     ],
   );
   assert.equal(DATA_WORKBENCH_ENTRY_CLICKS, 3);
-  assert.equal(FILE_BUSINESS_TEMPLATES.length, 8);
+  assert.equal(FILE_BUSINESS_TEMPLATES.length, 9);
 });
 
 test("keeps internal resource keys while presenting fixed Chinese resource states", () => {
@@ -99,14 +99,19 @@ test("honors the selected CSV delimiter instead of previewing fabricated columns
   });
 });
 
-test("keeps all eight frontend business template codes seeded by the backend", async () => {
-  const migration = await readFile(
-    new URL("../drizzle/0009_file_pipeline.sql", import.meta.url),
-    "utf8",
-  );
+test("keeps every frontend business template code seeded by the backend", async () => {
+  // 种子可以落在任何一次迁移里：0009 已在生产库跑过，后加的模板只能靠新迁移补种子，
+  // 所以这里合并全部迁移文件来找，而不是只盯着 0009——否则新模板永远补不进来。
+  const directory = new URL("../drizzle/", import.meta.url);
+  const files = (await readdir(directory))
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  const migrations = (
+    await Promise.all(files.map((name) => readFile(new URL(name, directory), "utf8")))
+  ).join("\n");
   for (const template of FILE_BUSINESS_TEMPLATES) {
     assert.match(
-      migration,
+      migrations,
       new RegExp(`'${template.code}'`),
       `missing backend seed for ${template.code}`,
     );

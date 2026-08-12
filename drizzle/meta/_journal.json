@@ -106,6 +106,13 @@
       "when": 1786557030022,
       "tag": "0014_drop_mfa_and_notification_prefs",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1786560630022,
+      "tag": "0015_device_workload_template",
+      "breakpoints": true
     }
   ]
 }

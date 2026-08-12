@@ -868,6 +868,23 @@ const QUALITY_DEVICES = [
   "YH-LA-01",
 ] as const;
 
+// 只有出具阳性/阴性结论的检查设备才谈得上「检阳性数」：介入手术平台（DSA）做的是治疗性
+// 操作、直线加速器做的是放疗、呼吸机是生命支持，它们根本不产生阳性判读。若给这些设备也编一个
+// 阳性数，医院拿去算阳性率就会得到凭空捏造的结论，所以这类设备的阳性数一律留空（界面显示「—」）。
+const POSITIVE_READING_CATEGORIES: readonly string[] = [
+  "磁共振",
+  "CT",
+  "DR",
+  "钼靶",
+  "彩超",
+  "内镜",
+  "检验流水线",
+];
+
+// 阳性率区间参考影像与检验科室的常见阳性检出水平；上限不足 1 也保证阳性数不会超过检查人次。
+const POSITIVE_RATE_MIN = 0.08;
+const POSITIVE_RATE_MAX = 0.22;
+
 const QUALITY_CHECK_TYPES = [
   "影像质量抽查",
   "辐射剂量抽查",
@@ -1354,9 +1371,47 @@ function buildSampleDataset(): SampleDataset {
     });
   });
 
+  // 设备业务量与收入必须与 exam_activity / billing_revenue 同源：检查人次取该设备该月的实际
+  // 检查条数，总收入取同一批检查的原始收费金额（元）合计——与收费文件「金额」列同口径（退费行
+  // 金额为 0，冲减单独记在退费金额列）。另造一套数，医院一核对就会发现平台自相矛盾。
+  const workloadStats = new Map<string, { examVolume: number; revenue: number }>();
+  for (const entry of examEntries) {
+    const period = MONTHS[entry.monthIndex]?.period ?? "2026-01";
+    const key = `${entry.device.id}|${period}`;
+    const stat = workloadStats.get(key) ?? { examVolume: 0, revenue: 0 };
+    stat.examVolume += 1;
+    stat.revenue += entry.revenue;
+    workloadStats.set(key, stat);
+  }
+  const workloadRows: SampleRow[] = [];
+  for (const device of DEVICES) {
+    const positiveReading = POSITIVE_READING_CATEGORIES.includes(device.category);
+    for (const month of MONTHS) {
+      // 没有检查的设备月份也要出行并填 0，否则医院会以为这一格漏传了。
+      const stat = workloadStats.get(`${device.id}|${month.period}`);
+      const examVolume = stat?.examVolume ?? 0;
+      const positiveCount = positiveReading
+        ? Math.round(
+            examVolume *
+              (POSITIVE_RATE_MIN + rng() * (POSITIVE_RATE_MAX - POSITIVE_RATE_MIN)),
+          )
+        : null;
+      workloadRows.push({
+        recordType: "exam",
+        deviceId: device.id,
+        period: month.period,
+        examVolume: String(examVolume),
+        positiveCount: positiveCount === null ? "" : String(positiveCount),
+        totalRevenue: String(Math.round(stat?.revenue ?? 0)),
+        department: device.department,
+      });
+    }
+  }
+
   return {
     device_master: deviceRows,
     exam_activity: examRows,
+    device_workload: workloadRows,
     billing_revenue: billingRows,
     cost_detail: costRows,
     maintenance: maintenanceRows,
@@ -1376,6 +1431,7 @@ function sampleDataset(): SampleDataset {
 export const SAMPLE_DATA_ROW_COUNTS: Readonly<Record<string, number>> = {
   device_master: 20,
   exam_activity: 480,
+  device_workload: 240,
   billing_revenue: 490,
   cost_detail: 1200,
   maintenance: 74,
