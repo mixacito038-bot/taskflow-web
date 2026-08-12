@@ -584,9 +584,6 @@ a { color: inherit; }
 
 /* Hospital tenancy and RBAC */
 .access-heading { align-items: center; }
-.identity-assurance { min-width: 250px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; align-items: center; }
-.identity-assurance .identity-state { grid-row: 1 / 3; min-width: 104px; height: 42px; padding: 0 11px; border-radius: 10px; color: var(--primary); background: var(--primary-soft); display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 12px; font-weight: 650; white-space: nowrap; }.identity-assurance strong { font-size: 12px; }.identity-assurance small { color: var(--muted); font-size: 12px; }
-.identity-assurance .identity-verified { color: var(--green); background: var(--green-soft); }.identity-assurance .identity-denied { color: var(--red); background: var(--red-soft); }.identity-assurance .identity-loading { color: var(--orange); background: var(--orange-soft); }
 .access-chain { margin-bottom: 13px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
 .access-chain article { position: relative; min-width: 0; min-height: 105px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); display: grid; grid-template-columns: 28px 1fr; gap: 7px; align-items: start; }
 .access-chain article > span { width: 28px; height: 28px; border-radius: 7px; color: var(--primary); background: var(--primary-soft); display: grid; place-items: center; }.access-chain article > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }.access-chain small { color: var(--primary); font-size: 12px; font-weight: 700; }.access-chain strong { font-size: 12px; }.access-chain p { grid-column: 1 / -1; margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }.access-chain article > svg { position: absolute; z-index: 2; right: -11px; top: 48%; padding: 2px; border-radius: 50%; color: var(--primary); background: var(--bg); box-sizing: content-box; }
@@ -606,7 +603,7 @@ a { color: inherit; }
 
 /* Hospital and RBAC configuration center */
 .compact-access-heading { margin-bottom: 14px; align-items: center; }
-.access-config-summary { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; }
+.access-config-summary { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; }
 .access-config-summary > div { min-width: 0; min-height: 76px; padding: 13px 15px; border-right: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; gap: 4px; }
 .access-config-summary > div:last-child { border-right: 0; }.access-config-summary span { color: var(--muted); font-size: 12px; }.access-config-summary strong { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }.access-config-summary small { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .config-tabs { margin-bottom: 12px; }
@@ -849,7 +846,7 @@ a { color: inherit; }
   .flow-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .action-board { grid-template-columns: 1fr; }
   .scenario-results { grid-template-columns: 1fr; }
-  .access-heading { align-items: stretch; }.identity-assurance { width: 100%; }
+  .access-heading { align-items: stretch; }
   .hospital-grid, .separation-rules { grid-template-columns: 1fr; }
   .access-tabs { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); }.access-tabs button { justify-content: center; }
   .access-config-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.access-config-summary > div:nth-child(2) { border-right: 0; }.access-config-summary > div:nth-child(-n+2) { border-bottom: 1px solid var(--border); }

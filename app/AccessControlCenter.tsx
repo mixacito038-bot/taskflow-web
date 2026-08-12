@@ -8,7 +8,6 @@ import {
   Copy,
   Download,
   FileClock,
-  Fingerprint,
   KeyRound,
   Pencil,
   Plus,
@@ -384,15 +383,13 @@ export default function AccessControlCenter({
   return (
     <>
       <div className="page-heading access-heading compact-access-heading">
-        <div><div className="eyebrow"><ShieldCheck size={15} />医院租户与权限配置</div><h1>医院与权限</h1><p>配置医院、账号、角色和审计策略。正式登录环境保存到服务端，演示环境保存到当前浏览器。</p></div>
-        <div className="identity-assurance"><span className={`identity-state identity-${sessionState}`}><Fingerprint size={15} />{sessionState === "verified" ? "身份已核验" : sessionState === "loading" ? "正在核验" : "演示配置"}</span><strong>{viewer.displayName}</strong><small>{effectiveRole}</small></div>
+        <div><div className="eyebrow"><ShieldCheck size={15} />医院租户与权限配置</div><h1>医院与权限</h1></div>
       </div>
 
       <section className="access-config-summary">
-        <div><span>当前医院</span><strong>{activeHospital?.shortName}</strong><small>{activeHospital?.code} · {activeHospital?.status}</small></div>
-        <div><span>医院成员</span><strong>{visibleMembers.length + 1}</strong><small>含当前账号</small></div>
-        <div><span>可用角色</span><strong>{currentHospitalRoles.length}</strong><small>{currentHospitalRoles.filter((role) => !role.builtIn).length} 个自定义角色</small></div>
-        <div><span>权限复核</span><strong>每 {currentPolicy.reviewCycleMonths} 个月</strong><small>日志保留 {currentPolicy.retentionDays} 天</small></div>
+        <div><span>当前医院</span><strong>{activeHospital?.shortName}</strong></div>
+        <div><span>医院成员</span><strong>{visibleMembers.length + 1}</strong></div>
+        <div><span>可用角色</span><strong>{currentHospitalRoles.length}</strong></div>
       </section>
 
       <div className="access-tabs config-tabs">
