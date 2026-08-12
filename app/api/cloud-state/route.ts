@@ -47,7 +47,6 @@ const resourceNameSet = new Set<string>(cloudResourceNames);
 const maxResourceItems: Record<CloudResourceName, number> = {
   devices: 10_000,
   costEntries: 50_000,
-  notifications: 10_000,
   improvementActions: 20_000,
   modules: 200,
   dataSources: 2_000,
@@ -57,13 +56,6 @@ const maxResourceItems: Record<CloudResourceName, number> = {
   metricCategories: 50,
 };
 const maxResourceBytes = 1_500_000;
-const notificationPreferenceKeys = [
-  "benefitAlerts",
-  "costTasks",
-  "dataQuality",
-  "securityAlerts",
-  "weeklyDigest",
-] as const;
 const allowedThemes = new Set(["clinical", "teal", "midnight"]);
 const allowedDensities = new Set(["comfortable", "compact"]);
 const allowedContentZooms = new Set([0.8, 0.9, 1, 1.1, 1.2, 1.3]);
@@ -72,8 +64,6 @@ const allowedPreferenceKeys = new Set([
   "theme",
   "density",
   "contentZoom",
-  "notificationPreferences",
-  "readNotificationIds",
   "activeHospitalId",
   "department",
   "period",
@@ -97,39 +87,9 @@ function validateHospitalId(value: unknown) {
 function serializeResource(resource: CloudResourceName, value: unknown) {
   if (!Array.isArray(value) || value.length > maxResourceItems[resource]) return null;
   if (value.some((item) => !isRecord(item))) return null;
-  const normalized = resource === "notifications"
-    ? value.map((item) => {
-        const notification = { ...item };
-        delete notification.read;
-        return notification;
-      })
-    : value;
-  const json = JSON.stringify(normalized);
+  const json = JSON.stringify(value);
   if (new TextEncoder().encode(json).byteLength > maxResourceBytes) return null;
   return json;
-}
-
-function sanitizeNotificationPreferences(
-  value: unknown,
-  fallback: Record<string, boolean>,
-) {
-  if (!isRecord(value)) return null;
-  const next = { ...fallback };
-  for (const key of notificationPreferenceKeys) {
-    if (value[key] !== undefined && typeof value[key] !== "boolean") return null;
-    if (typeof value[key] === "boolean") next[key] = value[key];
-  }
-  if (Object.keys(value).some((key) => !notificationPreferenceKeys.includes(key as typeof notificationPreferenceKeys[number]))) {
-    return null;
-  }
-  return next;
-}
-
-function sanitizeReadNotificationIds(value: unknown) {
-  if (!Array.isArray(value) || value.length > 5_000) return null;
-  if (value.some((id) => typeof id !== "string" || !id.trim() || id.length > 200)) return null;
-  const ids = [...new Set(value.map((id) => (id as string).trim()))];
-  return new TextEncoder().encode(JSON.stringify(ids)).byteLength <= 500_000 ? ids : null;
 }
 
 function isOwnedByAccount(value: Record<string, unknown>, access: CloudAccess) {
@@ -170,10 +130,6 @@ function applyDataScope(shared: CloudSharedState, access: CloudAccess) {
         isOwnedByAccount(item, access)
         || (typeof item.deviceId === "string" && allowedDeviceIds.has(item.deviceId))
       )),
-      notifications: shared.notifications.filter((item) => isRecord(item) && (
-        isOwnedByAccount(item, access)
-        || (typeof item.deviceId === "string" && allowedDeviceIds.has(item.deviceId))
-      )),
       improvementActions: shared.improvementActions.filter((item) => isRecord(item) && (
         isOwnedByAccount(item, access)
         || (typeof item.deviceId === "string" && allowedDeviceIds.has(item.deviceId))
@@ -197,9 +153,6 @@ function applyDataScope(shared: CloudSharedState, access: CloudAccess) {
     ...shared,
     devices,
     costEntries: shared.costEntries.filter(
-      (item) => isRecord(item) && matchesDepartment(item, departments, allowedDeviceIds),
-    ),
-    notifications: shared.notifications.filter(
       (item) => isRecord(item) && matchesDepartment(item, departments, allowedDeviceIds),
     ),
     improvementActions: shared.improvementActions.filter(
@@ -238,24 +191,12 @@ async function readCloudState(hospitalId: string, access: CloudAccess) {
   shared = applyDataScope(shared, access);
 
   const defaults = defaultCloudPreferences(hospitalId);
-  const storedNotificationPreferences = preferenceRow
-    ? parseStoredJson<Record<string, boolean>>(preferenceRow.notificationPreferencesJson, defaults.notificationPreferences)
-    : defaults.notificationPreferences;
-  const notificationPreferences = sanitizeNotificationPreferences(
-    storedNotificationPreferences,
-    defaults.notificationPreferences,
-  ) ?? defaults.notificationPreferences;
-  const readNotificationIds = preferenceRow
-    ? sanitizeReadNotificationIds(parseStoredJson<unknown>(preferenceRow.readNotificationIdsJson, [])) ?? []
-    : [];
   let activeHospitalId = preferenceRow?.activeHospitalId || hospitalId;
   if (!await mayUseHospital(access.account.id, activeHospitalId, access.platformAdmin)) activeHospitalId = hospitalId;
   const preferences: CloudPreferences = preferenceRow ? {
     theme: allowedThemes.has(preferenceRow.theme) ? preferenceRow.theme : defaults.theme,
     density: allowedDensities.has(preferenceRow.density) ? preferenceRow.density : defaults.density,
     contentZoom: allowedContentZooms.has(preferenceRow.contentZoom) ? preferenceRow.contentZoom : defaults.contentZoom,
-    notificationPreferences,
-    readNotificationIds,
     activeHospitalId,
     department: preferenceRow.department,
     period: preferenceRow.period,
@@ -611,14 +552,6 @@ export async function POST(request: Request) {
       if (payload.value.perspective !== undefined && (typeof payload.value.perspective !== "string" || !allowedPerspectives.has(payload.value.perspective))) {
         return Response.json({ error: "invalid_perspective" }, { status: 400 });
       }
-      const notificationPreferences = payload.value.notificationPreferences === undefined
-        ? current.notificationPreferences
-        : sanitizeNotificationPreferences(payload.value.notificationPreferences, current.notificationPreferences);
-      if (!notificationPreferences) return Response.json({ error: "invalid_notification_preferences" }, { status: 400 });
-      const readNotificationIds = payload.value.readNotificationIds === undefined
-        ? current.readNotificationIds
-        : sanitizeReadNotificationIds(payload.value.readNotificationIds);
-      if (!readNotificationIds) return Response.json({ error: "invalid_read_notification_ids" }, { status: 400 });
       const activeHospitalId = payload.value.activeHospitalId === undefined
         ? current.activeHospitalId
         : validateHospitalId(payload.value.activeHospitalId);
@@ -630,8 +563,6 @@ export async function POST(request: Request) {
         theme: (payload.value.theme ?? current.theme) as CloudPreferences["theme"],
         density: (payload.value.density ?? current.density) as CloudPreferences["density"],
         contentZoom: (payload.value.contentZoom ?? current.contentZoom) as number,
-        notificationPreferences,
-        readNotificationIds,
         activeHospitalId,
         department: typeof payload.value.department === "string" ? payload.value.department.trim() : current.department,
         period: typeof payload.value.period === "string" ? payload.value.period.trim() : current.period,
@@ -641,8 +572,6 @@ export async function POST(request: Request) {
         theme?: CloudPreferences["theme"];
         density?: CloudPreferences["density"];
         contentZoom?: number;
-        notificationPreferencesJson?: string;
-        readNotificationIdsJson?: string;
         activeHospitalId?: string;
         department?: string;
         period?: string;
@@ -652,12 +581,6 @@ export async function POST(request: Request) {
       if (payload.value.theme !== undefined) preferenceUpdates.theme = next.theme;
       if (payload.value.density !== undefined) preferenceUpdates.density = next.density;
       if (payload.value.contentZoom !== undefined) preferenceUpdates.contentZoom = next.contentZoom;
-      if (payload.value.notificationPreferences !== undefined) {
-        preferenceUpdates.notificationPreferencesJson = JSON.stringify(next.notificationPreferences);
-      }
-      if (payload.value.readNotificationIds !== undefined) {
-        preferenceUpdates.readNotificationIdsJson = JSON.stringify(next.readNotificationIds);
-      }
       if (payload.value.activeHospitalId !== undefined) preferenceUpdates.activeHospitalId = next.activeHospitalId;
       if (payload.value.department !== undefined) preferenceUpdates.department = next.department;
       if (payload.value.period !== undefined) preferenceUpdates.period = next.period;
@@ -667,8 +590,6 @@ export async function POST(request: Request) {
         theme: next.theme,
         density: next.density,
         contentZoom: next.contentZoom,
-        notificationPreferencesJson: JSON.stringify(next.notificationPreferences),
-        readNotificationIdsJson: JSON.stringify(next.readNotificationIds),
         activeHospitalId: next.activeHospitalId,
         department: next.department,
         period: next.period,

@@ -112,7 +112,8 @@ test("app-session route exposes password login and change-password behind same-o
   assert.match(route, /verifyPasswordLogin/);
   assert.match(route, /maybeBootstrapAdminCredential/);
   assert.match(route, /issueAppSession\(account, account\.email, request, "password"\)/);
-  assert.match(route, /mfa_required/);
+  // 二次验证已下线：密码登录成功后直接建立会话，不再有第二道验证分支
+  assert.doesNotMatch(route, /mfa_required|totpCode|recoveryCode/);
 });
 
 test("password sessions bypass the SSO header dependency in session inspection", async () => {

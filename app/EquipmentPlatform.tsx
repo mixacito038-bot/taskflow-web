@@ -7,7 +7,6 @@ import {
   ArrowDown,
   ArrowUp,
   BarChart3,
-  Bell,
   Boxes,
   Building2,
   Cable,
@@ -16,7 +15,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  CircleHelp,
   CircleDollarSign,
   Clock3,
   Cloud,
@@ -108,13 +106,10 @@ import AccessControlCenter, { TenantContext } from "./AccessControlCenter";
 import ImprovementCenter, { initialActions, type ImprovementAction } from "./ImprovementCenter";
 import { insightFor } from "./metric-definitions";
 import { Hospital, initialHospitals, permissionColumns, ViewerIdentity } from "./access-control-data";
-import AccountCenter, { AccountTab, defaultNotificationPreferences, type NotificationPreferences } from "./AccountCenter";
+import AccountCenter, { AccountTab } from "./AccountCenter";
 import LoginScreen from "./LoginScreen";
-import NotificationCenter from "./NotificationCenter";
-import { initialNotifications, PlatformNotification } from "./notification-data";
 import BenefitReportCenter from "./BenefitReportCenter";
 import BenefitAnalysisStudio from "./BenefitAnalysisStudio";
-import GuideCenter, { type GuideTarget } from "./GuideCenter";
 import {
   cloneBenefitAnalysisProfiles,
   initialBenefitAnalysisProfiles,
@@ -157,7 +152,7 @@ import type {
   CloudUserPreferences,
 } from "./cloud-state";
 
-type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "ledger-fields" | "metric-dictionary" | "detail" | "costs" | "layout" | "sources" | "access" | "messages" | "account" | "guide";
+type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "ledger-fields" | "metric-dictionary" | "detail" | "costs" | "layout" | "sources" | "access" | "account";
 type Perspective = "管理层" | "设备科" | "临床科室";
 type ThemeId = "clinical" | "teal" | "midnight";
 type Density = "comfortable" | "compact";
@@ -184,24 +179,7 @@ type ApplicationSessionSnapshot = {
     absoluteExpiresAt?: string;
     lockedAt?: string | null;
   };
-  mfa?: {
-    status: "disabled" | "pending" | "enabled";
-    enabled: boolean;
-    confirmedAt: string | null;
-    lockedUntil: string | null;
-    recoveryCodesRemaining: number;
-  };
 };
-
-function guideTargetFor(view: View): GuideTarget {
-  if (view === "detail" || view === "ledger-fields") return "equipment";
-  if (view === "metric-dictionary") return "sources";
-  if (view === "capital") return "improvement";
-  if (view === "workbench") return "sources";
-  if (view === "account") return "access";
-  if (view === "guide") return "cockpit";
-  return view;
-}
 
 class CloudRequestError extends Error {
   status: number;
@@ -226,7 +204,6 @@ const periodMonthIndexes: Record<string, number[]> = {
 const cloudResourceLabels: Record<CloudResource, string> = {
   devices: "设备台账",
   costEntries: "成本明细",
-  notifications: "医院消息",
   improvementActions: "改进任务",
   modules: "驾驶舱布局",
   dataSources: "文件口径配置",
@@ -408,10 +385,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [view, setView] = useState<View>("cockpit");
   const [demoEntered, setDemoEntered] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [headerPanel, setHeaderPanel] = useState<"notifications" | "account" | null>(null);
-  const [guideOrigin, setGuideOrigin] = useState<GuideTarget>("cockpit");
+  const [headerPanel, setHeaderPanel] = useState<"account" | null>(null);
   const [accountTab, setAccountTab] = useState<AccountTab>("profile");
-  const [notificationFocusId, setNotificationFocusId] = useState("");
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [exitConfirmMode, setExitConfirmMode] = useState<"lock" | "identity" | "all" | null>(null);
   const [applicationSessionState, setApplicationSessionState] = useState<ApplicationSessionState>(viewer.authenticated ? "checking" : "demo");
@@ -439,9 +414,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [metricStore, setMetricStoreLocal] = useDemoState<Record<string, MetricDictionaryEntry[]>>("equip-benefit-metric-dictionary-by-hospital-v1", {}, demoMode);
   const [metricCategoryStore, setMetricCategoryStoreLocal] = useDemoState<Record<string, MetricCategory[]>>("equip-benefit-metric-categories-by-hospital-v1", {}, demoMode);
   const [analysisProfileStore, setAnalysisProfileStoreLocal] = useDemoState<Record<string, BenefitAnalysisProfile[]>>("equip-benefit-analysis-profiles-by-hospital-v1", demoMode ? initialAnalysisProfileStore() : {}, demoMode);
-  const [notificationPreferences, setNotificationPreferencesLocal] = useDemoState<NotificationPreferences>("equip-benefit-notification-preferences-v1", defaultNotificationPreferences, demoMode);
-  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
-  const readNotificationIdsRef = useRef<string[]>([]);
   const [cloudSyncState, setCloudSyncState] = useState<CloudSyncState>(viewer.authenticated ? "idle" : "ready");
   const [cloudHydrated, setCloudHydrated] = useState(!viewer.authenticated);
   const [cloudRetryKey, setCloudRetryKey] = useState(0);
@@ -473,7 +445,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   // 深链只允许切换一次医院，避免"切院→数据重载→再切院"的循环。
   const deepLinkHospitalSwitched = useRef(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState(initialDevices[0].id);
-  const [notifications, setNotificationsLocal] = useDemoState<PlatformNotification[]>("equip-benefit-notifications-v1", initialNotifications, demoMode);
   const [dataWorkbenchUnlocked, setDataWorkbenchUnlocked] = useState(false);
   const [workbenchEntryPromptOpen, setWorkbenchEntryPromptOpen] = useState(false);
   const [workbenchEntryPassword, setWorkbenchEntryPassword] = useState("");
@@ -636,7 +607,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     return {
       devices: [],
       costEntries: [],
-      notifications: [],
       improvementActions: [],
       modules: initialModules.map((module) => ({ ...module })),
       dataSources: [],
@@ -708,20 +678,13 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     if (result.shared.metricCategories?.length) setMetricCategoryStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.metricCategories }));
     setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.analysisProfiles }));
     setModulesLocal(result.shared.modules);
-    setNotificationsLocal((current) => [
-      ...current.filter((notification) => notification.hospitalId !== hospitalId),
-      ...result.shared.notifications.map((notification) => ({ ...notification, hospitalId })),
-    ]);
     const preferences = result.preferences;
     if (preferences.theme) setThemeLocal(preferences.theme);
     if (preferences.density) setDensityLocal(preferences.density);
     if (typeof preferences.contentZoom === "number") setContentZoomLocal(preferences.contentZoom);
-    if (preferences.notificationPreferences) setNotificationPreferencesLocal({ ...defaultNotificationPreferences, ...preferences.notificationPreferences });
     if (preferences.department) setDepartment(preferences.department);
     if (preferences.period) setPeriod(preferences.period);
     if (preferences.perspective) setPerspective(preferences.perspective);
-    readNotificationIdsRef.current = preferences.readNotificationIds ?? [];
-    setReadNotificationIds(readNotificationIdsRef.current);
     cloudRevisions.current[hospitalId] = result.revisions;
     setCloudError("");
     setCloudHydrated(true);
@@ -853,11 +816,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       setDeviceStoreLocal((current) => ({ ...current, [hospitalId]: value as Device[] }));
     } else if (resource === "costEntries") {
       setCostEntryStoreLocal((current) => ({ ...current, [hospitalId]: value as CostEntry[] }));
-    } else if (resource === "notifications") {
-      setNotificationsLocal((current) => [
-        ...current.filter((notification) => notification.hospitalId !== hospitalId),
-        ...(value as PlatformNotification[]).map((notification) => ({ ...notification, hospitalId })),
-      ]);
     } else if (resource === "improvementActions") {
       setImprovementStoreLocal((current) => ({ ...current, [hospitalId]: value as ImprovementAction[] }));
     } else if (resource === "modules") {
@@ -1036,18 +994,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     void persistCloudPreferences({ contentZoom: value });
   }
 
-  function setNotificationPreferences(value: NotificationPreferences) {
-    setNotificationPreferencesLocal(value);
-    void persistCloudPreferences({ notificationPreferences: value });
-  }
 
-  function updateReadNotificationIds(value: string[] | ((current: string[]) => string[])) {
-    const next = typeof value === "function" ? value(readNotificationIdsRef.current) : value;
-    const unique = [...new Set(next)];
-    readNotificationIdsRef.current = unique;
-    setReadNotificationIds(unique);
-    void persistCloudPreferences({ readNotificationIds: unique });
-  }
 
   function setDepartmentPreference(value: string) {
     setDepartment(value);
@@ -1078,15 +1025,12 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setCloudConflict(null);
     setHeaderPanel(null);
     setMobileNavOpen(false);
-    setReadNotificationIds([]);
-    readNotificationIdsRef.current = [];
     setDeviceStoreLocal(initialDeviceStore());
     setCostEntryStoreLocal(initialCostEntryStore());
     setImprovementStoreLocal(initialImprovementStore());
     setSourceStoreLocal(initialSourceStore());
     setAnalysisProfileStoreLocal(initialAnalysisProfileStore());
     setModulesLocal(initialModules);
-    setNotificationsLocal(initialNotifications);
     setView("cockpit");
   }
 
@@ -1170,25 +1114,14 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setApplicationSessionBusy(true);
     setApplicationSessionError("");
     try {
+      // 二次验证已下线，解锁只需要账号密码本身，不再做 `password|mfacode` 的拼接解析。
       const passwordSession = applicationSession?.authMethod === "password";
-      const passwordSessionMfa = passwordSession && Boolean(applicationSession?.mfa?.enabled);
-      // 密码会话且启用 MFA 时，登录页把凭据编码为 `password|mfacode`（竖线分隔，
-      // 密码在前、验证码在最后一个竖线之后，兼容密码本身含竖线）；其余情况无竖线。
-      const separatorIndex = passwordSessionMfa ? credential.lastIndexOf("|") : -1;
-      const passwordPart = separatorIndex >= 0 ? credential.slice(0, separatorIndex) : credential;
-      const mfaPart = separatorIndex >= 0 ? credential.slice(separatorIndex + 1).trim().replace(/\s+/g, "") : "";
-      const normalized = passwordSession ? mfaPart : credential.trim().replace(/\s+/g, "");
       const response = await fetch("/api/app-session", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           action: applicationSessionState === "locked" ? "unlock" : "start",
-          ...(passwordSession ? { password: passwordPart } : {}),
-          ...(normalized
-            ? /^\d{6}$/.test(normalized)
-              ? { totpCode: normalized }
-              : { recoveryCode: normalized }
-            : {}),
+          ...(passwordSession ? { password: credential } : {}),
         }),
       });
       const result = await response.json() as ApplicationSessionSnapshot & { error?: string; lockedUntil?: string };
@@ -1196,13 +1129,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         const message = {
           account_not_provisioned: "当前账号尚未加入任何医院，请联系平台管理员配置医院与角色。",
           account_disabled: "当前账号已停用，请联系平台管理员。",
-          mfa_factor_required: "请输入验证器中的 6 位动态验证码，或一枚恢复码。",
-          mfa_invalid: "验证码或恢复码不正确，请重新输入。",
-          mfa_code_replayed: "该动态验证码已经使用，请等待验证器生成下一组验证码。",
-          mfa_temporarily_locked: result.lockedUntil
-            ? `验证失败次数过多，请在 ${new Date(result.lockedUntil).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 后重试。`
-            : "验证失败次数过多，请稍后重试。",
-          mfa_encryption_key_unavailable: "多因素验证服务尚未完成安全密钥配置，请联系平台管理员。",
           app_session_not_locked: "当前会话状态已变化，正在重新核验。",
           password_required: "请输入账号密码后解锁。",
           invalid_credentials: "账号密码不正确，请重新输入。",
@@ -1244,21 +1170,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     }
   }
 
-  async function passwordLogin(username: string, password: string, mfaCredential?: string) {
-    const normalizedMfa = mfaCredential?.trim().replace(/\s+/g, "") ?? "";
+  async function passwordLogin(username: string, password: string) {
     const response = await fetch("/api/app-session", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        action: "password_login",
-        username,
-        password,
-        ...(normalizedMfa
-          ? /^\d{6}$/.test(normalizedMfa)
-            ? { totpCode: normalizedMfa }
-            : { recoveryCode: normalizedMfa }
-          : {}),
-      }),
+      body: JSON.stringify({ action: "password_login", username, password }),
     });
     const result = await response.json().catch(() => ({})) as { error?: string; lockedUntil?: string };
     if (!response.ok) {
@@ -1270,10 +1186,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         credential_locked: result.lockedUntil
           ? `密码错误次数过多，请在 ${new Date(result.lockedUntil).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 后重试。`
           : "密码错误次数过多，请稍后重试。",
-        mfa_required: "该账号已启用多因素验证，请输入动态验证码。",
-        mfa_invalid: "验证码或恢复码不正确，请重新输入。",
-        mfa_code_replayed: "该动态验证码已经使用，请等待验证器生成下一组验证码。",
-        mfa_temporarily_locked: "验证失败次数过多，请稍后重试。",
       }[code] ?? "登录失败，请稍后重试。";
       return { ok: false as const, code, message };
     }
@@ -1574,10 +1486,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
   const currentCostDevice = devices.find((device) => device.id === costDeviceId) ?? devices[0];
   const selectedDevice = ledgerDevices.find((device) => device.id === selectedDeviceId) ?? devices[0];
-  const hospitalNotifications = notifications
-    .filter((item) => !item.hospitalId || item.hospitalId === effectiveHospitalId)
-    .map((item) => ({ ...item, read: item.read || readNotificationIds.includes(item.id) }));
-  const unreadNotificationCount = hospitalNotifications.filter((item) => !item.read).length;
   const availabilityValues = filteredDevices
     .map((device) => sessionState === "verified" ? publishedData.insights[device.id]?.availabilityRate : insightFor(device.id).availabilityRate)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
@@ -1651,11 +1559,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function openGuide() {
-    if (view !== "guide") setGuideOrigin(guideTargetFor(view));
-    navigate("guide");
-  }
-
   function openDeviceDetail(device: Device) {
     setSelectedDeviceId(device.id);
     navigate("detail");
@@ -1688,62 +1591,12 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setActiveHospitalIdLocal(initialHospitals[0].id);
     setPerspective("管理层");
     setSelectedDeviceId(initialDevices[0].id);
-    setNotificationsLocal(initialNotifications);
-    setNotificationPreferencesLocal(defaultNotificationPreferences);
-    readNotificationIdsRef.current = [];
-    setReadNotificationIds([]);
     notify("已恢复全部演示数据和默认布局");
   }
 
-  function markNotification(id: string, read = true) {
-    if (sessionState === "demo") {
-      setNotificationsLocal((current) => current.map((item) => item.id === id ? { ...item, read } : item));
-      return;
-    }
-    updateReadNotificationIds((current) => read
-      ? [...current, id]
-      : current.filter((notificationId) => notificationId !== id));
-  }
 
-  function markCurrentHospitalNotificationsRead() {
-    const visibleIds = hospitalNotifications.map((item) => item.id);
-    if (sessionState === "demo") {
-      const visibleIdSet = new Set(visibleIds);
-      setNotificationsLocal((current) => current.map((item) => visibleIdSet.has(item.id) ? { ...item, read: true } : item));
-    } else {
-      updateReadNotificationIds((current) => [...current, ...visibleIds]);
-    }
-    notify("当前医院消息已全部标为已读");
-  }
 
-  function openNotificationCenter(notification?: PlatformNotification) {
-    if (notification) {
-      markNotification(notification.id);
-      setNotificationFocusId(notification.id);
-    }
-    navigate("messages");
-  }
 
-  function openNotificationTarget(notification: PlatformNotification) {
-    markNotification(notification.id);
-    const target = notification.target;
-    const permitted = !target
-      || target === "cockpit"
-      || target === "detail"
-      || (target === "costs" && hasPermission("cost.manage"))
-      || (target === "improvement" && hasPermission("improvement.manage"))
-      || (target === "sources" && hasPermission("source.manage"))
-      || (target === "access" && (hasPermission("hospital.manage") || hasPermission("member.manage")));
-    if (!permitted) {
-      notify("当前角色没有处理该事项的权限，可联系医院管理员协助");
-      return;
-    }
-    if (target === "detail" && notification.deviceId) {
-      const targetDevice = devices.find((device) => device.id === notification.deviceId);
-      if (targetDevice) return openDeviceDetail(targetDevice);
-    }
-    if (target) navigate(target);
-  }
 
   function openAccount(tab: AccountTab) {
     setAccountTab(tab);
@@ -1987,8 +1840,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     { id: "report", label: "效益分析报告", icon: <FileText size={18} />, group: "show", permissions: ["report.manage", "report.review", "report.approve", "report.export"] },
     { id: "improvement", label: "运营改进中心", icon: <Target size={18} />, group: "show", permissions: ["improvement.manage"] },
     { id: "capital", label: "资本计划", icon: <Boxes size={18} />, group: "show", permissions: ["improvement.manage", "report.approve"] },
-    { id: "messages", label: "消息中心", icon: <Bell size={18} />, group: "show", permissions: [] },
-    { id: "guide", label: "使用指南", icon: <CircleHelp size={18} />, group: "show", permissions: [] },
     { id: "equipment", label: "设备台账", icon: <FileSpreadsheet size={18} />, group: "manage", permissions: ["equipment.manage"] },
     { id: "costs", label: "成本填报", icon: <CircleDollarSign size={18} />, group: "manage", permissions: ["cost.manage"] },
     { id: "layout", label: "驾驶舱配置", icon: <SlidersHorizontal size={18} />, group: "manage", permissions: ["member.manage"] },
@@ -1998,9 +1849,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   ];
   const permittedNavItems = navItems.filter((item) =>
     !item.permissions.length || item.permissions.some(hasPermission));
-  const guideAvailableTargets = permittedNavItems
-    .map((item) => item.id)
-    .filter((id): id is GuideTarget => id !== "guide" && id !== "capital" && id !== "workbench");
 
   function renderModule(module: DashboardModule) {
     if (sessionState === "verified" && module.id === "trend" && !trendData.length) {
@@ -2215,9 +2063,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     sources: "文件模板与指标口径",
     "metric-dictionary": "指标字典配置",
     access: "医院与权限管理",
-    messages: "消息中心",
     account: "个人中心",
-    guide: "使用指南",
   }[view];
 
   if (!viewer.authenticated && !demoEntered) {
@@ -2233,7 +2079,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       <LoginScreen
         viewer={viewer}
         mode={applicationSessionState === "locked" ? "locked" : "session-required"}
-        mfaEnabled={Boolean(applicationSession?.mfa?.enabled)}
         unlockWithPassword={passwordAuthenticated && applicationSessionState === "locked"}
         busy={applicationSessionBusy}
         error={applicationSessionError}
@@ -2323,7 +2168,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         <nav>
           <p className="nav-label">分析展示</p>
           {permittedNavItems.filter((item) => item.group === "show").map((item) => (
-            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => item.id === "guide" ? openGuide() : navigate(item.id)}>{item.icon}<span>{item.label}</span>{item.id === "messages" && unreadNotificationCount ? <i className="nav-count">{unreadNotificationCount}</i> : null}</button>
+            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}>{item.icon}<span>{item.label}</span></button>
           ))}
           <p className="nav-label">管理后台</p>
           {permittedNavItems.filter((item) => item.group === "manage").map((item) => (
@@ -2377,24 +2222,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                 onClick={() => setContentZoom(contentZoomLevels[Math.min(contentZoomLevels.length - 1, contentZoomIndex + 1)])}
               ><ZoomIn size={16} /></button>
             </div>
-            <button className={`guide-shortcut ${view === "guide" ? "active" : ""}`} type="button" aria-label="打开使用指南" onClick={openGuide}>
-              <CircleHelp size={17} /><span>使用指南</span>
-            </button>
-            <button className="icon-button notification-button" aria-label="打开消息中心速览" aria-haspopup="dialog" aria-expanded={headerPanel === "notifications"} onClick={() => setHeaderPanel((current) => current === "notifications" ? null : "notifications")}><Bell size={18} />{unreadNotificationCount ? <i>{unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}</i> : null}</button>
             <button className="account-trigger" aria-label="打开账号菜单" aria-haspopup="menu" aria-expanded={headerPanel === "account"} onClick={() => setHeaderPanel((current) => current === "account" ? null : "account")}><span className="avatar">{viewer.displayName.slice(0, 1)}</span><span className="user"><strong>{viewer.displayName}</strong><span>{currentRoleName}</span></span><ChevronDown size={14} /></button>
-            {headerPanel === "notifications" ? (
-              <div className="header-popover notification-popover" role="dialog" aria-label="消息速览">
-                <header><div><strong>消息速览</strong><span>{unreadNotificationCount} 条未读 · {activeHospital.shortName}</span></div><button className="text-button" onClick={markCurrentHospitalNotificationsRead}>全部已读</button></header>
-                <div className="popover-notification-list">
-                  {hospitalNotifications.slice(0, 5).map((item) => <button key={item.id} className={!item.read ? "unread" : ""} onClick={() => openNotificationCenter(item)}><span className={`popover-dot priority-${item.priority}`} /><span><strong>{item.title}</strong><small>{item.summary}</small><em>{item.timeLabel} · {item.source}</em></span><ChevronRight size={15} /></button>)}
-                </div>
-                <footer><button onClick={() => openNotificationCenter()}>查看全部消息<ChevronRight size={15} /></button></footer>
-              </div>
-            ) : null}
             {headerPanel === "account" ? (
               <div className="header-popover account-popover" role="menu">
                 <header><span className="avatar large">{viewer.displayName.slice(0, 1)}</span><div><strong>{viewer.displayName}</strong><small>{viewer.email}</small><em>{activeHospital.shortName} · {currentRoleName}</em></div></header>
-                <div className="account-menu-list"><button role="menuitem" onClick={() => openAccount("profile")}><UserRound size={16} /><span><strong>个人中心</strong><small>身份与医院成员关系</small></span><ChevronRight size={15} /></button><button role="menuitem" onClick={() => openAccount("security")}><ShieldCheck size={16} /><span><strong>登录与安全</strong><small>会话、权限与退出登录</small></span><ChevronRight size={15} /></button><button role="menuitem" onClick={() => openAccount("preferences")}><Bell size={16} /><span><strong>消息偏好</strong><small>设置提醒类型</small></span><ChevronRight size={15} /></button>{hasPermission("member.manage") || hasPermission("hospital.manage") ? <button role="menuitem" onClick={() => navigate("access")}><Building2 size={16} /><span><strong>医院与权限</strong><small>成员、角色与安全审计</small></span><ChevronRight size={15} /></button> : null}</div>
+                <div className="account-menu-list"><button role="menuitem" onClick={() => openAccount("profile")}><UserRound size={16} /><span><strong>个人中心</strong><small>身份与医院成员关系</small></span><ChevronRight size={15} /></button><button role="menuitem" onClick={() => openAccount("security")}><ShieldCheck size={16} /><span><strong>登录与安全</strong><small>会话、权限与退出登录</small></span><ChevronRight size={15} /></button>{hasPermission("member.manage") || hasPermission("hospital.manage") ? <button role="menuitem" onClick={() => navigate("access")}><Building2 size={16} /><span><strong>医院与权限</strong><small>成员、角色与安全审计</small></span><ChevronRight size={15} /></button> : null}</div>
                 <footer>{viewer.authenticated ? <button onClick={() => { setHeaderPanel(null); setExitConfirmMode("lock"); }}><LockKeyhole size={16} />锁定并返回系统登录页</button> : <button onClick={() => { setDemoEntered(false); setHeaderPanel(null); }}><LogOut size={16} />退出演示环境</button>}</footer>
               </div>
             ) : null}
@@ -2448,18 +2280,17 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                   {hasPermission("report.export") ? <button className="primary-button" onClick={() => navigate("report")}><FileText size={17} />生成效益报告</button> : null}
                 </div>
               </div>
-              <section className="guide-entry-strip" aria-label="首次使用入口">
-                <span className="guide-entry-icon"><CircleHelp size={20} /></span>
+              <section className="guide-entry-strip" aria-label="本院数据就绪情况">
+                <span className="guide-entry-icon"><Database size={20} /></span>
                 <div>
-                  <strong>不知道从哪里开始？按你的岗位走一遍关键流程</strong>
-                  <p>先看角色路线，再直接进入设备、文件准备、成本、报告或改进页面；每一步都写明责任人和完成标志。</p>
+                  <strong>本院数据就绪情况</strong>
+                  <p>设备台账、已发布文件事实与品类规则的当前数量。</p>
                 </div>
                 <div className="guide-entry-readiness">
                   <span><b>{devices.length}</b> 台设备</span>
                   <span><b>{publishedData.publication ? publishedData.rows.length : 0}</b> 已发布文件事实</span>
                   <span><b>{currentAnalysisProfiles.filter((item) => item.status === "已启用").length}/{currentAnalysisProfiles.length}</b> 品类规则已启用</span>
                 </div>
-                <button className="primary-button" type="button" onClick={openGuide}>打开使用指南<ChevronRight size={16} /></button>
               </section>
               {sessionState === "verified" ? <section className={`guide-entry-strip ${publishedData.publication ? "" : "warning"}`} aria-label="正式发布数据状态">
                 <span className="guide-entry-icon">{publishedLoading ? <LoaderCircle className="spin" size={20} /> : publishedData.publication ? <ShieldCheck size={20} /> : <Database size={20} />}</span>
@@ -2667,38 +2498,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
             />
           ) : null}
 
-          {view === "messages" ? (
-            <NotificationCenter
-              notifications={hospitalNotifications}
-              activeHospital={activeHospital}
-              onMarkRead={markNotification}
-              onMarkAllRead={markCurrentHospitalNotificationsRead}
-              onOpen={openNotificationTarget}
-              initialSelectedId={notificationFocusId}
-            />
-          ) : null}
-
-          {view === "guide" ? (
-            <GuideCenter
-              key={`${effectiveHospitalId}-${currentRoleName}`}
-              currentRoleName={currentRoleName}
-              currentHospitalName={activeHospital.name}
-              period={period}
-              demoMode={sessionState === "demo"}
-              originTarget={guideOrigin}
-              availableTargets={guideAvailableTargets}
-              status={{
-                deviceCount: devices.length,
-                connectedSources: currentDataSources.filter((item) => item.status === "已连接").length,
-                totalSources: currentDataSources.length,
-                enabledProfiles: currentAnalysisProfiles.filter((item) => item.status === "已启用").length,
-                totalProfiles: currentAnalysisProfiles.length,
-                costRecordCount: costEntries.length,
-                openActionCount: improvementActions.filter((item) => item.status !== "已完成").length,
-              }}
-              onNavigate={(target) => navigate(target)}
-            />
-          ) : null}
 
           {view === "account" ? (
             <AccountCenter
@@ -2708,8 +2507,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               tenantContext={tenantContext}
               sessionState={sessionState}
               currentRoleName={currentRoleName}
-              preferences={notificationPreferences}
-              onPreferencesChange={setNotificationPreferences}
               tab={accountTab}
               onTabChange={setAccountTab}
               onSwitchHospital={switchHospital}
@@ -2720,7 +2517,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                 lastSeenAt: applicationSession.appSession.lastSeenAt,
                 idleExpiresAt: applicationSession.appSession.idleExpiresAt,
                 absoluteExpiresAt: applicationSession.appSession.absoluteExpiresAt,
-                mfa: applicationSession.mfa,
               } : null}
               onLockApplication={() => setExitConfirmMode("lock")}
               onRevokeAllApplicationSessions={() => setExitConfirmMode("all")}

@@ -1,15 +1,12 @@
-import type { NotificationPreferences } from "./AccountCenter";
 import type { BenefitAnalysisProfile } from "./benefit-analysis-config";
 import type { ImprovementAction } from "./ImprovementCenter";
 import type { LedgerFieldDefinition } from "./device-ledger-fields";
 import type { MetricCategory, MetricDictionaryEntry } from "./metric-dictionary";
 import type { CostEntry, DashboardModule, DataSource, Device } from "./mock-data";
-import type { PlatformNotification } from "./notification-data";
 
 export type CloudResource =
   | "devices"
   | "costEntries"
-  | "notifications"
   | "improvementActions"
   | "modules"
   | "dataSources"
@@ -21,7 +18,6 @@ export type CloudResource =
 export type CloudSharedState = {
   devices: Device[];
   costEntries: CostEntry[];
-  notifications: PlatformNotification[];
   improvementActions: ImprovementAction[];
   modules: DashboardModule[];
   dataSources: DataSource[];
@@ -37,12 +33,10 @@ export type CloudUserPreferences = {
   theme?: "clinical" | "teal" | "midnight";
   density?: "comfortable" | "compact";
   contentZoom?: number;
-  notificationPreferences?: NotificationPreferences;
   activeHospitalId?: string;
   department?: string;
   period?: string;
   perspective?: "管理层" | "设备科" | "临床科室";
-  readNotificationIds?: string[];
 };
 
 export type CloudStateResponse = {

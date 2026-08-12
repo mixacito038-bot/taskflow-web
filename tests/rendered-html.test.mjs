@@ -92,11 +92,10 @@ test("uses one release brand across the product, security issuer, metadata and o
   assert.doesNotMatch(releaseText, retiredEnglishBrand);
   assert.match(releaseText, /勇虹医疗 · 设备效益管理平台/);
   assert.match(releaseText, /export const PRODUCT_FULL_NAME = `\$\{COMPANY_NAME\} · \$\{PRODUCT_NAME\}`/);
-  assert.match(releaseText, /const MFA_ISSUER = PRODUCT_FULL_NAME/);
 });
 
 test("ships the configurable dashboard and editable admin surfaces", async () => {
-  const [component, improvement, reportCenter, reportModel, reportCatalog, reportExport, reportGovernance, reportRoute, accessComponent, accessData, tenantRoute, schema, styles, data, insightViews, definitions, notificationCenter, accountCenter, loginScreen, notifications, page, layout, packageJson, hosting] = await Promise.all([
+  const [component, improvement, reportCenter, reportModel, reportCatalog, reportExport, reportGovernance, reportRoute, accessComponent, accessData, tenantRoute, schema, styles, data, insightViews, definitions, accountCenter, loginScreen, page, layout, packageJson, hosting] = await Promise.all([
     readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/ImprovementCenter.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/BenefitReportCenter.tsx", import.meta.url), "utf8"),
@@ -113,10 +112,8 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
     readFile(new URL("../app/mock-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/InsightViews.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/metric-definitions.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/NotificationCenter.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/AccountCenter.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LoginScreen.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/notification-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -148,10 +145,8 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   assert.match(component, /放大页面/);
   assert.match(component, /ImprovementCenter/);
   assert.match(component, /AccessControlCenter/);
-  assert.match(component, /NotificationCenter/);
   assert.match(component, /AccountCenter/);
   assert.match(component, /LoginScreen/);
-  assert.match(component, /openNotificationTarget/);
   assert.match(component, /signout-with-chatgpt/);
   assert.match(component, /equip-benefit-devices-by-hospital-v1/);
   assert.match(component, /api\/tenant-context/);
@@ -308,13 +303,9 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   assert.match(definitions, /次\/1000运行小时/);
   assert.match(definitions, /信息部集成；财务\/医务复核/);
 
-  assert.match(notificationCenter, /工作提醒与系统消息/);
-  assert.match(notificationCenter, /全部标为已读/);
   assert.match(accountCenter, /登录与安全/);
-  assert.match(accountCenter, /消息接收偏好/);
   assert.match(loginScreen, /登录账号/);
   assert.match(loginScreen, /登录不等于获得业务权限/);
-  assert.match(notifications, /手术机器人进入效益预警区间/);
 
   assert.match(page, /<EquipmentPlatform/);
   assert.match(page, /viewer=/);
@@ -328,39 +319,22 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   await assert.rejects(access(new URL("../app/_sites-preview", templateRoot)));
 });
 
-test("requires an application session and provides real TOTP account security", async () => {
-  const [
-    component,
-    loginScreen,
-    accountCenter,
-    appSessionRoute,
-    accountSecurityRoute,
-    accountSecurity,
-    schema,
-    migration,
-    packageJson,
-    benefitReportRoute,
-    tenantRoute,
-    cloudRoute,
-    artifactRoute,
-  ] = await Promise.all([
+test("应用会话仍是硬边界，且二次验证已整体下线", async () => {
+  const { existsSync } = await import("node:fs");
+  const [component, loginScreen, accountCenter, appSessionRoute, accountSecurity, schema, benefitReportRoute, tenantRoute, cloudRoute, artifactRoute] = await Promise.all([
     readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LoginScreen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/AccountCenter.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/app-session/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/account-security/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/account-security.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
-    readFile(new URL("../drizzle/0005_milky_rocket_racer.sql", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../app/api/benefit-reports/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/tenant-context/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/cloud-state/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/report-artifacts/route.ts", import.meta.url), "utf8"),
   ]);
 
-  // SSO identity is only the first layer. Every business API must require the
-  // independent application session rather than authorize getChatGPTUser directly.
+  // 会话与口令这条主链路必须完好：MFA 下线不能顺带削掉它
   for (const [routeName, route] of [
     ["benefit-reports API", benefitReportRoute],
     ["tenant-context API", tenantRoute],
@@ -369,149 +343,53 @@ test("requires an application session and provides real TOTP account security", 
   ]) {
     assertAppSessionProtected(route, routeName);
   }
-  for (const [routeName, route] of [
-    ["benefit-reports API", benefitReportRoute],
-    ["tenant-context API", tenantRoute],
-    ["cloud-state API", cloudRoute],
-    ["report-artifacts API", artifactRoute],
-  ]) {
-    assertSameOriginProtected(route, routeName);
-  }
-
-  // The session boundary supports explicit creation, lock, unlock, revocation and password login.
-  for (const sessionAction of ["status", "start", "unlock", "lock", "revoke", "revoke_all", "password_login", "change_password"]) {
-    assert.match(appSessionRoute, new RegExp(`"${sessionAction}"`), `AppSessionAction includes ${sessionAction}`);
-  }
-  assert.match(appSessionRoute, /assertSameOrigin\(request\)/);
-  assert.match(appSessionRoute, /if \(action === "start"\) return await startSession/);
-  assert.match(appSessionRoute, /if \(action === "unlock"\) return await unlockSession/);
-  assert.match(appSessionRoute, /lockAppSession\(request\)/);
-  assert.match(appSessionRoute, /revokeCurrentAppSession\(request\)/);
-  assert.match(appSessionRoute, /revokeAllAppSessions\(request\)/);
-  assert.match(appSessionRoute, /verifyMfaFactor/);
-  assert.match(appSessionRoute, /appSessionCookie\(issued\.rawToken\)/);
-  assert.match(appSessionRoute, /clearAppSessionCookie\(\)/);
-  assert.match(appSessionRoute, /"Cache-Control": "no-store"/);
-
-  assert.match(accountSecurity, /export const APP_SESSION_COOKIE = "__Host-yh_app_session"/);
-  assert.match(accountSecurity, /APP_SESSION_IDLE_SECONDS = 8 \* 60 \* 60/);
-  assert.match(accountSecurity, /APP_SESSION_ABSOLUTE_SECONDS = 24 \* 60 \* 60/);
-  assert.match(accountSecurity, /tokenHash = await sha256Hex\(rawToken\)/);
-  assert.match(accountSecurity, /HttpOnly; Secure; SameSite=Lax/);
+  assert.match(appSessionRoute, /password_login/);
+  assert.match(appSessionRoute, /change_password/);
+  // 登录与改密是状态变更，必须挡住跨站请求
+  assertSameOriginProtected(appSessionRoute, "app-session API");
+  assert.match(accountSecurity, /export async function inspectAppSession/);
+  assert.match(accountSecurity, /export async function issueAppSession/);
   assert.match(accountSecurity, /export async function requireAppSession/);
-  assert.match(accountSecurity, /"app_session_locked"/);
-  assert.match(accountSecurity, /"app_session_expired"/);
-  assert.match(accountSecurity, /"app_session_required"/);
-
-  // Account security itself is behind an active application session and uses
-  // same-origin mutation checks; it cannot be reached with SSO headers alone.
-  assertAppSessionProtected(accountSecurityRoute, "account-security API");
-  assert.match(accountSecurityRoute, /assertSameOrigin\(request\)/);
-  assert.match(accountSecurityRoute, /payload\.action === "begin"/);
-  assert.match(accountSecurityRoute, /beginMfaEnrollment/);
-  assert.match(accountSecurityRoute, /payload\.action === "cancel"/);
-  assert.match(accountSecurityRoute, /cancelMfaEnrollment/);
-  assert.match(accountSecurityRoute, /payload\.action === "confirm"/);
-  assert.match(accountSecurityRoute, /confirmMfaEnrollment/);
-  assert.match(accountSecurityRoute, /recoveryCodes: confirmed\.recoveryCodes/);
-  assert.match(accountSecurityRoute, /payload\.action === "disable"/);
-  assert.match(accountSecurityRoute, /verifyMfaFactor/);
-  assert.match(accountSecurityRoute, /withNoStore\(appSessionError\(error\)\)/);
-
-  // TOTP secrets are encrypted, codes are replay-protected and rate-limited,
-  // and recovery codes are stored as one-time hashes rather than plaintext.
-  assert.match(accountSecurity, /otpauth:\/\/totp\//);
-  assert.match(accountSecurity, /algorithm=SHA1&digits=\$\{TOTP_DIGITS\}&period=\$\{TOTP_PERIOD_SECONDS\}/);
-  assert.match(accountSecurity, /\{ name: "AES-GCM", iv \}/);
-  assert.match(accountSecurity, /MFA_TOTP_ENCRYPTION_KEY/);
-  assert.match(accountSecurity, /lt\(accountMfaSettings\.lastTotpCounter, matchedCounter\)/);
-  assert.match(accountSecurity, /mfa_code_replayed/);
-  assert.match(accountSecurity, /MFA_LOCK_THRESHOLD = 5/);
-  assert.match(accountSecurity, /MFA_LOCK_MS = 15 \* 60 \* 1000/);
-  assert.match(accountSecurity, /failedAttempts: sql<number>`\$\{accountMfaSettings\.failedAttempts\} \+ 1`/);
-  assert.match(accountSecurity, /if \(!cancelled\)/);
-  assert.match(accountSecurity, /await db\.batch\(\[/);
-  assert.match(accountSecurity, /export async function cancelMfaEnrollment/);
-  assert.match(accountSecurity, /mfa_cancel/);
-  assert.match(accountSecurity, /secretCiphertext: null/);
-  assert.match(accountSecurity, /secretIv: null/);
-  assert.match(accountSecurity, /codeHash: await sha256Hex\(normalizeRecoveryCode\(code\)\)/);
-  assert.match(accountSecurity, /isNull\(accountRecoveryCodes\.usedAt\)/);
-  assert.match(accountSecurity, /set\(\{ usedAt: new Date\(\)\.toISOString\(\) \}\)/);
-  assert.match(accountSecurity, /constantTimeEqual\(expected, code\)/);
-
-  assert.match(schema, /export const appSessions/);
-  assert.match(schema, /export const accountMfaSettings/);
-  assert.match(schema, /export const accountRecoveryCodes/);
-  assert.match(migration, /CREATE TABLE `app_sessions`/);
-  assert.match(migration, /CREATE TABLE `account_mfa_settings`/);
-  assert.match(migration, /CREATE TABLE `account_recovery_codes`/);
-
-  // The account center creates the QR image from the one-time otpauth URI and
-  // requires users to save server-issued one-time recovery codes.
-  assert.match(packageJson, /"qrcode"/);
-  assert.match(accountCenter, /import QRCode from "qrcode"/);
-  assert.match(accountCenter, /QRCode\.toDataURL\(nextEnrollment\.otpauthUri/);
-  assert.match(accountCenter, /alt="身份验证器绑定二维码"/);
-  assert.match(accountCenter, /action: "cancel"/);
-  assert.match(accountCenter, /临时密钥已清除/);
-  assert.match(accountCenter, /保存一次性恢复码/);
-  assert.match(accountCenter, /recoveryCodes\.map/);
-  assert.match(accountCenter, /每枚恢复码只能使用一次/);
-  assert.match(accountCenter, /服务端只保存其校验摘要/);
-  assert.doesNotMatch(accountCenter, /当前会话 · macOS|上次会话 · Web|上海 · 刚刚|上海 · 2026/);
-  assert.match(accountCenter, /不根据浏览器猜测城市、系统或历史设备/);
-
-  // The UI exposes all three states and keeps SSO switching separate from
-  // entering or unlocking the application session.
-  assert.match(loginScreen, /export type LoginMode = "signin" \| "session-required" \| "locked"/);
-  assert.match(loginScreen, /viewer\?: ViewerIdentity/);
-  assert.match(loginScreen, /mfaEnabled\?: boolean/);
-  assert.match(loginScreen, /viewer\.email/);
-  assert.match(loginScreen, /登录身份已核验/);
-  assert.match(loginScreen, /应用会话已锁定/);
-  assert.match(loginScreen, /6 位验证码或恢复码/);
-  assert.match(loginScreen, /进入平台/);
-  assert.match(loginScreen, /切换登录账号/);
-  assert.match(loginScreen, /onSwitchAccount/);
-  assert.match(loginScreen, /onPasswordLogin/);
-  assert.doesNotMatch(loginScreen, /QRCode|toDataURL|<canvas/);
-
-  assert.match(component, /type ApplicationSessionState = "checking" \| "required" \| "locked" \| "active" \| "error" \| "demo"/);
-  assert.match(component, /fetch\("\/api\/app-session"/);
-  assert.match(component, /action: applicationSessionState === "locked" \? "unlock" : "start"/);
-  assert.match(component, /mode=\{applicationSessionState === "locked" \? "locked" : "session-required"\}/);
-  assert.match(component, /onContinue=\{continueApplicationSession\}/);
-  assert.match(component, /onSwitchAccount=\{switchUnifiedIdentity\}/);
+  assert.match(accountSecurity, /export function assertSameOrigin/);
+  assert.match(accountSecurity, /export async function writeSecurityAudit/);
+  assert.match(accountSecurity, /__Host-yh_app_session/);
   assert.match(component, /applicationSessionState !== "active"/);
+
+  // 二维码二次验证按需求整体删除：前端面板、后端路由、库表与登录分支都不能有残留
+  assert.equal(existsSync(new URL("../app/api/account-security/route.ts", import.meta.url)), false);
+  for (const [name, source] of [
+    ["EquipmentPlatform", component],
+    ["LoginScreen", loginScreen],
+    ["AccountCenter", accountCenter],
+    ["app-session route", appSessionRoute],
+    ["db/account-security", accountSecurity],
+    ["db/schema", schema],
+  ]) {
+    assert.doesNotMatch(source, /verifyMfaFactor|beginMfaEnrollment|accountMfaSettings|accountRecoveryCodes|totpCode|recoveryCode/, `${name} 仍有 MFA 残留`);
+  }
 });
 
-test("provides a role-based guide with clickable hospital workflows", async () => {
-  const [component, guide, styles] = await Promise.all([
-    readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/GuideCenter.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
-  ]);
 
-  assert.match(component, /id: "guide", label: "使用指南"/);
-  assert.match(component, /aria-label="打开使用指南"/);
-  assert.match(component, /guide-entry-strip/);
-  assert.match(component, /<GuideCenter/);
-  assert.match(guide, /院领导/);
-  assert.match(guide, /设备科/);
-  assert.match(guide, /财务运营/);
-  assert.match(guide, /科室负责人/);
-  assert.match(guide, /信息科/);
-  assert.match(guide, /平台管理员/);
-  assert.match(guide, /医疗设备效益分析月度闭环流程图/);
-  assert.match(guide, /5 分钟讲清楚系统价值/);
-  assert.match(guide, /这里是配置与记录快照，不等于本月已经完成采集、对账、复核或签发/);
-  assert.match(guide, /不在本平台保存患者身份和实时生理参数/);
-  assert.match(styles, /\.guide-monthly-flow/);
-  assert.match(styles, /\.guide-route-grid/);
-  assert.match(styles, /\.guide-page-grid/);
-  assert.match(styles, /\.guide-demo-route/);
-  assert.match(styles, /@media \(max-width: 560px\)[\s\S]*\.guide-route-grid, \.guide-page-grid, \.guide-monthly-flow/);
+test("使用指南与消息中心已整体移除，且不留悬空引用", async () => {
+  const { existsSync } = await import("node:fs");
+  for (const relative of ["../app/GuideCenter.tsx", "../app/NotificationCenter.tsx", "../app/notification-data.ts"]) {
+    assert.equal(existsSync(new URL(relative, import.meta.url)), false, `${relative} 应已删除`);
+  }
+  const [component, menu, accessComponent] = await Promise.all([
+    readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/menu-catalog.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/AccessControlCenter.tsx", import.meta.url), "utf8"),
+  ]);
+  for (const [name, source] of [["EquipmentPlatform", component], ["menu-catalog", menu], ["AccessControlCenter", accessComponent]]) {
+    assert.doesNotMatch(source, /GuideCenter|NotificationCenter|notification-data/, `${name} 仍引用已删组件`);
+    assert.doesNotMatch(source, /使用指南|消息中心/, `${name} 仍有相关文案`);
+  }
+  // 顶栏这两个按钮和账号菜单里的消息偏好一并去掉
+  assert.doesNotMatch(component, /guide-shortcut|notification-button|消息偏好/);
+  // 顶栏剩余能力必须还在：医院切换、缩放、账号菜单
+  assert.match(component, /account-trigger/);
+  assert.match(component, /hospital-switcher/);
+  assert.match(component, /zoom-controls/);
 });
 
 test("uses hospital-scoped D1 state and account-scoped preferences for authenticated sessions", async () => {
@@ -558,17 +436,14 @@ test("uses hospital-scoped D1 state and account-scoped preferences for authentic
 
   assert.match(cloudTypes, /"devices"/);
   assert.match(cloudTypes, /"costEntries"/);
-  assert.match(cloudTypes, /"notifications"/);
   assert.match(cloudTypes, /"improvementActions"/);
   assert.match(cloudTypes, /"modules"/);
   assert.match(cloudTypes, /"dataSources"/);
   assert.match(cloudTypes, /"analysisProfiles"/);
-  assert.match(cloudTypes, /readNotificationIds\?: string\[\]/);
 
   // RBAC is enforced server-side for every shared resource.
   assert.match(cloudStore, /devices: "equipment\.manage"/);
   assert.match(cloudStore, /costEntries: "cost\.manage"/);
-  assert.match(cloudStore, /notifications: "member\.manage"/);
   assert.match(cloudStore, /improvementActions: "improvement\.manage"/);
   assert.match(cloudStore, /modules: "member\.manage"/);
   assert.match(cloudStore, /dataSources: "source\.manage"/);
@@ -606,11 +481,7 @@ test("uses hospital-scoped D1 state and account-scoped preferences for authentic
   assert.match(component, /mayInitializeHospital/);
 
   // Notification bodies are hospital-shared, while read state is stored per account.
-  assert.match(cloudRoute, /delete notification\.read/);
   assert.match(cloudRoute, /accountCloudPreferences\.accountId/);
-  assert.match(cloudRoute, /readNotificationIdsJson/);
-  assert.match(component, /readNotificationIds\.includes\(item\.id\)/);
-  assert.match(component, /updateReadNotificationIds/);
 
   // Bootstrap is idempotent and the migration creates the hospital/account persistence boundary.
   assert.match(cloudRoute, /bootstrapResource/);
@@ -621,7 +492,6 @@ test("uses hospital-scoped D1 state and account-scoped preferences for authentic
   assert.match(migration, /PRIMARY KEY\(`hospital_id`, `resource`\)/);
   assert.match(migration, /CREATE TABLE `account_cloud_preferences`/);
   assert.match(migration, /`account_id` text PRIMARY KEY/);
-  assert.match(migration, /`read_notification_ids_json` text/);
   assert.match(hosting, /"d1": "DB"/);
 });
 
@@ -869,10 +739,10 @@ test("云端运维已整体移除，且不留悬空引用", async () => {
   const [component, menu, guide] = await Promise.all([
     readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/menu-catalog.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/GuideCenter.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/AccessControlCenter.tsx", import.meta.url), "utf8"),
   ]);
-  // 删菜单最容易留下的就是悬空 import、路由分支和引导步骤
-  for (const [name, source] of [["EquipmentPlatform", component], ["menu-catalog", menu], ["GuideCenter", guide]]) {
+  // 删菜单最容易留下的就是悬空 import、路由分支和文案
+  for (const [name, source] of [["EquipmentPlatform", component], ["menu-catalog", menu], ["AccessControlCenter", guide]]) {
     assert.doesNotMatch(source, /CloudOperationsCenter/, `${name} 仍引用已删组件`);
     assert.doesNotMatch(source, /云端运维/, `${name} 仍有云端运维文案`);
     assert.doesNotMatch(source, /"operations"/, `${name} 仍有 operations 视图或菜单`);

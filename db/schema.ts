@@ -675,28 +675,3 @@ export const appSessions = sqliteTable("app_sessions", {
   uniqueIndex("app_sessions_token_hash_unique").on(table.tokenHash),
   index("app_sessions_account_status_idx").on(table.accountId, table.status),
 ]);
-
-export const accountMfaSettings = sqliteTable("account_mfa_settings", {
-  accountId: text("account_id").primaryKey().references(() => accounts.id, { onDelete: "cascade" }),
-  status: text("status", { enum: ["disabled", "pending", "enabled"] }).notNull().default("disabled"),
-  secretCiphertext: text("secret_ciphertext"),
-  secretIv: text("secret_iv"),
-  lastTotpCounter: integer("last_totp_counter").notNull().default(-1),
-  failedAttempts: integer("failed_attempts").notNull().default(0),
-  lockedUntil: text("locked_until"),
-  pendingExpiresAt: text("pending_expires_at"),
-  confirmedAt: text("confirmed_at"),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
-
-export const accountRecoveryCodes = sqliteTable("account_recovery_codes", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
-  codeHash: text("code_hash").notNull(),
-  usedAt: text("used_at"),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [
-  uniqueIndex("account_recovery_codes_hash_unique").on(table.codeHash),
-  index("account_recovery_codes_account_used_idx").on(table.accountId, table.usedAt),
-]);

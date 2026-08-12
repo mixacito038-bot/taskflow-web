@@ -11,7 +11,6 @@ import {
 export const cloudResourceNames = [
   "devices",
   "costEntries",
-  "notifications",
   "improvementActions",
   "modules",
   "dataSources",
@@ -30,8 +29,6 @@ export type CloudPreferences = {
   theme: "clinical" | "teal" | "midnight";
   density: "comfortable" | "compact";
   contentZoom: number;
-  notificationPreferences: Record<string, boolean>;
-  readNotificationIds: string[];
   activeHospitalId: string;
   department: string;
   period: string;
@@ -43,7 +40,6 @@ const PLATFORM_ADMIN_ROLE_ID = "role-platform-admin";
 const resourcePermission: Record<CloudResourceName, string> = {
   devices: "equipment.manage",
   costEntries: "cost.manage",
-  notifications: "member.manage",
   improvementActions: "improvement.manage",
   modules: "member.manage",
   dataSources: "source.manage",
@@ -58,7 +54,6 @@ const resourcePermission: Record<CloudResourceName, string> = {
 const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
   devices: ["dashboard.view", "equipment.manage", "improvement.manage", "report.manage", "report.review", "report.approve", "report.export"],
   costEntries: ["cost.manage"],
-  notifications: ["dashboard.view", "member.manage"],
   improvementActions: ["improvement.manage"],
   modules: ["dashboard.view", "member.manage"],
   dataSources: ["source.manage", "report.manage", "report.review", "report.approve", "report.export"],
@@ -74,7 +69,6 @@ export function emptySharedState(): CloudSharedState {
   return {
     devices: [],
     costEntries: [],
-    notifications: [],
     improvementActions: [],
     ledgerFields: [],
     metricDictionary: [],
@@ -98,14 +92,6 @@ export function defaultCloudPreferences(hospitalId: string): CloudPreferences {
     theme: "clinical",
     density: "comfortable",
     contentZoom: 1.1,
-    notificationPreferences: {
-      benefitAlerts: true,
-      costTasks: true,
-      dataQuality: true,
-      securityAlerts: true,
-      weeklyDigest: false,
-    },
-    readNotificationIds: [],
     activeHospitalId: hospitalId,
     department: "全部科室",
     period: "2026年度",
