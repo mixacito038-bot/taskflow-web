@@ -96,3 +96,28 @@ test("中国区部署交付物齐备：国内镜像源、nginx、systemd 与源�
   assert.match(packer, /server-node/);
   assert.match(packer, /drizzle/);
 });
+
+test("单机试用路径：默认 IP 直连可用，--behind-nginx 才收回本机", async () => {
+  const [installer, reset, quickstart] = await Promise.all([
+    readFile(new URL("../deploy/install-tencentos.sh", import.meta.url), "utf8"),
+    readFile(new URL("../deploy/reset-data.sh", import.meta.url), "utf8"),
+    readFile(new URL("../docs/单机试用-快速开始.md", import.meta.url), "utf8"),
+  ]);
+  // 默认试用模式：监听所有网卡，浏览器用 IP:端口 直接访问，不需要域名和证书
+  assert.match(installer, /MODE=trial/);
+  assert.match(installer, /HOST=0\.0\.0\.0/);
+  assert.match(installer, /--behind-nginx/);
+  // 正式模式必须收回到本机并去掉不安全 Cookie 开关
+  assert.match(installer, /HOST=127\.0\.0\.1/);
+  assert.match(installer, /\/APP_SESSION_ALLOW_INSECURE\/d/);
+  // unit 里的 node 路径按实际安装位置改写，不写死 /usr/bin/node
+  assert.match(installer, /ExecStart=\$\{NODE_BIN\}/);
+  // 安全组提示要给到，否则用户只会看到"打不开"
+  assert.match(installer, /安全组/);
+  // 反复试功能要能一键清空
+  assert.match(reset, /platform\.sqlite/);
+  assert.match(reset, /systemctl stop/);
+  assert.match(reset, /read -r answer/);
+  assert.match(quickstart, /http:\/\/<你的服务器IP>:3000|http:\/\/<服务器IP>:3000/);
+  assert.match(quickstart, /reset-data\.sh/);
+});
