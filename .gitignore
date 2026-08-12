@@ -45,3 +45,6 @@ next-env.d.ts
 /work/
 /tmp/
 /data/
+
+# 交付包由 scripts/package-source-release.sh 现场产出，不进版本库（8MB 二进制会把仓库撑大）
+release/
