@@ -45,13 +45,54 @@ test("Docker 交付物齐备且编排不暴露公网端口", async () => {
     readFile(new URL("../.env.tencent.docker.example", import.meta.url), "utf8"),
     readFile(new URL("../docs/DEPLOY-TENCENT-DOCKER.md", import.meta.url), "utf8"),
   ]);
-  assert.match(dockerfile, /FROM node:22/);
+  assert.match(dockerfile, /ARG BASE_IMAGE=node:22/);
+  assert.match(dockerfile, /FROM \$\{BASE_IMAGE\}/);
+  // 中国大陆：容器默认 UTC 会让"今天/本月"在 0—8 点整体错一天
+  assert.match(dockerfile, /TZ=Asia\/Shanghai/);
   assert.match(dockerfile, /HEALTHCHECK/);
   assert.match(dockerfile, /register-loader\.mjs/);
   assert.match(compose, /127\.0\.0\.1:3000:3000/);
   assert.match(compose, /yonghong-data:\/data/);
   assert.match(compose, /restart: unless-stopped/);
+  assert.match(compose, /TZ: "\$\{TZ:-Asia\/Shanghai\}"/);
+  assert.match(envExample, /TZ=Asia\/Shanghai/);
   assert.match(envExample, /BOOTSTRAP_ADMIN_USERNAME/);
   assert.match(doc, /TencentOS Server 4/);
   assert.match(doc, /APP_SESSION_ALLOW_INSECURE/);
+});
+
+test("服务壳在 nginx 终结 HTTPS 时按转发头构造来源，且只采信内网对端", async () => {
+  const server = await readFile(new URL("../server-node/server.mjs", import.meta.url), "utf8");
+  // 不采信转发头会让 Origin(https) 与请求 URL(http) 不符，配好 HTTPS 后反而登录不上。
+  assert.match(server, /x-forwarded-proto/);
+  assert.match(server, /x-forwarded-host/);
+  assert.match(server, /function requestOriginBase/);
+  assert.match(server, /new URL\(req\.url \?\? "\/", requestOriginBase\(req\)\)/);
+  // 公网直连伪造的 X-Forwarded-* 必须忽略：只认回环/内网对端。
+  assert.match(server, /TRUSTED_PROXY_PEER/);
+  assert.match(server, /req\.socket\?\.remoteAddress/);
+  assert.doesNotMatch(server, /new URL\(req\.url \?\? "\/", `http:\/\/\$\{req\.headers\.host/);
+});
+
+test("中国区部署交付物齐备：国内镜像源、nginx、systemd 与源码打包脚本", async () => {
+  const [npmrc, nginx, unit, unitEnv, packer] = await Promise.all([
+    readFile(new URL("../.npmrc.china.example", import.meta.url), "utf8"),
+    readFile(new URL("../tencent-cloud/nginx.conf.example", import.meta.url), "utf8"),
+    readFile(new URL("../deploy/yonghong-platform.service", import.meta.url), "utf8"),
+    readFile(new URL("../deploy/yonghong-platform.env.example", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/package-source-release.sh", import.meta.url), "utf8"),
+  ]);
+  assert.match(npmrc, /registry\.npmmirror\.com/);
+  // 反代必须透传协议头，否则平台判定不了 HTTPS
+  assert.match(nginx, /X-Forwarded-Proto \$scheme/);
+  // 医院 Excel 导入需要放开上传体积
+  assert.match(nginx, /client_max_body_size/);
+  assert.match(nginx, /ICP 备案/);
+  assert.match(unit, /TZ=Asia\/Shanghai/);
+  assert.match(unit, /register-loader\.mjs/);
+  assert.match(unitEnv, /BOOTSTRAP_ADMIN_USERNAME/);
+  // 源码包必须自带构建产物：院内服务器可能完全没有外网
+  assert.match(packer, /dist/);
+  assert.match(packer, /server-node/);
+  assert.match(packer, /drizzle/);
 });

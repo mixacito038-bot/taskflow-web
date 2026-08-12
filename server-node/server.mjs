@@ -136,9 +136,30 @@ function outboundSetCookie(value) {
     .replace(/;\s*Secure/i, "");
 }
 
+// nginx 终结 TLS 后，到达本进程的仍是明文 HTTP：若按 http 构造请求 URL，
+// 浏览器发来的 Origin: https://域名 会与之不符，同源校验直接 403 origin_mismatch，
+// 表现为"配好 HTTPS 后反而登录不上"。因此需要采信反向代理的转发头。
+// 只有当对端是回环/内网地址（即请求确实来自本机或院内网关的反向代理）时才采信，
+// 公网直连伪造的 X-Forwarded-* 一律忽略。
+const TRUSTED_PROXY_PEER = /^(?:127\.|::1$|::ffff:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|f[cd])/i;
+
+function fromTrustedProxy(req) {
+  const peer = req.socket?.remoteAddress ?? "";
+  return TRUSTED_PROXY_PEER.test(peer);
+}
+
+function requestOriginBase(req) {
+  const trusted = fromTrustedProxy(req);
+  const forwardedProto = trusted ? String(req.headers["x-forwarded-proto"] ?? "").split(",")[0].trim() : "";
+  const forwardedHost = trusted ? String(req.headers["x-forwarded-host"] ?? "").split(",")[0].trim() : "";
+  const protocol = forwardedProto === "https" || forwardedProto === "http" ? forwardedProto : "http";
+  const host = forwardedHost || req.headers.host || `127.0.0.1:${PORT}`;
+  return `${protocol}://${host}`;
+}
+
 const server = createServer(async (req, res) => {
   try {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `127.0.0.1:${PORT}`}`);
+    const url = new URL(req.url ?? "/", requestOriginBase(req));
 
     if (url.pathname === "/healthz") {
       res.writeHead(200, { "content-type": "application/json" });

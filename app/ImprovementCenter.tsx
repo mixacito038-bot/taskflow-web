@@ -228,6 +228,7 @@ const practiceCards = [
     practice: "把资产状态、预防性维护、维修工单、备件、合同和退役统一到可追踪的设备生命周期。",
     applied: "已转化：设备可用率/PM 目标、保障类任务和更新论证建议。",
     href: "https://www.who.int/publications/i/item/9789240111257",
+    overseas: true,
   },
   {
     label: "运营案例",
@@ -235,6 +236,7 @@ const practiceCards = [
     practice: "每周同时观察转诊、活动量、在制/积压、取消和等待时间，用流程图找约束并小步验证方案。",
     applied: "已转化：周度需求—产能生命体征和情景方案收益跟踪。",
     href: "https://www.england.nhs.uk/long-read/case-study-improving-access-to-computed-tomography-ct/",
+    overseas: true,
   },
 ];
 
@@ -801,7 +803,7 @@ export default function ImprovementCenter({ devices, actions, setActions, onSele
             <h3>{practice.title}</h3>
             <p>{practice.practice}</p>
             <strong><Lightbulb size={15} />{practice.applied}</strong>
-            <a href={practice.href} target="_blank" rel="noreferrer">查看官方来源<ArrowRight size={14} /></a>
+            <a href={practice.href} target="_blank" rel="noreferrer">查看官方来源{"overseas" in practice ? "（境外站点）" : ""}<ArrowRight size={14} /></a>
           </article>
         ))}
       </section>

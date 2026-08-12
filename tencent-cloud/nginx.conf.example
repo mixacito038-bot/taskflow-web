@@ -1,31 +1,90 @@
-server {
-    listen 80;
-    server_name equipment.example.com;
+# 勇虹医疗设备效益管理平台 · nginx 反向代理示例（腾讯云 CVM / 中国大陆）
+#
+# 放置：/etc/nginx/conf.d/yonghong.conf
+# 证书：腾讯云 SSL 证书控制台可申请免费 DV 证书，下载 "Nginx" 格式，
+#       解压得到 xxx_bundle.crt 与 xxx.key，放到 /etc/nginx/certs/ 下。
+#       （certbot/Let's Encrypt 在国内续期常因网络失败，优先用腾讯云证书。）
+#
+# 备案提醒：中国大陆服务器对公网开放 80/443 需先完成 ICP 备案，
+# 域名未备案时腾讯云会拦截 80/443。未备案期间可只在内网访问，
+# 或用 VPN/专线接入，不要试图换非标端口绕开。
 
-    return 301 https://$host$request_uri;
+# 上游：平台服务壳只监听本机，公网流量一律经 nginx
+upstream yonghong_app {
+    server 127.0.0.1:3000;
+    keepalive 32;
 }
 
 server {
-    listen 443 ssl http2;
-    server_name equipment.example.com;
+    listen 80;
+    server_name equipment.example.cn;
 
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    # 备案校验与证书签发需要放行，其余一律跳 HTTPS
+    location /.well-known/ { root /var/www/html; }
+    location / { return 301 https://$host$request_uri; }
+}
 
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name equipment.example.cn;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.crt;
+    ssl_certificate_key /etc/nginx/certs/privkey.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # 数据接入中心要上传医院 Excel（多文件、整年明细），25m 是实测够用的下限；
+    # 若院内单个导出文件更大，这里和平台侧的单文件限制要同步调大。
     client_max_body_size 25m;
+    client_body_timeout  120s;
 
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header X-Frame-Options DENY always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    gzip on;
+    gzip_min_length 1k;
+    gzip_comp_level 5;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    gzip_vary on;
+
+    # 构建产物带内容哈希，可长期强缓存；HTML 不缓存，保证升级后立刻生效
+    location /assets/ {
+        proxy_pass http://yonghong_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://yonghong_app;
         proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # 平台据此判定 HTTPS 并启用 __Host- 安全 Cookie，缺这一行会登录不上
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 120s;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
     }
-}
 
+    # 健康检查只允许内网，避免对外暴露运行状态
+    location = /healthz {
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        proxy_pass http://yonghong_app;
+    }
+
+    access_log /var/log/nginx/yonghong.access.log;
+    error_log  /var/log/nginx/yonghong.error.log;
+}

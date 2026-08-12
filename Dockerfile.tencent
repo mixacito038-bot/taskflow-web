@@ -1,19 +1,34 @@
-# 勇虹医疗设备效益管理平台 · 腾讯云/自托管运行镜像（TencentOS 4 x86_64 适用）
+# 勇虹医疗设备效益管理平台 · 腾讯云/自托管运行镜像（TencentOS Server 4 x86_64 适用）
 #
 # 构建前先在仓库根目录完成产物构建（构建需要 Node >= 22.13）：
 #   npm ci && npm run build
 # 然后：
 #   docker build -f Dockerfile.tencent -t yonghong-platform:$(date +%Y%m%d) .
 #
+# 中国大陆网络：Docker Hub 直连不稳定，可换成腾讯云镜像仓库的官方镜像副本：
+#   docker build -f Dockerfile.tencent \
+#     --build-arg BASE_IMAGE=ccr.ccs.tencentyun.com/library/node:22-bookworm-slim \
+#     -t yonghong-platform:latest .
+# 或在 /etc/docker/daemon.json 配置 registry-mirrors 后直接用默认值。
+#
 # 运行时组件：Node 22 服务壳（server-node/）直接运行 Cloudflare Worker 构建产物；
 # D1 → /data/platform.sqlite；R2 → /data/r2；静态资源本进程直出。
-FROM node:22-bookworm-slim
+# 镜像内不含 node_modules：构建产物已自包含，运行期不需要访问任何 npm 源。
+ARG BASE_IMAGE=node:22-bookworm-slim
+FROM ${BASE_IMAGE}
 
+# TZ 必须显式设为东八区：容器默认 UTC，会让"今天/本月/本年度"在 0—8 点整体错一天，
+# 报告期间、审计时间戳与院内实际日期对不上。
 ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0 \
     DATA_DIR=/data \
+    TZ=Asia/Shanghai \
+    LANG=C.UTF-8 \
     NODE_OPTIONS=--disable-warning=ExperimentalWarning
+
+# 基础镜像自带 tzdata，这里只做链接，不联网装包（内网/离线环境也能构建）。
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /app
 

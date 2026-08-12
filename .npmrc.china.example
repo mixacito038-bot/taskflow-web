@@ -1,0 +1,12 @@
+# 中国大陆构建环境使用：cp .npmrc.china.example .npmrc
+# 默认源 registry.npmjs.org 在国内不稳定，改用阿里云 npmmirror（原淘宝源）。
+# 注意：仓库不默认带 .npmrc，避免境外 CI 被强制走国内源。
+registry=https://registry.npmmirror.com
+# 少数包会另行下载二进制，一并指向国内镜像
+disturl=https://registry.npmmirror.com/-/binary/node
+sass_binary_site=https://registry.npmmirror.com/-/binary/node-sass
+electron_mirror=https://registry.npmmirror.com/-/binary/electron/
+# 网络抖动时的重试策略（国内跨网访问常见）
+fetch-retries=5
+fetch-retry-mintimeout=20000
+fetch-retry-maxtimeout=120000

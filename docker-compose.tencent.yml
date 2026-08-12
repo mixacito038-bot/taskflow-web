@@ -9,12 +9,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.tencent
+      args:
+        # 中国大陆：Docker Hub 直连不稳定时改为
+        # ccr.ccs.tencentyun.com/library/node:22-bookworm-slim
+        BASE_IMAGE: "${BASE_IMAGE:-node:22-bookworm-slim}"
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
     environment:
       PORT: "3000"
       DATA_DIR: /data
+      # 东八区：容器默认 UTC 会让"今天/本月"在 0—8 点整体错一天。
+      TZ: "${TZ:-Asia/Shanghai}"
       # 内网 IP 直连试用时置为 "1"；经 nginx 提供 HTTPS 后必须删除或置空。
       APP_SESSION_ALLOW_INSECURE: "${APP_SESSION_ALLOW_INSECURE:-}"
       BOOTSTRAP_ADMIN_EMAIL: "${BOOTSTRAP_ADMIN_EMAIL:-}"

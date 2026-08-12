@@ -1,0 +1,43 @@
+# 勇虹医疗设备效益管理平台 · systemd 服务单元（不使用 Docker 的部署方式）
+#
+# 适用：TencentOS Server 4 / CentOS 系 / Anolis，已装 Node >= 22.13。
+# 构建产物自包含，运行期不需要 node_modules，也不需要访问任何 npm 源。
+#
+# 安装：
+#   cp deploy/yonghong-platform.service /etc/systemd/system/
+#   vi /etc/yonghong-platform.env        # 见 deploy/yonghong-platform.env.example
+#   systemctl daemon-reload && systemctl enable --now yonghong-platform
+[Unit]
+Description=Yonghong Medical Equipment Benefit Platform
+Documentation=file:/opt/yonghong-platform/docs/部署手册-腾讯云-中国区.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yonghong
+Group=yonghong
+WorkingDirectory=/opt/yonghong-platform
+# 东八区：不设会让"今天/本月"在 0—8 点整体错一天
+Environment=TZ=Asia/Shanghai
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--disable-warning=ExperimentalWarning
+EnvironmentFile=/etc/yonghong-platform.env
+ExecStart=/usr/bin/node --import ./server-node/register-loader.mjs server-node/server.mjs
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# 数据目录之外一律只读，降低被写入的面
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/yonghong-platform
+
+StandardOutput=append:/var/log/yonghong-platform.log
+StandardError=append:/var/log/yonghong-platform.log
+
+[Install]
+WantedBy=multi-user.target
