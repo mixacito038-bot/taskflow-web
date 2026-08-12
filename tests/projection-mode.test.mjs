@@ -85,3 +85,12 @@ test("cost center exports the current hospital's entries in the cost_detail temp
   // Download flows through the shared Blob + anchor pattern.
   assert.match(platform, /function exportCostEntriesCsv\(\)[\s\S]{0,1600}URL\.createObjectURL\(blob\)[\s\S]{0,400}URL\.revokeObjectURL\(link\.href\)/);
 });
+
+test("筛选条允许换行：平板宽度不会把整页顶出横向滚动条", async () => {
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  // 1024/1100 宽（iPad 横屏）下筛选条一行排不下，不换行就会撑出横向滚动
+  assert.match(css, /\.filter-bar \{[^}]*flex-wrap: wrap/);
+  assert.match(css, /\.filter-bar select \{[^}]*max-width: 100%/);
+  // 宽表必须在自己的容器里滚，不能顶宽页面
+  assert.match(css, /\.table-scroll \{ width: 100%; overflow-x: auto; \}/);
+});

@@ -270,10 +270,11 @@ a { color: inherit; }
 @media (max-width: 900px) { .configurable-view-grid { grid-template-columns: 1fr; } .configurable-view-toolbar { align-items: stretch; flex-direction: column; } }
 .insight-unavailable, .single-device-unavailable { min-height: 130px; display: flex; align-items: center; justify-content: center; gap: 13px; color: var(--muted); text-align: left; }.insight-unavailable svg, .single-device-unavailable svg { color: var(--primary); }.insight-unavailable h3, .single-device-unavailable h2 { margin: 0 0 5px; color: var(--text); }.insight-unavailable p, .single-device-unavailable p { margin: 0; line-height: 1.6; }
 
-.filter-bar { min-height: 54px; margin-bottom: 16px; padding: 8px 11px; display: flex; align-items: center; gap: 8px; border-radius: 11px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(23, 32, 51, .025); }
+/* 允许换行：平板（1024/1100 宽）下筛选条原本一行排不下，会把整页顶出横向滚动条。 */
+.filter-bar { min-height: 54px; margin-bottom: 16px; padding: 8px 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-radius: 11px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(23, 32, 51, .025); }
 .filter-bar label { height: 36px; padding: 0 10px; display: flex; align-items: center; gap: 8px; color: var(--muted); border-right: 1px solid var(--border); }
 .filter-bar label span { font-size: 12px; white-space: nowrap; }
-.filter-bar select { min-width: 110px; border: 0; outline: 0; color: var(--text); background: transparent; font-weight: 500; }
+.filter-bar select { min-width: 110px; max-width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; font-weight: 500; }
 .filter-status { margin-left: auto; padding-right: 5px; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
 .filter-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 
