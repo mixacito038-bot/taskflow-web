@@ -11,9 +11,6 @@ export type Hospital = {
   assetCodePrefix: string;
   region: string;
   status: HospitalStatus;
-  tenantKey: string;
-  dataCompleteness: number;
-  connectedSources: number;
 };
 
 export type ViewerIdentity = {
@@ -49,9 +46,9 @@ export type Membership = {
 };
 
 export const initialHospitals: Hospital[] = [
-  { id: "hosp-central", code: "HOSP-001", name: "勇虹示范中心医院", shortName: "中心医院", level: "三级甲等", category: "综合医院", assetCodePrefix: "YHZX", region: "总院区", status: "运行中", tenantKey: "tenant_yh_central", dataCompleteness: 96.8, connectedSources: 7 },
-  { id: "hosp-east", code: "HOSP-002", name: "勇虹示范东院", shortName: "东院", level: "三级乙等", category: "综合医院", assetCodePrefix: "YHDY", region: "东院区", status: "运行中", tenantKey: "tenant_yh_east", dataCompleteness: 91.4, connectedSources: 5 },
-  { id: "hosp-specialty", code: "HOSP-003", name: "勇虹示范专科医院", shortName: "专科医院", level: "三级（未定等）", category: "专科医院", assetCodePrefix: "YHZK", region: "专科院区", status: "运行中", tenantKey: "tenant_yh_specialty", dataCompleteness: 88.6, connectedSources: 4 },
+  { id: "hosp-central", code: "HOSP-001", name: "勇虹示范中心医院", shortName: "中心医院", level: "三级甲等", category: "综合医院", assetCodePrefix: "YHZX", region: "总院区", status: "运行中" },
+  { id: "hosp-east", code: "HOSP-002", name: "勇虹示范东院", shortName: "东院", level: "三级乙等", category: "综合医院", assetCodePrefix: "YHDY", region: "东院区", status: "运行中" },
+  { id: "hosp-specialty", code: "HOSP-003", name: "勇虹示范专科医院", shortName: "专科医院", level: "三级（未定等）", category: "专科医院", assetCodePrefix: "YHZK", region: "专科院区", status: "运行中" },
 ];
 
 export const permissionColumns = [

@@ -237,7 +237,7 @@ export default function MetricDictionarySettings({
         <div>
           <div className="eyebrow"><BookOpen size={15} />指标字典</div>
           <h1>指标字典配置</h1>
-          <p>维护本院效益指标的计算口径、理论依据出处和取数系统；这里改完，分析页和报告里引用的口径说明同步跟着变。</p>
+          
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={onBack}>返回</button>

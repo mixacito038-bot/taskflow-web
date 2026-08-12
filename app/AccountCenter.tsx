@@ -126,7 +126,7 @@ export default function AccountCenter({
   return (
     <>
       <div className="page-heading account-heading">
-        <div><div className="eyebrow"><UserRound size={15} />身份、权限与登录安全</div><h1>个人中心</h1><p>查看登录身份、医院成员关系和当前权限。</p></div>
+        <div><div className="eyebrow"><UserRound size={15} />身份、权限与登录安全</div><h1>个人中心</h1></div>
         <span className={`identity-state identity-${sessionState}`}><Fingerprint size={15} />{sessionState === "verified" ? "服务端身份已核验" : sessionState === "loading" ? "正在核验身份" : sessionState === "demo" ? "体验身份" : "医院授权不可用"}</span>
       </div>
 
@@ -144,11 +144,11 @@ export default function AccountCenter({
       {tab === "profile" ? (
         <div className="account-grid">
           <section className="panel account-panel">
-            <div className="panel-heading"><div><h3>账号信息</h3><p>姓名和邮箱来自受信任登录身份，不在业务前端自行修改。</p></div></div>
+            <div className="panel-heading"><div><h3>账号信息</h3></div></div>
             <div className="account-fields"><div><span>显示姓名</span><strong>{viewer.displayName}</strong></div><div><span>登录邮箱</span><strong>{viewer.email}</strong><button onClick={copyEmail} aria-label="复制登录邮箱"><Clipboard size={14} /></button></div><div><span>访问状态</span><strong className={sessionState === "verified" ? "success-text" : ""}>{sessionState === "verified" ? <Check size={14} /> : null}{authorizedStateLabel}</strong></div><div><span>身份来源</span><strong>{viewer.authenticated ? "平台工作账号" : "体验身份"}</strong></div></div>
           </section>
           <section className="panel account-panel account-hospitals">
-            <div className="panel-heading"><div><h3>我的医院</h3><p>同一账号在不同医院可以拥有不同角色和数据范围。</p></div><button className="text-button" onClick={onOpenAccess}>查看权限详情</button></div>
+            <div className="panel-heading"><div><h3>我的医院</h3></div><button className="text-button" onClick={onOpenAccess}>查看权限详情</button></div>
             <div className="account-hospital-list">{hospitals.map((hospital) => {
               const membership = membershipFor(hospital.id);
               return <button key={hospital.id} className={hospital.id === activeHospital.id ? "active" : ""} onClick={() => onSwitchHospital(hospital.id)}><span><Building2 size={17} /></span><div><strong>{hospital.name}</strong><small>{membership?.roleName ?? (sessionState === "demo" ? "演示管理员" : "已授权成员")} · {membership?.dataScope === "department" ? membership.departmentScope.join("、") : "医院范围"}</small></div><i>{hospital.id === activeHospital.id ? "当前" : "进入"}</i></button>;

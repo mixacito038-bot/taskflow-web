@@ -530,7 +530,7 @@ export default function BenefitAnalysisStudio({
           ) : null}
           <div className="analysis-collection-layout">
             <section className="panel analysis-profile-list">
-              <div className="panel-heading"><div><h3>设备品类模板</h3><p>按品类切换采集、事件与核算规则</p></div><span className="chart-note">{profiles.length} 类</span></div>
+              <div className="panel-heading"><div><h3>设备品类模板</h3></div><span className="chart-note">{profiles.length} 类</span></div>
               <div>
                 {profiles.map((profile) => (
                   <button key={profile.id} className={selected?.id === profile.id ? "active" : ""} onClick={() => setSelectedId(profile.id)}>

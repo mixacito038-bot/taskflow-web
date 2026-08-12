@@ -227,9 +227,6 @@ async function buildAuthoritativeReport(
     assetCodePrefix: hospitalRow.assetCodePrefix,
     region: hospitalRow.region,
     status: "运行中",
-    tenantKey: hospitalRow.code,
-    dataCompleteness: devices.length ? 100 : 0,
-    connectedSources: dataSources.filter((source) => source.status === "已连接").length,
   };
   const model = buildBenefitReportModel(devices, hospital, validated.config, dataSources, analysisProfiles);
   const quality = buildReportQuality(model);

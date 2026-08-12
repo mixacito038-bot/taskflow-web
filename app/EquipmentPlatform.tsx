@@ -474,9 +474,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         assetCodePrefix: membership.hospitalAssetCodePrefix ?? existing?.assetCodePrefix ?? "",
         region: membership.hospitalRegion ?? existing?.region ?? "未设置",
         status: "运行中",
-        tenantKey: existing?.tenantKey ?? `tenant_${membership.hospitalCode.toLowerCase().replaceAll("-", "_")}`,
-        dataCompleteness: existing?.dataCompleteness ?? 0,
-        connectedSources: existing?.connectedSources ?? 0,
       };
     }));
   }, [sessionState, setHospitalsLocal, tenantContext]);
@@ -2337,7 +2334,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                 ))}
               </div> : <div className="empty-dashboard"><Database size={30} /><h3>暂无已发布数据</h3><p>正式模式保持空态；完成文件映射、清洗、复核与发布后自动刷新。</p>{canOpenDataWorkbench && dataWorkbenchUnlocked ? <button className="primary-button" onClick={() => navigate("workbench")}>打开数据准备中心</button> : null}</div>}
               {configuredPublishedCanvases.length ? <div className="dashboard-grid">{configuredPublishedCanvases.map((item) => <div className="module module-medium" key={item.visualization.code}><ConfigurableAnalyticsCanvas metric={item.metric} visualization={item.visualization} data={[...item.data]} metricDefinitionVersion={item.metric.version ?? 1} visualizationVersion={item.visualization.version} /></div>)}</div> : null}
-              {!visibleModules.length ? <div className="empty-dashboard"><EyeOff size={30} /><h3>驾驶舱暂未启用模块</h3><p>前往管理后台选择需要展示的内容。</p><button className="primary-button" onClick={() => navigate("layout")}>立即配置</button></div> : null}
+              {!visibleModules.length ? <div className="empty-dashboard"><EyeOff size={30} /><h3>驾驶舱暂未启用模块</h3><button className="primary-button" onClick={() => navigate("layout")}>立即配置</button></div> : null}
             </>
           ) : null}
 
@@ -2772,7 +2769,7 @@ function CostManagement({
   return (
     <>
       <div className="page-heading">
-        <div><div className="eyebrow"><CircleDollarSign size={15} />全成本核算</div><h1>成本填报中心</h1><p>按设备、期间和成本项目填写人工、耗材及固定运行成本，并保留填报记录。</p></div>
+        <div><div className="eyebrow"><CircleDollarSign size={15} />全成本核算</div><h1>成本填报中心</h1></div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={onExport}><Download size={17} />导出成本明细文件</button>
           <span className="page-badge"><CheckCircle2 size={16} />2026-V1.3 口径</span>

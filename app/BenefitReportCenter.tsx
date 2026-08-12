@@ -1215,7 +1215,7 @@ export default function BenefitReportCenter({
       {tab === "config" ? (
         <div className="report-config-layout">
           <section className="panel report-config-card">
-            <div className="panel-heading"><div><h3>报告基本信息</h3><p>这些信息会进入 Word 封面和签发区。</p></div><FileText size={20} /></div>
+            <div className="panel-heading"><div><h3>报告基本信息</h3></div><FileText size={20} /></div>
             <fieldset className="report-config-fields" disabled={!editable}><label>报告标题<input value={config.title} onChange={(event) => updateConfig("title", event.target.value)} /></label><label>编制部门<input value={config.preparedBy} onChange={(event) => updateConfig("preparedBy", event.target.value)} /></label><label>编制人<input value={config.compiler} onChange={(event) => updateConfig("compiler", event.target.value)} /></label><label>审核人 / 部门<input value={config.reviewer} onChange={(event) => updateConfig("reviewer", event.target.value)} /></label><label>报告日期<input type="date" value={config.issueDate} onChange={(event) => updateConfig("issueDate", event.target.value)} /></label></fieldset>
           </section>
           <section className="panel report-config-card report-common-config">
@@ -1239,7 +1239,7 @@ export default function BenefitReportCenter({
             <div className="report-formula-note"><CircleAlert size={16} />会计结余用于经营评价；回收期应优先使用现金贡献，正式出具前需由财务复核。</div>
           </section>
           <section className="panel report-section-config">
-            <div className="panel-heading"><div><h3>报告章节</h3><p>按本次汇报对象选择需要生成的章节。</p></div><span className="chart-note">已选 {config.sections.length} 项</span></div>
+            <div className="panel-heading"><div><h3>报告章节</h3></div><span className="chart-note">已选 {config.sections.length} 项</span></div>
             <div className="report-section-list">{reportSections.map((section) => <label className={config.sections.includes(section.id) ? "checked" : ""} key={section.id}><input type="checkbox" disabled={!editable} checked={config.sections.includes(section.id)} onChange={() => toggleSection(section.id)} /><span><strong>{section.label}</strong><small>{section.id === "economic" ? `收入、${model.costLabel}、结余、ROI 与漏费` : section.note}</small></span><Check size={16} /></label>)}</div>
           </section>
           <section className="panel report-template-config">
@@ -1278,7 +1278,7 @@ export default function BenefitReportCenter({
               ) : <div className="report-ledger-empty compact"><Archive size={25} /><strong>还没有云端文件</strong><p>保存报告后导出 Word 或 CSV，文件会自动出现在这里。</p></div>}
             </section>
           ) : null}
-          <div className="report-ledger-bottom"><section className="panel"><div className="panel-heading"><div><h3>审批与导出记录</h3><p>记录谁在什么时间对哪个版本做了什么操作。</p></div><Clock3 size={19} /></div><div className="report-event-list">{events.length ? events.slice(0, 12).map((event) => <article key={event.id}><i /><div><strong>{event.detail}</strong><small>{event.actor} · {displayTime(event.createdAt)}</small></div><span>{event.action}</span></article>) : <p>暂无操作记录。</p>}</div></section><section className="panel"><div className="panel-heading"><div><h3>职责分离规则</h3><p>服务端在每次状态变更时重新校验医院成员关系。</p></div><ShieldCheck size={19} /></div><div className="report-duty-rules"><p><CheckCircle2 size={16} />编制人不能复核本人提交的报告</p><p><CheckCircle2 size={16} />复核人不能签发本人复核的报告</p><p><CheckCircle2 size={16} />跨医院访问和操作默认拒绝</p><p><CheckCircle2 size={16} />正式签发后内容和快照不可覆盖</p></div></section></div>
+          <div className="report-ledger-bottom"><section className="panel"><div className="panel-heading"><div><h3>审批与导出记录</h3></div><Clock3 size={19} /></div><div className="report-event-list">{events.length ? events.slice(0, 12).map((event) => <article key={event.id}><i /><div><strong>{event.detail}</strong><small>{event.actor} · {displayTime(event.createdAt)}</small></div><span>{event.action}</span></article>) : <p>暂无操作记录。</p>}</div></section><section className="panel"><div className="panel-heading"><div><h3>职责分离规则</h3><p>服务端在每次状态变更时重新校验医院成员关系。</p></div><ShieldCheck size={19} /></div><div className="report-duty-rules"><p><CheckCircle2 size={16} />编制人不能复核本人提交的报告</p><p><CheckCircle2 size={16} />复核人不能签发本人复核的报告</p><p><CheckCircle2 size={16} />跨医院访问和操作默认拒绝</p><p><CheckCircle2 size={16} />正式签发后内容和快照不可覆盖</p></div></section></div>
         </div>
       ) : null}
 
@@ -1300,7 +1300,7 @@ export default function BenefitReportCenter({
             <div className="template-field-pack-grid">{fieldPackCatalog.filter((pack) => config.template.fieldPackIds.includes(pack.id)).map((pack) => <article key={pack.id}><span>{pack.name}</span><strong>{pack.representativeFields.length} 个代表字段</strong><p>{pack.description}</p><small>{pack.representativeFields.join("、")}</small></article>)}</div>
           </section>
           <section className="panel">
-            <div className="panel-heading"><div><h3>模板字段反推清单</h3><p>每个数据域都明确来源、现状与需要补充的系统字段。</p></div><span className="page-badge"><Database size={15} />持续完善</span></div>
+            <div className="panel-heading"><div><h3>模板字段反推清单</h3></div><span className="page-badge"><Database size={15} />持续完善</span></div>
             <div className="table-scroll"><table className="data-table report-field-table"><thead><tr><th>数据域</th><th>字段数</th><th>已覆盖</th><th>覆盖率</th><th>建议来源文件</th><th>本次新增 / 后续补充</th></tr></thead><tbody>{reportFieldDomains.map((item) => <tr key={item.domain}><td><strong>{item.domain}</strong></td><td>{item.fields}</td><td>{item.covered}</td><td><span className={`coverage-pill ${item.covered === item.fields ? "complete" : "partial"}`}>{(item.covered / item.fields * 100).toFixed(0)}%</span></td><td>{item.source}</td><td>{item.additions}</td></tr>)}</tbody></table></div>
           </section>
           <section className="panel">

@@ -93,7 +93,7 @@ export default function LedgerFieldSettings({
   return (
     <>
       <div className="page-heading">
-        <div><div className="eyebrow"><Columns3 size={15} />设备台账</div><h1>台账字段配置</h1><p>在系统内置列之外增加本院自己的台账字段；保存后设备台账会多出对应的列，新增/编辑设备时也会多出录入项。</p></div>
+        <div><div className="eyebrow"><Columns3 size={15} />设备台账</div><h1>台账字段配置</h1></div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={onBack}>返回设备台账</button>
           {canManage ? <button className="primary-button" onClick={openCreate}><Plus size={17} />新增字段</button> : null}
@@ -140,7 +140,7 @@ export default function LedgerFieldSettings({
       </section>
 
       <section className="panel">
-        <div className="panel-heading"><div><h3>系统内置列</h3><p>这些列由系统维护，不能删除或改名；自定义字段会排在它们后面。</p></div></div>
+        <div className="panel-heading"><div><h3>系统内置列</h3></div></div>
         <div className="table-scroll">
           <table className="data-table">
             <thead><tr><th>列</th><th>标识</th><th>说明</th></tr></thead>

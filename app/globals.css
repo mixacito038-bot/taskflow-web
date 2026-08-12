@@ -390,8 +390,9 @@ a { color: inherit; }
 .form-field { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .form-field > span { color: var(--text-soft); font-size: 12px; font-weight: 550; }
 .form-field > span b { margin-left: 3px; color: var(--red); }
-.form-field > select, .input-wrap input { width: 100%; height: 38px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; outline: 0; color: var(--text); background: var(--surface); }
-.form-field > select:focus, .input-wrap input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+.form-field > select, .form-field > input, .input-wrap input, .multi-input-row input { width: 100%; height: 38px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; outline: 0; color: var(--text); background: var(--surface); }
+.form-field > textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; outline: 0; color: var(--text); background: var(--surface); font: inherit; line-height: 1.6; resize: vertical; }
+.form-field > select:focus, .form-field > input:focus, .form-field > textarea:focus, .input-wrap input:focus, .multi-input-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
 .input-wrap { position: relative; }
 .input-wrap i { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px; font-style: normal; pointer-events: none; }
 .input-wrap:has(i) input { padding-right: 44px; }
