@@ -13,6 +13,7 @@ import {
   dataLineageEvents,
   dataMetricDefinitions,
   dataPublishVersions,
+  dataReviewEvents,
   dataVisualizationDefinitions,
 } from "../db/schema.ts";
 import { createMigratedTestDatabase, FakeR2Bucket } from "./helpers/sqlite-d1-r2.mjs";
@@ -136,4 +137,39 @@ test("示范发布按医院隔离：第二家医院可独立发布，中途失�
   const replayed = await publishSampleDataset({ db, bucket, hospitalId: "hosp-b", accountId: "acct-multi" });
   assert.equal(replayed.publishId, second.publishId, "重放沿用同院固定发布 id");
   assert.equal(replayed.files.length, 5);
+});
+
+test("示范一键发布把创建人=复核人=发布人如实记为 break_glass 破例", async (t) => {
+  const { sqlite, db, bucket } = await setup();
+  t.after(() => sqlite.close());
+
+  const summary = await publishSampleDataset({ db, bucket, hospitalId, accountId });
+
+  const reviewEvents = await db.select().from(dataReviewEvents).where(eq(dataReviewEvents.hospitalId, hospitalId));
+  assert.ok(reviewEvents.length > 0, "应有复核事件留痕");
+  assert.ok(
+    reviewEvents.every((event) => event.decision === "break_glass"),
+    "单人完成的复核不能记成普通 approve",
+  );
+  assert.ok(
+    reviewEvents.every((event) => event.breakGlassReason.length >= 20),
+    "每条破例都必须写明不少于 20 字的理由",
+  );
+  const publishReview = reviewEvents.find((event) => event.resourceType === "publish");
+  assert.ok(publishReview, "发布层也要有破例留痕，而不是只在导入层");
+  assert.equal(publishReview.resourceId, summary.publishId);
+
+  const lineage = await db.select().from(dataLineageEvents).where(eq(dataLineageEvents.hospitalId, hospitalId));
+  const breakGlassLineage = lineage.find((event) => event.action === "publish_break_glass");
+  assert.ok(breakGlassLineage, "血缘里应出现 publish_break_glass，便于审计检索");
+  assert.equal(JSON.parse(breakGlassLineage.detailJson).breakGlass, true);
+
+  const [publishRow] = await db.select().from(dataPublishVersions).where(eq(dataPublishVersions.id, summary.publishId));
+  const governance = JSON.parse(publishRow.manifestJson).governance;
+  assert.equal(governance.selfReview, true);
+  assert.equal(governance.breakGlass, true);
+  assert.equal(governance.createdByAccountId, accountId);
+  assert.equal(governance.reviewedByAccountId, accountId);
+  assert.equal(governance.publishedByAccountId, accountId);
+  assert.ok(governance.breakGlassReason.includes("职责分离"));
 });

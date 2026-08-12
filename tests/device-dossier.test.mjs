@@ -6,7 +6,11 @@ test("single equipment dossier renders a QR card with a downloadable data URL", 
   const views = await readFile(new URL("../app/InsightViews.tsx", import.meta.url), "utf8");
   assert.match(views, /import QRCode from "qrcode"/);
   assert.match(views, /QRCode\.toDataURL/);
-  assert.match(views, /\$\{window\.location\.origin\}\/\?device=\$\{device\.id\}/);
+  // 深链必须带医院上下文，否则跨院扫码只会落到"当前医院"并报设备不可见。
+  assert.match(views, /\$\{window\.location\.origin\}\/\?\$\{params\.toString\(\)\}/);
+  assert.match(views, /params\.set\("hospital", hospitalId\)/);
+  assert.match(views, /params\.set\("device", device\.id\)/);
+  assert.match(views, /<DeviceQrCard device=\{device\} hospitalId=\{hospitalId\} \/>/);
   assert.match(views, /typeof window === "undefined"/);
   assert.match(views, /扫码直达本设备档案（需登录并具备权限）。/);
   assert.match(views, /设备编号[\s\S]*资产编号/);

@@ -49,6 +49,19 @@ test("device deep links resolve ?device= and safe ?view= parameters once, then c
   assert.match(platform, /const deepLinkHandled = useRef\(false\)/);
 });
 
+test("deep links carry hospital context and never strand ?view behind an empty device list", async () => {
+  const platform = await readFile(platformUrl, "utf8");
+  assert.match(platform, /params\.get\("hospital"\)/);
+  // 有权限就切院再解析设备，无权限如实告知，不静默落到当前医院。
+  assert.match(platform, /accessibleHospitals\.some\(\(hospital\) => hospital\.id === hospitalParam\)[\s\S]{0,80}setActiveHospitalIdLocal\(hospitalParam\)/);
+  assert.match(platform, /扫码指向的医院不在当前账号的授权范围/);
+  // 只在发布数据仍在读取时等待；读完仍为空要照常消费，否则同一条深链的 ?view 会被一起卡死。
+  assert.match(platform, /if \(deviceParam && !devices\.length && !demoMode && publishedLoading\) return;/);
+  assert.doesNotMatch(platform, /if \(deviceParam && !devices\.length\) return;/);
+  // 切院只允许发生一次，避免"切院→数据重载→再切院"的循环。
+  assert.match(platform, /const deepLinkHospitalSwitched = useRef\(false\)/);
+});
+
 test("the group hospital comparison module is registered and wired to HospitalComparePanel", async () => {
   const [platform, mock] = await Promise.all([
     readFile(platformUrl, "utf8"),

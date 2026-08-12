@@ -216,6 +216,14 @@ function enrichDeviceRecords(recordsByTemplate: Map<string, PublishedRecord[]>):
   };
 }
 
+/**
+ * 一键示范发布由同一个平台管理员完成导入、复核与发布，绕过了正式链路的
+ * 职责分离门禁（创建人不得复核/发布自己的批次）。这属于显式破例，必须像
+ * 人工破例一样留痕：复核事件记 break_glass + 理由，血缘事件标 breakGlass，
+ * 发布清单写入 governance，审计时一眼可辨，不能伪装成正常的双人复核。
+ */
+const SAMPLE_BREAK_GLASS_REASON = "示范数据包一键发布：由平台管理员单人完成导入、复核与发布，绕过职责分离门禁；数据为脱敏虚构口径，仅用于演示与链路验收，不得作为正式经营结论。";
+
 export type SamplePublishSummary = {
   seriesId: string;
   publishId: string;
@@ -350,9 +358,10 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
       hospitalId,
       resourceType: "import",
       resourceId: importId,
-      decision: "approve",
+      decision: "break_glass",
       actorAccountId: accountId,
       comment: "示范数据包自动复核（标识为示范口径）",
+      breakGlassReason: SAMPLE_BREAK_GLASS_REASON,
     });
     await db.update(dataImportJobs).set({ status: "ready", reviewedByAccountId: accountId, revision: 3 }).where(eq(dataImportJobs.id, importId));
     await db.insert(dataLineageEvents).values({
@@ -466,6 +475,14 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
       visualizationDefinitionIds: [visualizationId],
     },
     transform: { allocationRule: "equal_by_body_part" },
+    governance: {
+      selfReview: true,
+      breakGlass: true,
+      breakGlassReason: SAMPLE_BREAK_GLASS_REASON,
+      createdByAccountId: accountId,
+      reviewedByAccountId: accountId,
+      publishedByAccountId: accountId,
+    },
     dataset: {
       snapshotId: published.id,
       sha256: published.sha256,
@@ -507,6 +524,27 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
   for (const importId of sourceImportIds) {
     await db.update(dataImportJobs).set({ status: "published", revision: 4 }).where(eq(dataImportJobs.id, importId));
   }
+  await db.insert(dataReviewEvents).values({
+    hospitalId,
+    resourceType: "publish",
+    resourceId: publishId,
+    decision: "break_glass",
+    actorAccountId: accountId,
+    comment: "示范数据包一键发布：创建人=复核人=发布人",
+    breakGlassReason: SAMPLE_BREAK_GLASS_REASON,
+  });
+  await db.insert(dataLineageEvents).values({
+    hospitalId,
+    actorAccountId: accountId,
+    action: "publish_break_glass",
+    resourceType: "publish",
+    resourceId: publishId,
+    toStatus: "published",
+    datasetVersion: `${SAMPLE_SERIES_ID}@1`,
+    mappingVersion: SAMPLE_MAPPING_VERSION,
+    ruleVersion: SAMPLE_RULE_VERSION,
+    detailJson: JSON.stringify({ breakGlass: true, breakGlassReason: SAMPLE_BREAK_GLASS_REASON, sample: SAMPLE_DATA_PACKAGE_VERSION }),
+  });
   await db.insert(dataLineageEvents).values({
     hospitalId,
     actorAccountId: accountId,
@@ -517,7 +555,7 @@ export async function publishSampleDataset({ db, bucket, hospitalId, accountId }
     datasetVersion: `${SAMPLE_SERIES_ID}@1`,
     mappingVersion: SAMPLE_MAPPING_VERSION,
     ruleVersion: SAMPLE_RULE_VERSION,
-    detailJson: JSON.stringify({ sample: SAMPLE_DATA_PACKAGE_VERSION, files }),
+    detailJson: JSON.stringify({ sample: SAMPLE_DATA_PACKAGE_VERSION, breakGlass: true, files }),
   });
 
   return {

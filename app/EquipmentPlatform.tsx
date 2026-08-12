@@ -449,6 +449,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [projectionPaused, setProjectionPaused] = useState(false);
   const projectionIndexRef = useRef(0);
   const deepLinkHandled = useRef(false);
+  // 深链只允许切换一次医院，避免"切院→数据重载→再切院"的循环。
+  const deepLinkHospitalSwitched = useRef(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState(initialDevices[0].id);
   const [notifications, setNotificationsLocal] = useDemoState<PlatformNotification[]>("equip-benefit-notifications-v1", initialNotifications, demoMode);
   const [dataWorkbenchUnlocked, setDataWorkbenchUnlocked] = useState(false);
@@ -1296,14 +1298,28 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     const params = new URLSearchParams(window.location.search);
     const deviceParam = params.get("device");
     const viewParam = params.get("view");
+    const hospitalParam = params.get("hospital");
     if (!deviceParam && !viewParam) {
       deepLinkHandled.current = true;
       return;
     }
-    if (deviceParam && !devices.length) return;
+    let hospitalOutOfScope = false;
+    if (hospitalParam && hospitalParam !== activeHospitalId && !deepLinkHospitalSwitched.current) {
+      // 二维码带医院上下文时先切到该院再解析设备；无权限则如实告知，不静默落到当前医院。
+      deepLinkHospitalSwitched.current = true;
+      if (accessibleHospitals.some((hospital) => hospital.id === hospitalParam)) {
+        setActiveHospitalIdLocal(hospitalParam);
+        return;
+      }
+      hospitalOutOfScope = true;
+    }
+    // 只在发布数据仍在读取时等待；读完仍为空就照常消费深链并给出反馈，
+    // 否则 ?device 会永久挂起，把同一条深链里的 ?view 一起卡住。
+    if (deviceParam && !devices.length && !demoMode && publishedLoading) return;
     deepLinkHandled.current = true;
     const safeViews: View[] = ["cockpit", "analysis", "equipment", "detail"];
     const timer = window.setTimeout(() => {
+      if (hospitalOutOfScope) notify("扫码指向的医院不在当前账号的授权范围，已停留在当前医院", "error");
       if (deviceParam) {
         if (devices.some((device) => device.id === deviceParam)) {
           setSelectedDeviceId(deviceParam);
@@ -1325,7 +1341,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     return () => window.clearTimeout(timer);
     // navItems/hasPermission 每次渲染重建，加入依赖会导致重复消费；深链只消费一次由 ref 守卫。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demoEntered, demoMode, devices, sessionState]);
+  }, [accessibleHospitals, activeHospitalId, demoEntered, demoMode, devices, publishedLoading, sessionState]);
 
   useEffect(() => {
     // 口令弹窗支持 Esc 关闭，与平台其它确认弹窗保持一致的键盘可达性。
@@ -2474,6 +2490,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               onEdit={openDeviceEditor}
               canEdit={hasPermission("equipment.manage")}
               publishedData={sessionState === "verified" ? publishedData : undefined}
+              hospitalId={activeHospitalId}
             />
           ) : null}
 

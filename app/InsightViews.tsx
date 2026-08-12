@@ -253,16 +253,21 @@ export function CategoryPerformancePanel({ devices, onSelect }: { devices: Devic
   );
 }
 
-function DeviceQrCard({ device }: { device: Device }) {
+function DeviceQrCard({ device, hospitalId }: { device: Device; hospitalId?: string }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
   useEffect(() => {
     if (typeof window === "undefined") return;
     let cancelled = false;
-    QRCode.toDataURL(`${window.location.origin}/?device=${device.id}`, { width: 220, margin: 1, errorCorrectionLevel: "M" })
+    // 深链必须带医院上下文：同一账号可能有多家医院权限，缺少 hospital 参数时
+    // 扫码会落在"当前医院"，跨院扫码只会得到一句"设备不在可见范围"。
+    const params = new URLSearchParams();
+    if (hospitalId) params.set("hospital", hospitalId);
+    params.set("device", device.id);
+    QRCode.toDataURL(`${window.location.origin}/?${params.toString()}`, { width: 220, margin: 1, errorCorrectionLevel: "M" })
       .then((dataUrl) => { if (!cancelled) setQrDataUrl(dataUrl); })
       .catch(() => { if (!cancelled) setQrDataUrl(""); });
     return () => { cancelled = true; };
-  }, [device.id]);
+  }, [device.id, hospitalId]);
   return (
     <section className="panel">
       <div className="panel-heading"><div><h3>设备二维码</h3><p>扫码直达本设备档案（需登录并具备权限）。</p></div><QrCode size={19} /></div>
@@ -308,6 +313,7 @@ export function SingleEquipmentDetail({
   onEdit,
   publishedData,
   canEdit = true,
+  hospitalId,
 }: {
   device: Device;
   devices: Device[];
@@ -316,6 +322,7 @@ export function SingleEquipmentDetail({
   onEdit: (device: Device) => void;
   canEdit?: boolean;
   publishedData?: PublishedDatasetView;
+  hospitalId?: string;
 }) {
   const profile = publishedData?.insights[device.id] ?? insightFor(publishedData ? `published-missing:${device.id}` : device.id);
   const cashOperatingCost = totalCost(device) - device.cost.depreciation;
@@ -341,7 +348,7 @@ export function SingleEquipmentDetail({
           <div><span>设备使用率</span><strong>{device.utilization}%</strong><small>台账录入值</small></div>
         </div>
         <div className={styles.dossierGrid}>
-          <DeviceQrCard device={device} />
+          <DeviceQrCard device={device} hospitalId={hospitalId} />
           <DeviceTimeline device={device} profile={profile} />
         </div>
       </>
@@ -461,7 +468,7 @@ export function SingleEquipmentDetail({
       </div>
 
       <div className={styles.dossierGrid}>
-        <DeviceQrCard device={device} />
+        <DeviceQrCard device={device} hospitalId={hospitalId} />
         <DeviceTimeline device={device} profile={profile} />
       </div>
 
