@@ -4,7 +4,7 @@
  * 用法：node scripts/make-deploy-config.mjs <workerName> <d1Name> <d1DatabaseId> <r2BucketName>
  * 环境变量（可选，注入为 Worker vars；生产环境建议改用 wrangler secret put）：
  *   BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD
- *   DATA_WORKBENCH_ENTRY_PASSWORD / MFA_TOTP_ENCRYPTION_KEY
+ *   DATA_WORKBENCH_ENTRY_PASSWORD
  */
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -35,7 +35,6 @@ for (const key of [
   "BOOTSTRAP_ADMIN_USERNAME",
   "BOOTSTRAP_ADMIN_PASSWORD",
   "DATA_WORKBENCH_ENTRY_PASSWORD",
-  "MFA_TOTP_ENCRYPTION_KEY",
 ]) {
   const value = process.env[key];
   if (value) vars[key] = value;

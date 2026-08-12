@@ -88,7 +88,6 @@
 
 这只是安全引用格式校验；当前没有实现 `tencent-sm://` 的腾讯云凭据管理系统解析器。上线时应使用 CVM/TKE 角色和最小权限 CAM，确需静态凭据时放入腾讯云凭据管理系统，不写数据库明文、不写镜像、不提交 `.env`。日志只记录引用标识，不记录解析后的秘密。
 
-MFA TOTP 秘钥在数据库内用 AES-GCM 加密，当前运行时必须提供 32 字节的 `MFA_TOTP_ENCRYPTION_KEY`（64 位十六进制或等价 base64url）。换环境时必须安全迁移同一把密钥，否则已有 MFA 秘钥无法解密；轮换方案需先开发和演练。
 
 ## 5. 迁移 0007—0010
 
@@ -116,7 +115,6 @@ MFA TOTP 秘钥在数据库内用 AES-GCM 加密，当前运行时必须提供 3
 
 - `DB`：D1 binding；缺失时数据库 API 返回不可用。
 - `REPORT_FILES`：R2 binding；缺失时原始文件、数据快照、Published 正式供数和报告文件接口均不可用。
-- `MFA_TOTP_ENCRYPTION_KEY`：32 字节 MFA 加密密钥。
 - `BOOTSTRAP_ADMIN_EMAIL`：首个管理员邮箱；应在初始化后限制其使用和变更流程。
 
 Worker 入口还依赖静态资源/图片相关 binding；具体以构建和部署配置为准。
@@ -126,7 +124,6 @@ Worker 入口还依赖静态资源/图片相关 binding；具体以构建和部�
 - `NODE_ENV`、`PORT`、`APP_BASE_URL`
 - TencentDB 内网 `DATABASE_URL` 和连接池/超时/TLS 配置
 - COS region、私有 bucket、key 前缀；优先实例角色，避免长期 SecretId/SecretKey
-- `MFA_TOTP_ENCRYPTION_KEY`
 - 应用会话密钥、可信代理与 Cookie 域配置
 - OIDC issuer、client ID、client secret、回调 URL
 - `BOOTSTRAP_ADMIN_EMAIL`

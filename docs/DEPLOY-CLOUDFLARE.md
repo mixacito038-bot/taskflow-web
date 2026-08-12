@@ -22,7 +22,6 @@ export CLOUDFLARE_ACCOUNT_ID=...       # 账户 ID（Token 仅属一个账号时
 export BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 export BOOTSTRAP_ADMIN_USERNAME=yh.admin
 export BOOTSTRAP_ADMIN_PASSWORD='一个强密码A1'
-export MFA_TOTP_ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 bash scripts/deploy-cloudflare.sh
 ```

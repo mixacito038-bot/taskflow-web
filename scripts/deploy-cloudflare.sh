@@ -9,7 +9,6 @@
 #   export BOOTSTRAP_ADMIN_USERNAME=yh.admin
 #   export BOOTSTRAP_ADMIN_PASSWORD='一个强密码'
 #   export DATA_WORKBENCH_ENTRY_PASSWORD=yonghong   # 不设则用默认
-#   export MFA_TOTP_ENCRYPTION_KEY=$(openssl rand -hex 32)
 #
 # 用法：bash scripts/deploy-cloudflare.sh
 set -euo pipefail

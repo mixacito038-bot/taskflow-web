@@ -88,7 +88,6 @@ certbot --nginx -d your.domain.cn
 |---|---|
 | `BOOTSTRAP_ADMIN_EMAIL` / `USERNAME` / `PASSWORD` | 冷启动引导首个平台管理员（首登强制改密） |
 | `DATA_WORKBENCH_ENTRY_PASSWORD` | 数据准备中心隐藏入口口令（默认 yonghong） |
-| `MFA_TOTP_ENCRYPTION_KEY` | 验证器密钥加密用，`openssl rand -hex 32`，启用后保持稳定 |
 | `APP_SESSION_ALLOW_INSECURE` | 仅内网 HTTP 试用置 1；HTTPS 后删除 |
 | `PORT` / `HOST` / `DATA_DIR` | 服务端口/监听地址/数据目录（默认 8911 / 0.0.0.0 / /data） |
 

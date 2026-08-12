@@ -50,6 +50,18 @@ if (!existsSync(DIST_SERVER)) {
   process.exit(1);
 }
 
+// 漏了 --import ./server-node/register-loader.mjs 时，服务会正常起来、页面也打得开，
+// 只有走到 cloudflare:workers 动态导入的接口（登录、云端状态）才 500，
+// 日志里只有一句 app_session_validation_failed，排查起来极其费劲。
+// 这里在启动时就把它挡下来，直接告诉用户少了哪个参数。
+try {
+  await import("cloudflare:workers");
+} catch {
+  console.error("缺少模块加载钩子：请用下面这条命令启动，否则登录等接口会返回 500。");
+  console.error("  node --import ./server-node/register-loader.mjs server-node/server.mjs");
+  process.exit(1);
+}
+
 mkdirSync(DATA_DIR, { recursive: true });
 const database = new SqliteD1Database(path.join(DATA_DIR, "platform.sqlite"));
 const { executed, total } = applyMigrations(database.database, MIGRATIONS_DIR);
@@ -60,7 +72,6 @@ const passthroughEnvKeys = [
   "BOOTSTRAP_ADMIN_USERNAME",
   "BOOTSTRAP_ADMIN_PASSWORD",
   "DATA_WORKBENCH_ENTRY_PASSWORD",
-  "MFA_TOTP_ENCRYPTION_KEY",
 ];
 const workerEnv = {
   DB: database,

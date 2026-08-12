@@ -74,7 +74,6 @@ else
   admin_pass="$(openssl rand -base64 12 | tr -d '/+=' | cut -c1-12)Aa1"
   cp "${SRC_DIR}/deploy/yonghong-platform.env.example" "${ENV_FILE}"
   sed -i "s|^BOOTSTRAP_ADMIN_PASSWORD=.*|BOOTSTRAP_ADMIN_PASSWORD=${admin_pass}|" "${ENV_FILE}"
-  sed -i "s|^MFA_TOTP_ENCRYPTION_KEY=.*|MFA_TOTP_ENCRYPTION_KEY=$(openssl rand -hex 32)|" "${ENV_FILE}"
   sed -i "s|^PORT=.*|PORT=${PORT}|" "${ENV_FILE}"
   sed -i "s|^DATA_DIR=.*|DATA_DIR=${DATA_DIR}|" "${ENV_FILE}"
   if [ "${MODE}" = "trial" ]; then
