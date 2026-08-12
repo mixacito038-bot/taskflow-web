@@ -16,9 +16,9 @@ import {
 } from "../../../db/schema";
 
 const hospitalSeeds = [
-  { id: "hosp-central", code: "HOSP-001", name: "勇虹示范中心医院", shortName: "中心医院", level: "三级甲等", region: "总院区" },
-  { id: "hosp-east", code: "HOSP-002", name: "勇虹示范东院", shortName: "东院", level: "三级综合", region: "东院区" },
-  { id: "hosp-specialty", code: "HOSP-003", name: "勇虹示范专科医院", shortName: "专科医院", level: "三级专科", region: "专科院区" },
+  { id: "hosp-central", code: "HOSP-001", name: "勇虹示范中心医院", shortName: "中心医院", level: "三级甲等", category: "综合医院", region: "总院区" },
+  { id: "hosp-east", code: "HOSP-002", name: "勇虹示范东院", shortName: "东院", level: "三级乙等", category: "综合医院", region: "东院区" },
+  { id: "hosp-specialty", code: "HOSP-003", name: "勇虹示范专科医院", shortName: "专科医院", level: "三级（未定等）", category: "专科医院", region: "专科院区" },
 ] as const;
 
 const permissionSeeds = [
@@ -206,6 +206,7 @@ async function currentAccountContext(email: string, displayName: string) {
       hospitalName: hospitals.name,
       hospitalShortName: hospitals.shortName,
       hospitalLevel: hospitals.level,
+      hospitalCategory: hospitals.category,
       hospitalRegion: hospitals.region,
       roleId: roles.id,
       roleCode: roles.code,
@@ -301,6 +302,7 @@ export async function POST(request: Request) {
       name?: string;
       shortName?: string;
       level?: string;
+      category?: string;
       region?: string;
       status?: "active" | "disabled" | "pending";
       roleCode?: string;
@@ -358,7 +360,7 @@ export async function POST(request: Request) {
       const name = payload.name?.trim() ?? "";
       if (!code || !name) return Response.json({ error: "invalid_hospital" }, { status: 400 });
       const hospitalId = `hosp-${crypto.randomUUID()}`;
-      const [hospital] = await db.insert(hospitals).values({ id: hospitalId, code, name, shortName: payload.shortName?.trim() || name, level: payload.level?.trim() || "未设置", region: payload.region?.trim() || "未设置", status: "active" }).returning();
+      const [hospital] = await db.insert(hospitals).values({ id: hospitalId, code, name, shortName: payload.shortName?.trim() || name, level: payload.level?.trim() || "未定级", category: payload.category?.trim() || "未设置", region: payload.region?.trim() || "未设置", status: "active" }).returning();
       await db.insert(auditPolicies).values({ hospitalId }).onConflictDoNothing();
       await db.insert(hospitalMemberships).values({ id: `membership-${crypto.randomUUID()}`, accountId: actorContext.account.id, hospitalId, roleId: "role-platform-admin", departmentScope: "[]", status: "active" });
       await db.insert(auditLogs).values({ hospitalId, actorAccountId: actorContext.account.id, action: "create_hospital", resourceType: "hospital", resourceId: hospitalId, result: "allowed", detail: code });
@@ -373,7 +375,8 @@ export async function POST(request: Request) {
       const [hospital] = await db.update(hospitals).set({
         name,
         shortName: payload.shortName?.trim() || name,
-        level: payload.level?.trim() || "未设置",
+        level: payload.level?.trim() || "未定级",
+        category: payload.category?.trim() || "未设置",
         region: payload.region?.trim() || "未设置",
         status: payload.status === "disabled" ? "disabled" : "active",
         updatedAt: new Date().toISOString(),

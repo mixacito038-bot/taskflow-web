@@ -123,6 +123,7 @@ import CloudOperationsCenter from "./CloudOperationsCenter";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
 import { DATA_WORKBENCH_ENTRY_CLICKS, buildBusinessTemplateCsv, templateFields } from "./data-workbench-model";
+import { normalizeHospitalTaxonomy } from "./hospital-catalog";
 import { menuCatalog } from "./menu-catalog";
 import ConfigurableAnalyticsCanvas from "./ConfigurableAnalyticsCanvas";
 import type { MetricDefinition as ConfigurableMetric, VisualizationDefinition as ConfigurableVisualization } from "./analytics-semantic-layer";
@@ -461,12 +462,19 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setHospitalsLocal((current) => tenantContext.memberships.map((membership) => {
       const existing = current.find((hospital) => hospital.id === membership.hospitalId)
         ?? initialHospitals.find((hospital) => hospital.id === membership.hospitalId);
+      // 历史库里可能还留着"三级综合"这类把类别混进等级的旧取值，这里统一折算成
+      // （等级, 类别）两个字段，等次无从推断的落到"（未定等）"，不臆造甲乙丙。
+      const taxonomy = normalizeHospitalTaxonomy(
+        membership.hospitalLevel ?? existing?.level ?? "",
+        membership.hospitalCategory ?? existing?.category ?? "",
+      );
       return {
         id: membership.hospitalId,
         code: membership.hospitalCode,
         name: membership.hospitalName,
         shortName: membership.hospitalShortName,
-        level: membership.hospitalLevel ?? existing?.level ?? "未设置",
+        level: taxonomy.level,
+        category: taxonomy.category,
         region: membership.hospitalRegion ?? existing?.region ?? "未设置",
         status: "运行中",
         tenantKey: existing?.tenantKey ?? `tenant_${membership.hospitalCode.toLowerCase().replaceAll("-", "_")}`,
