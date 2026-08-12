@@ -20,7 +20,7 @@ FROM ${BASE_IMAGE}
 # TZ 必须显式设为东八区：容器默认 UTC，会让"今天/本月/本年度"在 0—8 点整体错一天，
 # 报告期间、审计时间戳与院内实际日期对不上。
 ENV NODE_ENV=production \
-    PORT=3000 \
+    PORT=8911 \
     HOST=0.0.0.0 \
     DATA_DIR=/data \
     TZ=Asia/Shanghai \
@@ -37,7 +37,7 @@ COPY drizzle ./drizzle
 COPY server-node ./server-node
 
 VOLUME /data
-EXPOSE 3000
+EXPOSE 8911
 
 HEALTHCHECK --interval=30s --timeout=6s --start-period=15s --retries=3 \
   CMD ["node", "server-node/healthcheck.mjs"]

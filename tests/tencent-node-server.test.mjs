@@ -51,7 +51,7 @@ test("Docker 交付物齐备且编排不暴露公网端口", async () => {
   assert.match(dockerfile, /TZ=Asia\/Shanghai/);
   assert.match(dockerfile, /HEALTHCHECK/);
   assert.match(dockerfile, /register-loader\.mjs/);
-  assert.match(compose, /127\.0\.0\.1:3000:3000/);
+  assert.match(compose, /127\.0\.0\.1:8911:8911/);
   assert.match(compose, /yonghong-data:\/data/);
   assert.match(compose, /restart: unless-stopped/);
   assert.match(compose, /TZ: "\$\{TZ:-Asia\/Shanghai\}"/);
@@ -118,6 +118,11 @@ test("单机试用路径：默认 IP 直连可用，--behind-nginx 才收回本�
   assert.match(reset, /platform\.sqlite/);
   assert.match(reset, /systemctl stop/);
   assert.match(reset, /read -r answer/);
-  assert.match(quickstart, /http:\/\/<你的服务器IP>:3000|http:\/\/<服务器IP>:3000/);
+  assert.match(quickstart, /http:\/\/49\.234\.179\.153:8911/);
+  assert.match(quickstart, /scp .*root@49\.234\.179\.153/);
+  // 单一目录树：删 /opt/yonghong 即卸载干净
+  assert.match(quickstart, /\/opt\/yonghong\/src/);
+  assert.match(installer, /ROOT=\/opt\/yonghong/);
+  assert.match(installer, /PORT:-8911/);
   assert.match(quickstart, /reset-data\.sh/);
 });

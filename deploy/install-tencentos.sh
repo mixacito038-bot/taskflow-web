@@ -10,11 +10,13 @@ set -euo pipefail
 MODE=trial
 [ "${1:-}" = "--behind-nginx" ] && MODE=nginx
 
-APP_DIR=/opt/yonghong-platform
-DATA_DIR=/var/lib/yonghong-platform
-ENV_FILE=/etc/yonghong-platform.env
+# 所有东西都在 /opt/yonghong 一棵树下：删这一个目录就等于卸载干净。
+ROOT=/opt/yonghong
+APP_DIR="${ROOT}/app"          # 运行程序
+DATA_DIR="${ROOT}/data"        # 数据库 + 上传文件 + 报告
+ENV_FILE="${ROOT}/yonghong.env"
 SERVICE=yonghong-platform
-PORT="${PORT:-3000}"
+PORT="${PORT:-8911}"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 [ "$(id -u)" -eq 0 ] || { echo "请用 root 执行（sudo bash deploy/install-tencentos.sh）"; exit 1; }
@@ -58,6 +60,7 @@ else
   sed -i "s|^BOOTSTRAP_ADMIN_PASSWORD=.*|BOOTSTRAP_ADMIN_PASSWORD=${admin_pass}|" "${ENV_FILE}"
   sed -i "s|^MFA_TOTP_ENCRYPTION_KEY=.*|MFA_TOTP_ENCRYPTION_KEY=$(openssl rand -hex 32)|" "${ENV_FILE}"
   sed -i "s|^PORT=.*|PORT=${PORT}|" "${ENV_FILE}"
+  sed -i "s|^DATA_DIR=.*|DATA_DIR=${DATA_DIR}|" "${ENV_FILE}"
   if [ "${MODE}" = "trial" ]; then
     # 试用：监听所有网卡，浏览器用 服务器IP:端口 直接访问，不需要域名和证书。
     # __Host- 安全 Cookie 要求 HTTPS，纯 HTTP 试用时降级为普通 Cookie。
@@ -70,14 +73,17 @@ else
 fi
 
 echo "==> 5/6 注册并启动 systemd 服务"
-sed "s|^ExecStart=/usr/bin/node|ExecStart=${NODE_BIN}|" \
+sed -e "s|^ExecStart=/usr/bin/node|ExecStart=${NODE_BIN}|" \
+    -e "s|^WorkingDirectory=.*|WorkingDirectory=${APP_DIR}|" \
+    -e "s|^EnvironmentFile=.*|EnvironmentFile=${ENV_FILE}|" \
+    -e "s|^ReadWritePaths=.*|ReadWritePaths=${DATA_DIR}|" \
   "${SRC_DIR}/deploy/yonghong-platform.service" > /etc/systemd/system/${SERVICE}.service
 systemctl daemon-reload
 systemctl enable --now "${SERVICE}"
 systemctl restart "${SERVICE}"
 
 echo "==> 6/6 自检"
-port="$(grep -E '^PORT=' "${ENV_FILE}" | cut -d= -f2)"; port="${port:-3000}"
+port="$(grep -E '^PORT=' "${ENV_FILE}" | cut -d= -f2)"; port="${port:-8911}"
 ok=0
 for _ in $(seq 1 25); do
   if curl -fsS "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then ok=1; break; fi
@@ -112,7 +118,7 @@ echo ""
 echo " 常用命令："
 echo "   systemctl restart ${SERVICE}      重启"
 echo "   journalctl -u ${SERVICE} -f       看日志"
-echo "   bash deploy/reset-data.sh         清空数据重新试（保留账号配置）"
+echo "   bash ${ROOT}/src/deploy/reset-data.sh   清空数据重新试（保留账号配置）"
 if [ "${MODE}" = "trial" ]; then
   echo ""
   echo " 提示：当前是试用模式（HTTP 明文、会话 Cookie 已降级）。"

@@ -24,7 +24,7 @@ EOF
 systemctl restart docker
 ```
 
-安全组/防火墙：仅放行 22（SSH）与 443（HTTPS，经 nginx）；**不要**把 3000 端口对公网开放（compose 已绑定 127.0.0.1）。
+安全组/防火墙：仅放行 22（SSH）与 443（HTTPS，经 nginx）；**不要**把 8911 端口对公网开放（compose 已绑定 127.0.0.1）。
 
 ## 二、获取源码并构建
 
@@ -49,7 +49,7 @@ cp .env.tencent.docker.example .env
 vi .env      # 设置引导管理员账号/密码、入口口令、MFA 密钥
 docker compose -f docker-compose.tencent.yml up -d
 docker compose -f docker-compose.tencent.yml ps   # STATUS 应为 healthy
-curl http://127.0.0.1:3000/healthz               # {"ok":true}
+curl http://127.0.0.1:8911/healthz               # {"ok":true}
 ```
 
 首次使用：
@@ -66,7 +66,7 @@ curl http://127.0.0.1:3000/healthz               # {"ok":true}
 ```bash
 dnf install -y nginx certbot python3-certbot-nginx
 # 参考仓库 tencent-cloud/nginx.conf.example，将 server_name 指向你的域名，
-# proxy_pass http://127.0.0.1:3000; 并保留 X-Forwarded-* 头
+# proxy_pass http://127.0.0.1:8911; 并保留 X-Forwarded-* 头
 certbot --nginx -d your.domain.cn
 ```
 
@@ -78,7 +78,7 @@ certbot --nginx -d your.domain.cn
 | 升级发布 | `git pull && npm ci && npm run build && docker compose -f docker-compose.tencent.yml up -d --build` |
 | 数据备份 | `docker exec yonghong-platform-platform-1 node -e "const {DatabaseSync}=require('node:sqlite');new DatabaseSync('/data/platform.sqlite').exec(\"VACUUM INTO '/data/backup-'||strftime('%Y%m%d%H%M','now')||'.sqlite'\")"` 之后 `docker cp` 出容器；`/data/r2` 目录整体拷贝即可 |
 | 恢复 | 停容器 → 用备份覆盖卷内 `platform.sqlite` 与 `r2/` → 启动 |
-| 健康检查 | `curl http://127.0.0.1:3000/healthz`；compose 自带 HEALTHCHECK，异常自动重启（restart: unless-stopped） |
+| 健康检查 | `curl http://127.0.0.1:8911/healthz`；compose 自带 HEALTHCHECK，异常自动重启（restart: unless-stopped） |
 
 数据卷 `yonghong-data` 是唯一有状态资产，纳入服务器快照/备份策略即可。
 
@@ -90,7 +90,7 @@ certbot --nginx -d your.domain.cn
 | `DATA_WORKBENCH_ENTRY_PASSWORD` | 数据准备中心隐藏入口口令（默认 yonghong） |
 | `MFA_TOTP_ENCRYPTION_KEY` | 验证器密钥加密用，`openssl rand -hex 32`，启用后保持稳定 |
 | `APP_SESSION_ALLOW_INSECURE` | 仅内网 HTTP 试用置 1；HTTPS 后删除 |
-| `PORT` / `HOST` / `DATA_DIR` | 服务端口/监听地址/数据目录（默认 3000 / 0.0.0.0 / /data） |
+| `PORT` / `HOST` / `DATA_DIR` | 服务端口/监听地址/数据目录（默认 8911 / 0.0.0.0 / /data） |
 
 ## 七、演进路径（当前为试点形态）
 

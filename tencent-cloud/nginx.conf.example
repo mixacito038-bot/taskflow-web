@@ -11,7 +11,7 @@
 
 # 上游：平台服务壳只监听本机，公网流量一律经 nginx
 upstream yonghong_app {
-    server 127.0.0.1:3000;
+    server 127.0.0.1:8911;
     keepalive 32;
 }
 

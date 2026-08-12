@@ -42,21 +42,21 @@ rm -rf "${STAGE}/.env" "${STAGE}/data" "${STAGE}/release"
 cat > "${STAGE}/如何部署.txt" <<'NOTE'
 勇虹医疗设备效益管理平台 · 源码交付包
 
-单机试用（不用域名、不用证书）——两步：
+服务器上整段粘贴：
 
+    mkdir -p /opt/yonghong/src && \
+    tar -xzf /root/yonghong-platform-src-*.tar.gz -C /opt/yonghong/src --strip-components=1 && \
+    cd /opt/yonghong/src && \
     bash deploy/install-tencentos.sh
-    然后在腾讯云安全组放行 TCP:3000，浏览器打开 http://<服务器IP>:3000
 
-    脚本会打印管理员账号、随机初始密码和数据准备中心入口口令。
-    详见 docs/单机试用-快速开始.md（一页看完）
+然后在腾讯云安全组放行 TCP:8911，浏览器打开 http://<服务器IP>:8911
 
-正式给医院用（域名 + HTTPS）：见 docs/部署手册-腾讯云-中国区.md
+脚本会打印管理员账号、随机初始密码、数据准备中心入口口令。
+一页说明见 docs/单机试用-快速开始.md
 
-其它方式：
-  Docker 编排：docker compose -f docker-compose.tencent.yml up -d
-  从源码重建：cp .npmrc.china.example .npmrc && npm ci && npm run build
-
-包内已含构建产物 dist/，安装与运行都不需要 npm install，也不需要访问外网。
+所有文件都在 /opt/yonghong 一棵树下（src 源码 / app 程序 / data 数据）。
+正式上线（域名 + HTTPS）见 docs/部署手册-腾讯云-中国区.md
+包内已含构建产物 dist/，安装与运行都不需要 npm install，也不需要外网。
 NOTE
 
 echo "==> 打包 ${OUT_DIR}/${NAME}.tar.gz"

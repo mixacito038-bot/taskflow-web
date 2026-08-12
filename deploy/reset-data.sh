@@ -5,7 +5,7 @@
 #   bash deploy/reset-data.sh
 set -euo pipefail
 
-DATA_DIR=/var/lib/yonghong-platform
+DATA_DIR=/opt/yonghong/data
 SERVICE=yonghong-platform
 
 [ "$(id -u)" -eq 0 ] || { echo "请用 root 执行"; exit 1; }

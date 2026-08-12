@@ -18,7 +18,7 @@ const DIST_SERVER = path.join(ROOT, "dist", "server", "index.js");
 const CLIENT_DIR = path.join(ROOT, "dist", "client");
 const MIGRATIONS_DIR = path.join(ROOT, "drizzle");
 
-const PORT = Number(process.env.PORT ?? 3000);
+const PORT = Number(process.env.PORT ?? 8911);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? path.join(ROOT, "data"));
 // 未启用 HTTPS 时把 __Host- 前缀会话 Cookie 翻译为普通 Cookie（浏览器要求

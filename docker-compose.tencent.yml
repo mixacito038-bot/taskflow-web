@@ -15,9 +15,9 @@ services:
         BASE_IMAGE: "${BASE_IMAGE:-node:22-bookworm-slim}"
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8911:8911"
     environment:
-      PORT: "3000"
+      PORT: "8911"
       DATA_DIR: /data
       # 东八区：容器默认 UTC 会让"今天/本月"在 0—8 点整体错一天。
       TZ: "${TZ:-Asia/Shanghai}"
