@@ -16,6 +16,7 @@ export const cloudResourceNames = [
   "modules",
   "dataSources",
   "analysisProfiles",
+  "ledgerFields",
 ] as const;
 
 export type CloudResourceName = (typeof cloudResourceNames)[number];
@@ -45,6 +46,8 @@ const resourcePermission: Record<CloudResourceName, string> = {
   modules: "member.manage",
   dataSources: "source.manage",
   analysisProfiles: "source.manage",
+  // 台账列定义决定设备台账长什么样，跟着设备台账的管理权限走
+  ledgerFields: "equipment.manage",
 };
 
 const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
@@ -55,6 +58,8 @@ const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
   modules: ["dashboard.view", "member.manage"],
   dataSources: ["source.manage", "report.manage", "report.review", "report.approve", "report.export"],
   analysisProfiles: ["source.manage", "report.manage", "report.review", "report.approve", "report.export"],
+  // 能看设备台账的都要能读列定义，否则表格会缺列
+  ledgerFields: ["dashboard.view", "equipment.manage", "improvement.manage", "report.manage", "report.review", "report.approve", "report.export"],
 };
 
 export function emptySharedState(): CloudSharedState {
@@ -63,6 +68,7 @@ export function emptySharedState(): CloudSharedState {
     costEntries: [],
     notifications: [],
     improvementActions: [],
+    ledgerFields: [],
     modules: [],
     dataSources: [],
     analysisProfiles: [],

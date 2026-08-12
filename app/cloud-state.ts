@@ -1,6 +1,7 @@
 import type { NotificationPreferences } from "./AccountCenter";
 import type { BenefitAnalysisProfile } from "./benefit-analysis-config";
 import type { ImprovementAction } from "./ImprovementCenter";
+import type { LedgerFieldDefinition } from "./device-ledger-fields";
 import type { CostEntry, DashboardModule, DataSource, Device } from "./mock-data";
 import type { PlatformNotification } from "./notification-data";
 
@@ -11,7 +12,8 @@ export type CloudResource =
   | "improvementActions"
   | "modules"
   | "dataSources"
-  | "analysisProfiles";
+  | "analysisProfiles"
+  | "ledgerFields";
 
 export type CloudSharedState = {
   devices: Device[];
@@ -21,6 +23,7 @@ export type CloudSharedState = {
   modules: DashboardModule[];
   dataSources: DataSource[];
   analysisProfiles: BenefitAnalysisProfile[];
+  ledgerFields: LedgerFieldDefinition[];
 };
 
 export type CloudResourceRevisions = Record<CloudResource, number>;

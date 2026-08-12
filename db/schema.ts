@@ -8,6 +8,7 @@ export const hospitals = sqliteTable("hospitals", {
   shortName: text("short_name").notNull(),
   level: text("level").notNull().default("未定级"),
   category: text("category").notNull().default("未设置"),
+  assetCodePrefix: text("asset_code_prefix").notNull().default(""),
   region: text("region").notNull().default("未设置"),
   status: text("status", { enum: ["active", "disabled"] }).notNull().default("active"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -150,7 +151,7 @@ export const reportArtifacts = sqliteTable("report_artifacts", {
 export const hospitalCloudResources = sqliteTable("hospital_cloud_resources", {
   hospitalId: text("hospital_id").notNull().references(() => hospitals.id, { onDelete: "cascade" }),
   resource: text("resource", {
-    enum: ["devices", "costEntries", "notifications", "improvementActions", "modules", "dataSources", "analysisProfiles"],
+    enum: ["devices", "costEntries", "notifications", "improvementActions", "modules", "dataSources", "analysisProfiles", "ledgerFields"],
   }).notNull(),
   valueJson: text("value_json").notNull().default("[]"),
   revision: integer("revision").notNull().default(1),

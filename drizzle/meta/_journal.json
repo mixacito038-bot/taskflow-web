@@ -92,6 +92,13 @@
       "when": 1786549830022,
       "tag": "0012_hospital_taxonomy",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1786553430022,
+      "tag": "0013_hospital_asset_code_prefix",
+      "breakpoints": true
     }
   ]
 }

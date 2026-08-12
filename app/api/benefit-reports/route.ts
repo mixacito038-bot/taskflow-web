@@ -224,6 +224,7 @@ async function buildAuthoritativeReport(
     shortName: hospitalRow.shortName,
     level: hospitalRow.level,
     category: hospitalRow.category,
+    assetCodePrefix: hospitalRow.assetCodePrefix,
     region: hospitalRow.region,
     status: "运行中",
     tenantKey: hospitalRow.code,

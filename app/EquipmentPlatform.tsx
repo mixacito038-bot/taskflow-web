@@ -45,6 +45,8 @@ import {
   Search,
   Settings2,
   ShieldCheck,
+  MoreHorizontal,
+  Trash2,
   SlidersHorizontal,
   Sparkles,
   Target,
@@ -122,7 +124,18 @@ import {
 import CloudOperationsCenter from "./CloudOperationsCenter";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
+import LedgerFieldSettings from "./LedgerFieldSettings";
 import { DATA_WORKBENCH_ENTRY_CLICKS, buildBusinessTemplateCsv, templateFields } from "./data-workbench-model";
+import {
+  DEVICE_DATA_SOURCES,
+  LedgerFieldDefinition,
+  nextAssetCode,
+  sortedLedgerFields,
+  tableLedgerFields,
+  usingDepartmentList,
+  validateCustomFieldValues,
+  validateFieldValue,
+} from "./device-ledger-fields";
 import { normalizeHospitalTaxonomy } from "./hospital-catalog";
 import { menuCatalog } from "./menu-catalog";
 import ConfigurableAnalyticsCanvas from "./ConfigurableAnalyticsCanvas";
@@ -139,7 +152,7 @@ import type {
   CloudUserPreferences,
 } from "./cloud-state";
 
-type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "detail" | "costs" | "layout" | "sources" | "access" | "operations" | "messages" | "account" | "guide";
+type View = "cockpit" | "analysis" | "report" | "improvement" | "capital" | "workbench" | "equipment" | "ledger-fields" | "detail" | "costs" | "layout" | "sources" | "access" | "operations" | "messages" | "account" | "guide";
 type Perspective = "管理层" | "设备科" | "临床科室";
 type ThemeId = "clinical" | "teal" | "midnight";
 type Density = "comfortable" | "compact";
@@ -176,7 +189,7 @@ type ApplicationSessionSnapshot = {
 };
 
 function guideTargetFor(view: View): GuideTarget {
-  if (view === "detail") return "equipment";
+  if (view === "detail" || view === "ledger-fields") return "equipment";
   if (view === "capital") return "improvement";
   if (view === "workbench") return "sources";
   if (view === "account") return "access";
@@ -212,6 +225,7 @@ const cloudResourceLabels: Record<CloudResource, string> = {
   modules: "驾驶舱布局",
   dataSources: "文件口径配置",
   analysisProfiles: "采集分析配置",
+  ledgerFields: "台账字段配置",
 };
 
 const themeOptions: Array<{ id: ThemeId; name: string; note: string }> = [
@@ -413,6 +427,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [costEntryStore, setCostEntryStoreLocal] = useDemoState<Record<string, CostEntry[]>>("equip-benefit-cost-entries-by-hospital-v1", demoMode ? initialCostEntryStore() : {}, demoMode);
   const [improvementStore, setImprovementStoreLocal] = useDemoState<Record<string, ImprovementAction[]>>("equip-benefit-improvement-actions-by-hospital-v2", demoMode ? initialImprovementStore() : {}, demoMode);
   const [sourceStore, setSourceStoreLocal] = useDemoState<Record<string, typeof initialDataSources>>("equip-benefit-data-sources-by-hospital-v1", demoMode ? initialSourceStore() : {}, demoMode);
+  const [ledgerFieldStore, setLedgerFieldStoreLocal] = useDemoState<Record<string, LedgerFieldDefinition[]>>("equip-benefit-ledger-fields-by-hospital-v1", {}, demoMode);
   const [analysisProfileStore, setAnalysisProfileStoreLocal] = useDemoState<Record<string, BenefitAnalysisProfile[]>>("equip-benefit-analysis-profiles-by-hospital-v1", demoMode ? initialAnalysisProfileStore() : {}, demoMode);
   const [notificationPreferences, setNotificationPreferencesLocal] = useDemoState<NotificationPreferences>("equip-benefit-notification-preferences-v1", defaultNotificationPreferences, demoMode);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
@@ -475,6 +490,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         shortName: membership.hospitalShortName,
         level: taxonomy.level,
         category: taxonomy.category,
+        assetCodePrefix: membership.hospitalAssetCodePrefix ?? existing?.assetCodePrefix ?? "",
         region: membership.hospitalRegion ?? existing?.region ?? "未设置",
         status: "运行中",
         tenantKey: existing?.tenantKey ?? `tenant_${membership.hospitalCode.toLowerCase().replaceAll("-", "_")}`,
@@ -503,9 +519,30 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     () => sessionState === "demo" ? workspaceDevices : [...publishedData.devices],
     [publishedData.devices, sessionState, workspaceDevices],
   );
+  /**
+   * 设备台账（资产主数据维护页）看到的设备集合 = 已发布设备 + 本院手工建档的设备。
+   *
+   * 分析类页面（驾驶舱、单机效益、报告）仍然只认已发布数据，这条边界不动：
+   * 那里的每个数字都要能追到发布快照。但台账是主数据维护台，手工录入本来就是
+   * 平台承认的一种数据来源（另两种是文件导入和接口对接），不把它显示出来的话，
+   * "新增设备"保存成功却查无此设备，等于按钮是坏的。
+   * 正式模式下 workspaceDevices 只包含用户真实录入的记录，不含任何演示数据。
+   */
+  const ledgerDevices = useMemo(() => {
+    if (sessionState === "demo") return workspaceDevices;
+    const published = publishedData.devices;
+    const publishedIds = new Set(published.map((device) => device.id));
+    const publishedCodes = new Set(published.map((device) => device.assetCode.trim()));
+    // 同一台设备后来走了文件导入并发布，以发布版本为准，避免台账里出现两行。
+    const manual = workspaceDevices.filter(
+      (device) => !publishedIds.has(device.id) && !publishedCodes.has(device.assetCode.trim()),
+    );
+    return [...published, ...manual];
+  }, [publishedData.devices, sessionState, workspaceDevices]);
   const costEntries = costEntryStore[effectiveHospitalId] ?? (demoMode ? cloneCostEntriesForHospital(effectiveHospitalId) : []);
   const improvementActions = improvementStore[effectiveHospitalId] ?? (demoMode ? initialActions : []);
   const currentDataSources = sourceStore[effectiveHospitalId] ?? (demoMode ? initialDataSources : []);
+  const currentLedgerFields = ledgerFieldStore[effectiveHospitalId] ?? [];
   const currentAnalysisProfiles = analysisProfileStore[effectiveHospitalId] ?? (demoMode ? initialBenefitAnalysisProfiles : []);
   const activeMembership = tenantContext?.memberships.find((membership) => membership.hospitalId === effectiveHospitalId);
   const currentRoleName = activeMembership?.roleName ?? (viewer.authenticated ? "平台超级管理员" : "体验角色");
@@ -590,6 +627,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       improvementActions: [],
       modules: initialModules.map((module) => ({ ...module })),
       dataSources: [],
+      ledgerFields: [],
       analysisProfiles: [],
     };
   }
@@ -650,6 +688,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setCostEntryStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.costEntries }));
     setImprovementStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.improvementActions }));
     setSourceStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.dataSources }));
+    setLedgerFieldStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.ledgerFields ?? [] }));
     setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.analysisProfiles }));
     setModulesLocal(result.shared.modules);
     setNotificationsLocal((current) => [
@@ -808,6 +847,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       setModulesLocal(value as DashboardModule[]);
     } else if (resource === "dataSources") {
       setSourceStoreLocal((current) => ({ ...current, [hospitalId]: value as typeof initialDataSources }));
+    } else if (resource === "ledgerFields") {
+      setLedgerFieldStoreLocal((current) => ({ ...current, [hospitalId]: value as LedgerFieldDefinition[] }));
     } else {
       setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: value as BenefitAnalysisProfile[] }));
     }
@@ -936,6 +977,15 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       const current = currentStore[effectiveHospitalId] ?? (demoMode ? initialDataSources : []);
       const next = resolveStateUpdate(update, current);
       void persistCloudResource("dataSources", next);
+      return { ...currentStore, [effectiveHospitalId]: next };
+    });
+  };
+
+  const setCurrentLedgerFields: Dispatch<SetStateAction<LedgerFieldDefinition[]>> = (update) => {
+    setLedgerFieldStoreLocal((currentStore) => {
+      const current = currentStore[effectiveHospitalId] ?? [];
+      const next = resolveStateUpdate(update, current);
+      void persistCloudResource("ledgerFields", next);
       return { ...currentStore, [effectiveHospitalId]: next };
     });
   };
@@ -1501,7 +1551,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     .sort((a, b) => roi(a) - roi(b));
 
   const currentCostDevice = devices.find((device) => device.id === costDeviceId) ?? devices[0];
-  const selectedDevice = devices.find((device) => device.id === selectedDeviceId) ?? devices[0];
+  const selectedDevice = ledgerDevices.find((device) => device.id === selectedDeviceId) ?? devices[0];
   const hospitalNotifications = notifications
     .filter((item) => !item.hospitalId || item.hospitalId === effectiveHospitalId)
     .map((item) => ({ ...item, read: item.read || readNotificationIds.includes(item.id) }));
@@ -1683,7 +1733,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       ? { ...device, cost: { ...device.cost } }
       : {
           id: `device-${Date.now()}`,
-          assetCode: "YLSB-2026-",
+          // 医院配置里填了简码就自动编号（简码 + 7 位顺序号），留空则由用户手工填。
+          assetCode: nextAssetCode(activeHospital?.assetCodePrefix ?? "", ledgerDevices.map((item) => item.assetCode)),
           name: "",
           shortName: "",
           model: "",
@@ -1691,6 +1742,11 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           manufacturer: "",
           serialNumber: "",
           department: "",
+          owningDepartment: "",
+          usingDepartments: [],
+          roomNumber: "",
+          dataSource: "手动填写",
+          customFields: {},
           location: "",
           enabledDate: "2026-07-22",
           fundingSource: "",
@@ -1717,12 +1773,29 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
   function saveDevice(event: FormEvent) {
     event.preventDefault();
-    if (!deviceDraft.name.trim() || !deviceDraft.department.trim()) {
-      notify("请填写设备名称和使用科室");
+    if (!deviceDraft.name.trim() || !usingDepartmentList(deviceDraft).length) {
+      notify("请填写设备名称和至少一个使用科室", "error");
       return;
     }
+    if (!deviceDraft.assetCode.trim()) {
+      notify("请填写资产编号；在「医院与权限」里配好资产编号简码后可自动生成", "error");
+      return;
+    }
+    const duplicated = ledgerDevices.some((device) => device.id !== deviceDraft.id && device.assetCode.trim() === deviceDraft.assetCode.trim());
+    if (duplicated) {
+      notify("资产编号已存在，请换一个", "error");
+      return;
+    }
+    const customError = validateCustomFieldValues(currentLedgerFields, deviceDraft.customFields);
+    if (customError) {
+      notify(customError, "error");
+      return;
+    }
+    // 录入时允许留空行（方便连续添加），落库前清理掉。
+    const cleanedDepartments = usingDepartmentList(deviceDraft);
+    const cleaned: Device = { ...deviceDraft, usingDepartments: cleanedDepartments, department: cleanedDepartments[0] ?? deviceDraft.department };
     setDevices((current) =>
-      editingDevice ? current.map((device) => (device.id === deviceDraft.id ? deviceDraft : device)) : [...current, deviceDraft],
+      editingDevice ? current.map((device) => (device.id === cleaned.id ? cleaned : device)) : [...current, cleaned],
     );
     setEditorOpen(false);
     notify(editingDevice ? "设备信息已更新，驾驶舱同步刷新" : "设备已加入台账和驾驶舱");
@@ -2115,6 +2188,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     capital: "3—5 年资本计划",
     workbench: "数据准备中心",
     equipment: "设备台账",
+    "ledger-fields": "台账字段配置",
     detail: selectedDevice ? `${selectedDevice.shortName}单机分析` : "单机设备分析",
     costs: "成本填报中心",
     layout: "驾驶舱配置",
@@ -2452,7 +2526,10 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
           {view === "equipment" ? (
             <EquipmentManagement
-              devices={devices}
+              devices={ledgerDevices}
+              ledgerFields={currentLedgerFields}
+              onConfigureFields={() => navigate("ledger-fields")}
+              canConfigureFields={hasPermission("equipment.manage")}
               search={equipmentSearch}
               setSearch={setEquipmentSearch}
               status={equipmentStatus}
@@ -2460,6 +2537,16 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               onEdit={openDeviceEditor}
               onView={openDeviceDetail}
               onAdd={() => openDeviceEditor()}
+            />
+          ) : null}
+
+          {view === "ledger-fields" ? (
+            <LedgerFieldSettings
+              fields={currentLedgerFields}
+              onChange={setCurrentLedgerFields}
+              canManage={hasPermission("equipment.manage")}
+              notify={notify}
+              onBack={() => navigate("equipment")}
             />
           ) : null}
 
@@ -2619,6 +2706,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           draft={deviceDraft}
           setDraft={setDeviceDraft}
           editing={Boolean(editingDevice)}
+          ledgerFields={currentLedgerFields}
+          assetCodePrefix={activeHospital?.assetCodePrefix ?? ""}
           onClose={() => setEditorOpen(false)}
           onSave={saveDevice}
         />
@@ -2713,6 +2802,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
 function EquipmentManagement({
   devices,
+  ledgerFields,
   search,
   setSearch,
   status,
@@ -2720,8 +2810,11 @@ function EquipmentManagement({
   onEdit,
   onView,
   onAdd,
+  onConfigureFields,
+  canConfigureFields,
 }: {
   devices: Device[];
+  ledgerFields: LedgerFieldDefinition[];
   search: string;
   setSearch: (value: string) => void;
   status: string;
@@ -2729,44 +2822,93 @@ function EquipmentManagement({
   onEdit: (device: Device) => void;
   onView: (device: Device) => void;
   onAdd: () => void;
+  onConfigureFields: () => void;
+  canConfigureFields: boolean;
 }) {
+  // 展开的"使用科室"行：一台设备可挂多个使用科室，表格默认只显示第一个，
+  // 点省略号按钮就地展开成逐条列表，避免把表格撑得很宽。
+  const [expandedDepartments, setExpandedDepartments] = useState<string | null>(null);
+  const columns = tableLedgerFields(ledgerFields);
   const filtered = devices.filter((device) => {
-    const matchesSearch = `${device.name}${device.shortName}${device.assetCode}${device.model}${device.department}`.toLowerCase().includes(search.toLowerCase());
+    const departments = usingDepartmentList(device).join("");
+    const custom = Object.values(device.customFields ?? {}).join("");
+    const matchesSearch = `${device.name}${device.shortName}${device.assetCode}${device.model}${device.department}${device.owningDepartment ?? ""}${departments}${device.roomNumber ?? ""}${custom}`.toLowerCase().includes(search.toLowerCase());
     return matchesSearch && (status === "全部状态" || device.status === status);
   });
 
   return (
     <>
       <div className="page-heading">
-        <div><div className="eyebrow"><FileSpreadsheet size={15} />资产主数据</div><h1>设备台账</h1><p>维护单机基础资料、收入、工作量和计划指标，变更后驾驶舱实时更新。</p></div>
-        <button className="primary-button" onClick={onAdd}><Plus size={17} />新增设备</button>
+        <div><div className="eyebrow"><FileSpreadsheet size={15} />资产主数据</div><h1>设备台账</h1></div>
+        <div className="heading-actions">
+          {canConfigureFields ? <button className="secondary-button" onClick={onConfigureFields}><SlidersHorizontal size={16} />台账字段配置</button> : null}
+          <button className="primary-button" onClick={onAdd}><Plus size={17} />新增设备</button>
+        </div>
       </div>
-      <div className="admin-stats">
-        <div><span>纳管设备</span><strong>{devices.length}</strong><small>台（套）</small></div>
+      <div className="admin-stats single">
         <div><span>资产原值</span><strong>{currency.format(devices.reduce((sum, item) => sum + item.investment, 0))}</strong><small>万元</small></div>
-        <div><span>效益预警</span><strong>{devices.filter((item) => item.status === "效益预警").length}</strong><small>台设备</small></div>
-        <div><span>数据完整率</span><strong>96.8%</strong><small>演示口径</small></div>
       </div>
-      <Panel title="设备主数据" description={`共 ${filtered.length} 条结果`} action={<span className="chart-note">编辑后自动保存到本机</span>}>
+      <Panel title="设备主数据" description={`共 ${filtered.length} 条结果`}>
         <div className="table-toolbar">
-          <label className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索设备、型号、资产编号或科室" /></label>
+          <label className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索设备、型号、资产编号、科室或房间号" /></label>
           <select className="select-control" value={status} onChange={(event) => setStatus(event.target.value)}><option>全部状态</option><option>运行良好</option><option>需要关注</option><option>效益预警</option></select>
         </div>
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead><tr><th>资产编号</th><th>设备名称/型号</th><th>使用科室</th><th>启用日期</th><th className="num">原值(万元)</th><th className="num">年度收入</th><th className="num">总成本</th><th className="num">使用率</th><th>状态</th><th className="action-col action-wide">操作</th></tr></thead>
-            <tbody>{filtered.map((device) => (
-              <tr key={device.id}>
-                <td><code>{device.assetCode}</code></td>
-                <td><button className="device-link" onClick={() => onView(device)}><strong>{device.name}</strong><span>{device.model}</span></button></td>
-                <td>{device.department}</td><td>{device.enabledDate}</td>
-                <td className="num">{currency.format(device.investment)}</td><td className="num">{currency.format(device.revenue)}</td><td className="num">{currency.format(totalCost(device))}</td><td className="num">{device.utilization}%</td>
-                <td><span className={`status-pill ${statusTone(device.status)}`}>{device.status}</span></td>
-                <td className="action-col action-wide"><button className="icon-button" aria-label={`查看${device.name}详情`} onClick={() => onView(device)}><Eye size={16} /></button><button className="icon-button" aria-label={`编辑${device.name}`} onClick={() => onEdit(device)}><Pencil size={16} /></button></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
+        {filtered.length ? (
+          <div className="table-scroll">
+            <table className="data-table ledger-table">
+              <thead><tr>
+                <th>资产编号</th><th>设备名称/型号</th><th>所属科室</th><th>使用科室</th><th>房间号</th><th>启用日期</th><th className="num">原值(万元)</th><th>数据来源</th><th>状态</th>
+                {columns.map((field) => <th key={field.key}>{field.label}</th>)}
+                <th className="action-col action-wide">操作</th>
+              </tr></thead>
+              <tbody>{filtered.map((device) => {
+                const departments = usingDepartmentList(device);
+                const expanded = expandedDepartments === device.id;
+                return (
+                  <tr key={device.id}>
+                    <td><code>{device.assetCode}</code></td>
+                    <td><button className="device-link" onClick={() => onView(device)}><strong>{device.name}</strong><span>{device.model}</span></button></td>
+                    <td>{device.owningDepartment?.trim() || device.department || "—"}</td>
+                    <td>
+                      {departments.length ? (
+                        <div className={`using-departments${expanded ? " expanded" : ""}`}>
+                          {expanded
+                            ? <ul>{departments.map((item) => <li key={item}>{item}</li>)}</ul>
+                            : <span>{departments[0]}</span>}
+                          {departments.length > 1 ? (
+                            <button
+                              type="button"
+                              className="using-departments-toggle"
+                              aria-expanded={expanded}
+                              aria-label={expanded ? `收起${device.name}的使用科室` : `展开${device.name}的全部 ${departments.length} 个使用科室`}
+                              title={expanded ? "收起" : `共 ${departments.length} 个使用科室`}
+                              onClick={() => setExpandedDepartments(expanded ? null : device.id)}
+                            ><MoreHorizontal size={15} /></button>
+                          ) : null}
+                        </div>
+                      ) : "—"}
+                    </td>
+                    <td>{device.roomNumber?.trim() || "—"}</td>
+                    <td>{device.enabledDate}</td>
+                    <td className="num">{currency.format(device.investment)}</td>
+                    <td><span className="source-pill">{device.dataSource?.trim() || "手动填写"}</span></td>
+                    <td><span className={`status-pill ${statusTone(device.status)}`}>{device.status}</span></td>
+                    {columns.map((field) => <td key={field.key}>{device.customFields?.[field.key]?.trim() || "—"}</td>)}
+                    <td className="action-col action-wide"><button className="icon-button" aria-label={`查看${device.name}详情`} onClick={() => onView(device)}><Eye size={16} /></button><button className="icon-button" aria-label={`编辑${device.name}`} onClick={() => onEdit(device)}><Pencil size={16} /></button></td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="ledger-empty">
+            <FileSpreadsheet size={26} />
+            <strong>{devices.length ? "没有符合筛选条件的设备" : "本院台账还没有设备"}</strong>
+            <p>{devices.length
+              ? "换个关键词或把状态筛选改回“全部状态”。"
+              : "两种方式录入：点右上角“新增设备”手工建档；或在数据准备中心上传设备台账文件后发布。"}</p>
+          </div>
+        )}
       </Panel>
     </>
   );
@@ -3054,16 +3196,33 @@ function DeviceEditor({
   draft,
   setDraft,
   editing,
+  ledgerFields,
+  assetCodePrefix,
   onClose,
   onSave,
 }: {
   draft: Device;
   setDraft: React.Dispatch<React.SetStateAction<Device>>;
   editing: boolean;
+  ledgerFields: LedgerFieldDefinition[];
+  assetCodePrefix: string;
   onClose: () => void;
   onSave: (event: FormEvent) => void;
 }) {
   const field = <K extends keyof Device>(key: K, value: Device[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const customFields = sortedLedgerFields(ledgerFields);
+  // 这里必须用草稿里的原始数组，不能用 usingDepartmentList：那个函数会把空串过滤掉，
+  // 导致点"添加使用科室"新增的空行在下一次渲染就消失，按钮看起来没反应。
+  // 空行只在保存时清理。
+  const usingDepartments = draft.usingDepartments?.length
+    ? draft.usingDepartments
+    : draft.department.trim() ? [draft.department] : [""];
+  const setCustomField = (key: string, value: string) =>
+    setDraft((current) => ({ ...current, customFields: { ...(current.customFields ?? {}), [key]: value } }));
+  const setUsingDepartments = (next: string[]) =>
+    // department 是历史字段，很多地方（成本、改进、报告）还按它做科室过滤，
+    // 这里同步成第一个非空的使用科室，避免多科室设备在其它页面直接消失。
+    setDraft((current) => ({ ...current, usingDepartments: next, department: next.find((item) => item.trim()) ?? "" }));
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <form className="editor-drawer" onSubmit={onSave}>
@@ -3071,8 +3230,26 @@ function DeviceEditor({
         <div className="editor-body">
           <h3>基础信息</h3>
           <FormInput label="设备名称" value={draft.name} onChange={(value) => field("name", value)} required />
-          <div className="form-row two"><FormInput label="简称" value={draft.shortName} onChange={(value) => field("shortName", value)} required /><FormInput label="资产编号" value={draft.assetCode} onChange={(value) => field("assetCode", value)} required /></div>
-          <div className="form-row two"><FormInput label="规格型号" value={draft.model} onChange={(value) => field("model", value)} /><FormInput label="使用科室" value={draft.department} onChange={(value) => field("department", value)} required /></div>
+          <div className="form-row two"><FormInput label="简称" value={draft.shortName} onChange={(value) => field("shortName", value)} required /><FormInput label="资产编号" value={draft.assetCode} onChange={(value) => field("assetCode", value)} required hint={assetCodePrefix ? `按医院简码 ${assetCodePrefix} 自动生成，可手工覆盖` : "医院尚未配置资产编号简码，请手工填写或先到「医院与权限」配置"} /></div>
+          <div className="form-row two"><FormInput label="规格型号" value={draft.model} onChange={(value) => field("model", value)} /><FormInput label="所属科室" value={draft.owningDepartment ?? ""} onChange={(value) => field("owningDepartment", value)} placeholder="资产归属的科室" /></div>
+          <label className="form-field"><span>使用科室<i className="required-mark">必填</i></span>
+            <div className="multi-input">
+              {usingDepartments.map((item, index) => (
+                <div className="multi-input-row" key={`${item}-${index}`}>
+                  <input
+                    value={item}
+                    aria-label={`使用科室 ${index + 1}`}
+                    onChange={(event) => setUsingDepartments(usingDepartments.map((value, position) => position === index ? event.target.value : value))}
+                    placeholder="例如：医学影像科"
+                  />
+                  <button type="button" className="icon-button" aria-label={`删除使用科室 ${index + 1}`} disabled={usingDepartments.length <= 1} onClick={() => setUsingDepartments(usingDepartments.filter((_, position) => position !== index))}><Trash2 size={15} /></button>
+                </div>
+              ))}
+              <button type="button" className="text-button" onClick={() => setUsingDepartments([...usingDepartments, ""])}><Plus size={15} />添加使用科室</button>
+            </div>
+            <small>一台设备可由多个科室共用；台账里默认显示第一个，点省略号展开全部。</small>
+          </label>
+          <div className="form-row two"><FormInput label="房间号" value={draft.roomNumber ?? ""} onChange={(value) => field("roomNumber", value)} placeholder="例如：门诊楼 B1-07" /><label className="form-field"><span>数据来源</span><select value={draft.dataSource ?? "手动填写"} onChange={(event) => field("dataSource", event.target.value)}>{DEVICE_DATA_SOURCES.map((source) => <option key={source} value={source}>{source}</option>)}</select><small>手工建档默认「手动填写」；数据准备中心发布的设备会标为「文件导入」。</small></label></div>
           <div className="form-row two"><FormInput label="设备类别" value={draft.category ?? ""} onChange={(value) => field("category", value)} placeholder="例如：诊断类（放射）" /><FormInput label="生产厂家 / 品牌" value={draft.manufacturer ?? ""} onChange={(value) => field("manufacturer", value)} /></div>
           <div className="form-row two"><FormInput label="出厂编号 / SN" value={draft.serialNumber ?? ""} onChange={(value) => field("serialNumber", value)} /><FormInput label="安装地点" value={draft.location ?? ""} onChange={(value) => field("location", value)} /></div>
           <div className="form-row two"><FormInput label="启用日期" type="date" value={draft.enabledDate} onChange={(value) => field("enabledDate", value)} /><FormInput label="数量" type="number" value={draft.quantity} onChange={(value) => field("quantity", Number(value))} suffix="台" /></div>
@@ -3080,6 +3257,35 @@ function DeviceEditor({
           <div className="form-row two"><FormInput label="资金来源" value={draft.fundingSource ?? ""} onChange={(value) => field("fundingSource", value)} /><FormInput label="预计使用年限" type="number" value={draft.usefulLifeYears ?? 8} onChange={(value) => field("usefulLifeYears", Number(value))} suffix="年" /></div>
           <div className="form-row two"><FormInput label="折旧方法" value={draft.depreciationMethod ?? ""} onChange={(value) => field("depreciationMethod", value)} /><FormInput label="配置证 / 许可信息" value={draft.licenseNumber ?? ""} onChange={(value) => field("licenseNumber", value)} /></div>
           <div className="form-row two"><FormInput label="维保状态" value={draft.maintenanceStatus ?? ""} onChange={(value) => field("maintenanceStatus", value)} /><FormInput label="数据监测状态" value={draft.monitoringStatus ?? ""} onChange={(value) => field("monitoringStatus", value)} /></div>
+          {customFields.length ? (
+            <>
+              <h3>本院自定义字段</h3>
+              {customFields.map((definition) => {
+                const value = draft.customFields?.[definition.key] ?? "";
+                const message = validateFieldValue(definition, value);
+                return (
+                  <label className="form-field" key={definition.key}>
+                    <span>{definition.label}{definition.required ? <i className="required-mark">必填</i> : null}</span>
+                    {definition.type === "select" ? (
+                      <select value={value} onChange={(event) => setCustomField(definition.key, event.target.value)}>
+                        <option value="">{definition.required ? "请选择" : "未填写"}</option>
+                        {definition.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type={definition.type === "date" ? "date" : definition.type === "number" ? "number" : "text"}
+                        value={value}
+                        onChange={(event) => setCustomField(definition.key, event.target.value)}
+                        placeholder={definition.required ? "必填" : "选填"}
+                      />
+                    )}
+                    {/* 选填留空不算错；填了但格式不对要当场提示，不能等到保存才拦。 */}
+                    {value.trim() && message ? <small className="field-error">{message}</small> : definition.hint ? <small>{definition.hint}</small> : null}
+                  </label>
+                );
+              })}
+            </>
+          ) : null}
           <h3>效益数据</h3>
           <div className="form-row two"><FormInput label="项目总投资" type="number" value={draft.investment} onChange={(value) => field("investment", Number(value))} suffix="万元" /><FormInput label="年度收入" type="number" value={draft.revenue} onChange={(value) => field("revenue", Number(value))} suffix="万元" /></div>
           <div className="form-row two"><FormInput label="年度服务量" type="number" value={draft.serviceVolume} onChange={(value) => field("serviceVolume", Number(value))} /><FormInput label="服务量单位" value={draft.serviceUnit} onChange={(value) => field("serviceUnit", value)} /></div>
@@ -3105,6 +3311,7 @@ function FormInput({
   required,
   min,
   step,
+  hint,
 }: {
   label: string;
   name?: string;
@@ -3117,9 +3324,10 @@ function FormInput({
   required?: boolean;
   min?: string;
   step?: string;
+  hint?: string;
 }) {
   return (
-    <label className="form-field"><span>{label}{required ? <b>*</b> : null}</span><div className="input-wrap"><input name={name} type={type} value={value} defaultValue={defaultValue} onChange={onChange ? (event) => onChange(event.target.value) : undefined} placeholder={placeholder} required={required} min={min} step={step} />{suffix ? <i>{suffix}</i> : null}</div></label>
+    <label className="form-field"><span>{label}{required ? <b>*</b> : null}</span><div className="input-wrap"><input name={name} type={type} value={value} defaultValue={defaultValue} onChange={onChange ? (event) => onChange(event.target.value) : undefined} placeholder={placeholder} required={required} min={min} step={step} />{suffix ? <i>{suffix}</i> : null}</div>{hint ? <small>{hint}</small> : null}</label>
   );
 }
 

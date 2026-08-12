@@ -37,6 +37,7 @@ const resourceLabels = {
   modules: "驾驶舱布局",
   dataSources: "数据源配置",
   analysisProfiles: "采集分析配置",
+  ledgerFields: "台账字段配置",
 } as const;
 
 const sensitiveKeyPattern = /(?:password|passwd|pwd|secret|token|authorization|api[_-]?key|credential|private[_-]?key|client[_-]?secret|access[_-]?key|connection[_-]?string|cookie)/i;

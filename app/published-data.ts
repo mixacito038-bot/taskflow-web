@@ -589,6 +589,12 @@ function flatDeviceFor(deviceId: string, records: readonly PublishedDatasetRow[]
     manufacturer: firstText(masters, ["manufacturer"]) ?? undefined,
     serialNumber: firstText(masters, ["serialNumber"]) ?? undefined,
     department,
+    // 走文件导入→发布链路进来的设备，来源如实标为"文件导入"，
+    // 和手工建档区分开：台账上一眼看得出这条记录是谁录的。
+    dataSource: "文件导入",
+    owningDepartment: firstText(masters, ["owningDepartment"]) ?? department,
+    usingDepartments: [department],
+    roomNumber: firstText(masters, ["roomNumber"]) ?? undefined,
     location: firstText(masters, ["location"]) ?? undefined,
     enabledDate,
     fundingSource: firstText(masters, ["fundingSource"]) ?? undefined,

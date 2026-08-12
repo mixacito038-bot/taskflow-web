@@ -2012,3 +2012,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .projection-actions button { flex: 1; justify-content: center; }
   .projection-mode .content { padding: 96px 12px 24px; }
 }
+
+/* ── 设备台账：多使用科室折叠、数据来源、空态、自定义字段录入 ────────────── */
+.admin-stats.single { grid-template-columns: minmax(0, 320px); }
+.ledger-table th, .ledger-table td { vertical-align: top; }
+.using-departments { display: inline-flex; align-items: flex-start; gap: 6px; }
+.using-departments ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.using-departments li { white-space: nowrap; }
+.using-departments-toggle { width: 22px; height: 22px; padding: 0; flex: 0 0 22px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--surface-soft); display: grid; place-items: center; }
+.using-departments-toggle:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 32%, var(--border)); }
+.using-departments-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.using-departments.expanded .using-departments-toggle { color: var(--primary); background: var(--primary-soft); }
+.source-pill { padding: 2px 8px; border-radius: 6px; color: var(--muted); background: var(--surface-soft); border: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
+.ledger-empty { padding: 44px 20px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: var(--muted); }
+.ledger-empty svg { color: var(--border-strong); }
+.ledger-empty strong { color: var(--text); font-size: 14px; }
+.ledger-empty p { max-width: 520px; font-size: 12px; line-height: 1.7; }
+.multi-input { display: flex; flex-direction: column; gap: 7px; }
+.multi-input-row { display: flex; align-items: center; gap: 7px; }
+.multi-input-row input { flex: 1; min-width: 0; }
+.required-mark { margin-left: 6px; padding: 1px 6px; border-radius: 5px; color: var(--orange); background: var(--orange-soft); font-size: 12px; font-style: normal; font-weight: 600; }
+.field-error { color: var(--red); }
+.icon-button.danger { color: var(--red); }
+.icon-button.danger:hover:not(:disabled) { background: var(--red-soft); }
+@media (max-width: 900px) {
+  .admin-stats.single { grid-template-columns: 1fr; }
+}

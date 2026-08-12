@@ -20,6 +20,16 @@ export type Device = {
   manufacturer?: string;
   serialNumber?: string;
   department: string;
+  /** 资产归属科室（唯一）。老数据没有时回落到 department。 */
+  owningDepartment?: string;
+  /** 使用科室，可多个；台账表格折叠显示。老数据没有时回落到 department。 */
+  usingDepartments?: string[];
+  /** 设备安放的房间号。 */
+  roomNumber?: string;
+  /** 该台设备的数据来源：手动填写 / 文件导入 / 接口对接。 */
+  dataSource?: string;
+  /** 各院自定义台账字段的值，键为 LedgerFieldDefinition.key。 */
+  customFields?: Record<string, string>;
   location?: string;
   enabledDate: string;
   fundingSource?: string;
