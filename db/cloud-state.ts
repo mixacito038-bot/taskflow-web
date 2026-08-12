@@ -18,6 +18,10 @@ export const cloudResourceNames = [
   "ledgerFields",
   "metricDictionary",
   "metricCategories",
+  "deviceReports",
+  "reportFields",
+  "chartTemplates",
+  "metricCockpit",
 ] as const;
 
 export type CloudResourceName = (typeof cloudResourceNames)[number];
@@ -49,6 +53,12 @@ const resourcePermission: Record<CloudResourceName, string> = {
   // 指标口径属于文件/口径治理范畴，跟着数据源管理权限走
   metricDictionary: "source.manage",
   metricCategories: "source.manage",
+  // 填报记录与填报字段都属于成本/业务量填报职责
+  deviceReports: "cost.manage",
+  reportFields: "cost.manage",
+  // 图表模板与字典驾驶舱配置跟着驾驶舱配置权限走（与 modules 一致）
+  chartTemplates: "member.manage",
+  metricCockpit: "member.manage",
 };
 
 const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
@@ -63,6 +73,11 @@ const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
   // 指标字典是全院公开口径，能看分析页面的都要能读，否则表格会缺行
   metricDictionary: ["dashboard.view", "source.manage", "report.manage", "report.review", "report.approve", "report.export"],
   metricCategories: ["dashboard.view", "source.manage", "report.manage", "report.review", "report.approve", "report.export"],
+  // 字典驾驶舱要用填报数据算数，能看驾驶舱的都要能读，否则看板全是空卡
+  deviceReports: ["dashboard.view", "cost.manage", "improvement.manage", "report.manage", "report.review", "report.approve", "report.export"],
+  reportFields: ["dashboard.view", "cost.manage", "improvement.manage", "report.manage", "report.review", "report.approve", "report.export"],
+  chartTemplates: ["dashboard.view", "member.manage"],
+  metricCockpit: ["dashboard.view", "member.manage"],
 };
 
 export function emptySharedState(): CloudSharedState {
@@ -76,6 +91,10 @@ export function emptySharedState(): CloudSharedState {
     modules: [],
     dataSources: [],
     analysisProfiles: [],
+    deviceReports: [],
+    reportFields: [],
+    chartTemplates: [],
+    metricCockpit: [],
   };
 }
 

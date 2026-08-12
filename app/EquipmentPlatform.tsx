@@ -431,6 +431,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [toast, setToast] = useState<{ message: string; tone: "info" | "error" } | null>(null);
   const toastTimer = useRef(0);
   const [equipmentSearch, setEquipmentSearch] = useState("");
+  // 台账“眼睛”入口带过来的设备：进入设备数据填报时直接打开这台设备的抽屉
+  const [reportFocusDeviceId, setReportFocusDeviceId] = useState("");
   const [equipmentStatus, setEquipmentStatus] = useState("全部状态");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
@@ -1839,9 +1841,9 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     { id: "improvement", label: "运营改进中心", icon: <Target size={18} />, group: "show", permissions: ["improvement.manage"] },
     { id: "capital", label: "资本计划", icon: <Boxes size={18} />, group: "show", permissions: ["improvement.manage", "report.approve"] },
     { id: "equipment", label: "设备台账", icon: <FileSpreadsheet size={18} />, group: "manage", permissions: ["equipment.manage"] },
-    { id: "costs", label: "成本填报", icon: <CircleDollarSign size={18} />, group: "manage", permissions: ["cost.manage"] },
+    { id: "costs", label: "设备数据填报", icon: <CircleDollarSign size={18} />, group: "manage", permissions: ["cost.manage"] },
     { id: "layout", label: "驾驶舱配置", icon: <SlidersHorizontal size={18} />, group: "manage", permissions: ["member.manage"] },
-    { id: "sources", label: "文件口径说明", icon: <Database size={18} />, group: "manage", permissions: ["source.manage"] },
+    { id: "sources", label: "指标字典", icon: <Database size={18} />, group: "manage", permissions: ["source.manage"] },
     ...(dataWorkbenchUnlocked ? [{ id: "workbench" as View, label: "数据准备中心", icon: <Cable size={18} />, group: "manage" as const, permissions: dataWorkbenchPermissions }] : []),
     { id: "access", label: "医院与权限", icon: <ShieldCheck size={18} />, group: "manage", permissions: ["hospital.manage", "member.manage"] },
   ];
@@ -2056,9 +2058,9 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     equipment: "设备台账",
     "ledger-fields": "台账字段配置",
     detail: selectedDevice ? `${selectedDevice.shortName}单机分析` : "单机设备分析",
-    costs: "成本填报中心",
+    costs: "设备数据填报",
     layout: "驾驶舱配置",
-    sources: "文件模板与指标口径",
+    sources: "指标字典",
     "metric-dictionary": "指标字典配置",
     access: "医院与权限管理",
     account: "个人中心",
@@ -2384,7 +2386,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               status={equipmentStatus}
               setStatus={setEquipmentStatus}
               onEdit={openDeviceEditor}
-              onView={openDeviceDetail}
+              onOpenReport={(device) => { setReportFocusDeviceId(device.id); navigate("costs"); }}
               onAdd={() => openDeviceEditor()}
             />
           ) : null}
@@ -2632,7 +2634,7 @@ function EquipmentManagement({
   status,
   setStatus,
   onEdit,
-  onView,
+  onOpenReport,
   onAdd,
   onConfigureFields,
   canConfigureFields,
@@ -2644,7 +2646,8 @@ function EquipmentManagement({
   status: string;
   setStatus: (value: string) => void;
   onEdit: (device: Device) => void;
-  onView: (device: Device) => void;
+  /** 台账是基础资料，点“眼睛”进入这台设备的按期数据填报视图 */
+  onOpenReport: (device: Device) => void;
   onAdd: () => void;
   onConfigureFields: () => void;
   canConfigureFields: boolean;
@@ -2691,7 +2694,7 @@ function EquipmentManagement({
                 return (
                   <tr key={device.id}>
                     <td><code>{device.assetCode}</code></td>
-                    <td><button className="device-link" onClick={() => onView(device)}><strong>{device.name}</strong><span>{device.model}</span></button></td>
+                    <td><button className="device-link" onClick={() => onOpenReport(device)}><strong>{device.name}</strong><span>{device.model}</span></button></td>
                     <td>{device.owningDepartment?.trim() || device.department || "—"}</td>
                     <td>
                       {departments.length ? (
@@ -2718,7 +2721,7 @@ function EquipmentManagement({
                     <td><span className="source-pill">{device.dataSource?.trim() || "手动填写"}</span></td>
                     <td><span className={`status-pill ${statusTone(device.status)}`}>{device.status}</span></td>
                     {columns.map((field) => <td key={field.key}>{device.customFields?.[field.key]?.trim() || "—"}</td>)}
-                    <td className="action-col action-wide"><button className="icon-button" aria-label={`查看${device.name}详情`} onClick={() => onView(device)}><Eye size={16} /></button><button className="icon-button" aria-label={`编辑${device.name}`} onClick={() => onEdit(device)}><Pencil size={16} /></button></td>
+                    <td className="action-col action-wide"><span className="action-cell"><button className="icon-button" aria-label={`查看${device.name}的数据填报`} title="按期查看/填报这台设备的数据" onClick={() => onOpenReport(device)}><Eye size={16} /></button><button className="icon-button" aria-label={`编辑${device.name}`} onClick={() => onEdit(device)}><Pencil size={16} /></button></span></td>
                   </tr>
                 );
               })}</tbody>
@@ -2960,7 +2963,7 @@ function DataSourceManagement({
   return (
     <>
       <div className="page-heading">
-        <div><h1>文件模板与指标口径</h1></div>
+        <div><h1>指标字典</h1></div>
         <div className="heading-actions">
           {canConfigureMetrics ? <button className="secondary-button" onClick={onConfigureMetrics}><SlidersHorizontal size={16} />指标字典配置</button> : null}
           <button className="secondary-button" onClick={downloadFieldTemplate}><FileSpreadsheet size={17} />下载文件字段模板</button>

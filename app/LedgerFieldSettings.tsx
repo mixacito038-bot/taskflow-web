@@ -118,12 +118,12 @@ export default function LedgerFieldSettings({
                   <td>{field.type === "select" ? field.options.join(" / ") : field.hint || "—"}</td>
                   <td className="action-col action-wide">
                     {canManage ? (
-                      <>
-                        <button className="icon-button" aria-label={`上移${field.label}`} disabled={index === 0} onClick={() => move(field, -1)}><ArrowUp size={15} /></button>
-                        <button className="icon-button" aria-label={`下移${field.label}`} disabled={index === ordered.length - 1} onClick={() => move(field, 1)}><ArrowDown size={15} /></button>
+                      <span className="action-cell">
+                        <button className="icon-button" aria-label={`上移${field.label}`} disabled={index === 0} onClick={() => move(field, -1)}><ArrowUp size={16} /></button>
+                        <button className="icon-button" aria-label={`下移${field.label}`} disabled={index === ordered.length - 1} onClick={() => move(field, 1)}><ArrowDown size={16} /></button>
                         <button className="text-button" onClick={() => openEdit(field)}>编辑</button>
-                        <button className="icon-button danger" aria-label={`删除${field.label}`} onClick={() => remove(field)}><Trash2 size={15} /></button>
-                      </>
+                        <button className="icon-button danger" aria-label={`删除${field.label}`} onClick={() => remove(field)}><Trash2 size={16} /></button>
+                      </span>
                     ) : <span className="chart-note">只读</span>}
                   </td>
                 </tr>

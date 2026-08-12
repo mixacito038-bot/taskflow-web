@@ -75,7 +75,7 @@ test("指标字典面板按 xlsx 口径出列，且旧的三块治理面板已�
   assert.match(views, /metric-tag tone-/);
 });
 
-test("文件模板与指标口径页只留标题、模板下载与指标字典", async () => {
+test("指标字典页只留标题、模板下载与指标字典正文", async () => {
   const platform = await readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(platform, /明确每类 Excel\/CSV\/JSON 文件的字段/);
   assert.doesNotMatch(platform, /文件数据清单/);

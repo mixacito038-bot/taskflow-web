@@ -54,8 +54,15 @@ const maxResourceItems: Record<CloudResourceName, number> = {
   ledgerFields: 200,
   metricDictionary: 500,
   metricCategories: 50,
+  // 设备 × 期间的笛卡尔积：500 台设备按月填 10 年也就 6 万条
+  deviceReports: 100_000,
+  reportFields: 200,
+  chartTemplates: 200,
+  metricCockpit: 5,
 };
 const maxResourceBytes = 1_500_000;
+// 填报记录量级远超其它资源，1.5MB 会在几千条时误拦；单独放宽
+const maxResourceBytesOverride: Partial<Record<CloudResourceName, number>> = { deviceReports: 8_000_000 };
 const allowedThemes = new Set(["clinical", "teal", "midnight"]);
 const allowedDensities = new Set(["comfortable", "compact"]);
 const allowedContentZooms = new Set([0.8, 0.9, 1, 1.1, 1.2, 1.3]);
@@ -88,7 +95,7 @@ function serializeResource(resource: CloudResourceName, value: unknown) {
   if (!Array.isArray(value) || value.length > maxResourceItems[resource]) return null;
   if (value.some((item) => !isRecord(item))) return null;
   const json = JSON.stringify(value);
-  if (new TextEncoder().encode(json).byteLength > maxResourceBytes) return null;
+  if (new TextEncoder().encode(json).byteLength > (maxResourceBytesOverride[resource] ?? maxResourceBytes)) return null;
   return json;
 }
 

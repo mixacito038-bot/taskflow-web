@@ -20,9 +20,9 @@ export const menuCatalog: readonly MenuCatalogItem[] = [
   { id: "improvement", label: "运营改进中心", group: "show", permissions: ["improvement.manage"] },
   { id: "capital", label: "资本计划", group: "show", permissions: ["improvement.manage", "report.approve"] },
   { id: "equipment", label: "设备台账", group: "manage", permissions: ["equipment.manage"] },
-  { id: "costs", label: "成本填报", group: "manage", permissions: ["cost.manage"] },
+  { id: "costs", label: "设备数据填报", group: "manage", permissions: ["cost.manage"] },
   { id: "layout", label: "驾驶舱配置", group: "manage", permissions: ["member.manage"] },
-  { id: "sources", label: "文件口径说明", group: "manage", permissions: ["source.manage"] },
+  { id: "sources", label: "指标字典", group: "manage", permissions: ["source.manage"] },
   { id: "workbench", label: "数据准备中心（隐藏入口）", group: "manage", permissions: ["connector.manage", "data.ingest", "data.clean", "data.review", "data.publish"], note: "通过品牌区连击加口令进入" },
   { id: "access", label: "医院与权限", group: "manage", permissions: ["hospital.manage", "member.manage"] },
 ] as const;

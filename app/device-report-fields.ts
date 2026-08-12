@@ -593,3 +593,103 @@ export function validateReportFieldDefinition(
   if (existing.some((field) => field.key === draft.key && field.key !== editingKey)) return "key_duplicated";
   return null;
 }
+
+/* ------------------------------------------------------------------ 旧成本记录迁移 */
+
+/**
+ * 旧「成本填报中心」记录的最小形态。
+ *
+ * 不直接引用 mock-data 的 CostEntry：数据层不该反向依赖演示数据模块，
+ * 这里只声明迁移真正用到的字段，多出来的字段（detail、createdAt）结构兼容即可传入。
+ */
+export type CostEntryLike = { id: string; type: "人工" | "耗材"; deviceId: string; deviceName: string; item: string; period: string; amount: number; owner: string };
+
+export type CostMigrationRow = { entryId: string; deviceId: string; deviceName: string; period: string; type: string; item: string; amountWan: number; amountYuan: number; targetField: string; action: "merged" | "skipped_confirmed" | "skipped_no_device" };
+
+/** 旧口径只有人工、耗材两类，分别对应新口径的人员成本与直接耗材两个出厂字段。 */
+const COST_MIGRATION_TARGETS: Record<CostEntryLike["type"], string> = { 人工: "laborCost", 耗材: "consumableCost" };
+
+/**
+ * 旧记录按「万元」记账、新口径按「元」填报，换算要 ×10000。
+ * 先放大到「分」再取整：0.07 × 10000 × 100 在浮点里是 70000.00000000001，
+ * 不取整的话对照表和填报值都会带一条小数尾巴，医院对账时会当成算错了钱。
+ */
+function wanToYuan(amountWan: number): number {
+  return Math.round(amountWan * 10000 * 100) / 100;
+}
+
+/**
+ * 把旧成本填报记录归并进新填报口径。
+ *
+ * 规则：
+ * - 人工 → laborCost，耗材 → consumableCost；同一 deviceId+period 的多条同类记录累加成一笔；
+ * - 并入已有记录时只填「原值为空」的字段——医院已手工填的数以人工口径为准，迁移绝不覆盖，
+ *   这类笔在对照表里仍标 merged（它的归宿字段就是 targetField，只是金额以人工值优先）；
+ * - 目标记录已确认（confirmed）的整台跳过：已确认数据是效益分析的口径来源，迁移不能绕过退回流程去改它；
+ * - deviceId 不在台账全集里的跳过：没有台账主档的数并进来也无处展示，只会变成孤儿记录；
+ * - 新建的记录一律 status="draft"，让科室过目后自己走提交流程，而不是替他们直接提交。
+ *
+ * mapping 一条不漏地记录每笔旧记录的去向，供导出对照表备查。
+ */
+export function migrateCostEntries(
+  entries: readonly CostEntryLike[],
+  existing: readonly DeviceReportRecord[],
+  knownDeviceIds: ReadonlySet<string>,
+  operator: string,
+  nowIso: string,
+): { records: DeviceReportRecord[]; mapping: CostMigrationRow[] } {
+  const mapping: CostMigrationRow[] = [];
+  // 累加桶：`deviceId\u0000period` → 目标字段 → 元金额合计。\u0000 不会出现在业务 id 里，拼键不会撞。
+  const buckets = new Map<string, Map<string, number>>();
+  for (const entry of entries) {
+    const targetField = COST_MIGRATION_TARGETS[entry.type];
+    const base = {
+      entryId: entry.id,
+      deviceId: entry.deviceId,
+      deviceName: entry.deviceName,
+      period: entry.period,
+      type: entry.type,
+      item: entry.item,
+      amountWan: entry.amount,
+      amountYuan: wanToYuan(entry.amount),
+      targetField,
+    };
+    if (!knownDeviceIds.has(entry.deviceId)) {
+      mapping.push({ ...base, action: "skipped_no_device" });
+      continue;
+    }
+    const record = findReportRecord(existing, entry.deviceId, entry.period);
+    if (record && record.status === "confirmed") {
+      mapping.push({ ...base, action: "skipped_confirmed" });
+      continue;
+    }
+    const bucketKey = `${entry.deviceId}\u0000${entry.period}`;
+    const bucket = buckets.get(bucketKey) ?? new Map<string, number>();
+    bucket.set(targetField, (bucket.get(targetField) ?? 0) + base.amountYuan);
+    buckets.set(bucketKey, bucket);
+    mapping.push({ ...base, action: "merged" });
+  }
+  // 逐条浅拷贝 values：迁移是纯函数，绝不能改到调用方手里的原记录，否则 React 状态对比会失灵。
+  const records: DeviceReportRecord[] = existing.map((record) => ({ ...record, values: { ...record.values } }));
+  for (const [bucketKey, bucket] of buckets) {
+    const [deviceId, period] = bucketKey.split("\u0000");
+    let record = records.find((item) => item.deviceId === deviceId && item.periodKey === period);
+    if (!record) {
+      record = { deviceId, periodKey: period, values: {}, status: "draft", updatedAt: nowIso, updatedBy: operator };
+      records.push(record);
+    }
+    let touched = false;
+    for (const [field, sum] of bucket) {
+      if ((record.values[field] ?? "").trim()) continue;
+      // 累加后再取整一次：多笔 0.01 元级的尾差不该逐笔累积进填报值
+      record.values[field] = String(Math.round(sum * 100) / 100);
+      touched = true;
+    }
+    // 一个字都没写进去（目标字段全被手工值占着）就不动时间戳，免得看起来像被人改过
+    if (touched) {
+      record.updatedAt = nowIso;
+      record.updatedBy = operator;
+    }
+  }
+  return { records, mapping };
+}

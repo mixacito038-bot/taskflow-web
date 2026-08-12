@@ -342,7 +342,7 @@ export default function MetricDictionarySettings({
                 const evidence = splitEvidence(entry.evidence);
                 return (
                   <tr key={entry.id}>
-                    <td><span className="source-pill">{entry.seq}</span><strong>{entry.name}</strong></td>
+                    <td><span className="seq-name"><span className="source-pill">{entry.seq}</span><strong>{entry.name}</strong></span></td>
                     <td><CategoryChip category={metricCategory(categories, entry.categoryId)} /></td>
                     <td title={entry.formula || undefined}>{preview(entry.formula, 52)}</td>
                     <td title={entry.source || undefined}>
@@ -353,12 +353,12 @@ export default function MetricDictionarySettings({
                     <td title={entry.note || undefined}>{preview(entry.note, 30)}</td>
                     <td className="action-col action-wide">
                       {canManage ? (
-                        <>
-                          <button className="icon-button" aria-label={`上移${entry.name}`} disabled={index === 0} onClick={() => moveEntry(entry, -1)}><ArrowUp size={15} /></button>
-                          <button className="icon-button" aria-label={`下移${entry.name}`} disabled={index === ordered.length - 1} onClick={() => moveEntry(entry, 1)}><ArrowDown size={15} /></button>
+                        <span className="action-cell">
+                          <button className="icon-button" aria-label={`上移${entry.name}`} disabled={index === 0} onClick={() => moveEntry(entry, -1)}><ArrowUp size={16} /></button>
+                          <button className="icon-button" aria-label={`下移${entry.name}`} disabled={index === ordered.length - 1} onClick={() => moveEntry(entry, 1)}><ArrowDown size={16} /></button>
                           <button className="text-button" onClick={() => openEditEntry(entry)}>编辑</button>
-                          <button className="icon-button danger" aria-label={`删除${entry.name}`} onClick={() => setConfirmAction({ kind: "remove", entry })}><Trash2 size={15} /></button>
-                        </>
+                          <button className="icon-button danger" aria-label={`删除${entry.name}`} onClick={() => setConfirmAction({ kind: "remove", entry })}><Trash2 size={16} /></button>
+                        </span>
                       ) : <span className="chart-note">只读</span>}
                     </td>
                   </tr>
@@ -399,10 +399,10 @@ export default function MetricDictionarySettings({
                   <td>{usage.get(category.id) ?? 0} 条</td>
                   <td className="action-col action-wide">
                     {canManage ? (
-                      <>
+                      <span className="action-cell">
                         <button className="text-button" onClick={() => openEditCategory(category)}>编辑</button>
-                        <button className="icon-button danger" aria-label={`删除${category.label}`} onClick={() => removeCategory(category)}><Trash2 size={15} /></button>
-                      </>
+                        <button className="icon-button danger" aria-label={`删除${category.label}`} onClick={() => removeCategory(category)}><Trash2 size={16} /></button>
+                      </span>
                     ) : <span className="chart-note">只读</span>}
                   </td>
                 </tr>
@@ -441,10 +441,10 @@ export default function MetricDictionarySettings({
                   <td>{formatDeletedAt(entry.deletedAt)}</td>
                   <td className="action-col action-wide">
                     {canManage ? (
-                      <>
-                        <button className="text-button" onClick={() => restoreEntry(entry)}><ArchiveRestore size={15} />还原</button>
-                        <button className="icon-button danger" aria-label={`彻底删除${entry.name}`} onClick={() => setConfirmAction({ kind: "purge", entry })}><Trash2 size={15} /></button>
-                      </>
+                      <span className="action-cell">
+                        <button className="text-button" onClick={() => restoreEntry(entry)}><ArchiveRestore size={16} />还原</button>
+                        <button className="icon-button danger" aria-label={`彻底删除${entry.name}`} onClick={() => setConfirmAction({ kind: "purge", entry })}><Trash2 size={16} /></button>
+                      </span>
                     ) : <span className="chart-note">只读</span>}
                   </td>
                 </tr>

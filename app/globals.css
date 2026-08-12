@@ -708,7 +708,16 @@ a { color: inherit; }
 .dimension-tabs { padding: 3px; border-radius: 8px; background: var(--surface-soft); display: flex; gap: 3px; flex-wrap: wrap; }
 .dimension-tabs button { min-height: 30px; padding: 0 10px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 12px; }.dimension-tabs button.active { color: var(--primary); background: var(--surface); box-shadow: 0 1px 3px rgba(23, 32, 51, .08); font-weight: 650; }
 .dictionary-toolbar .search-field { width: min(350px, 100%); }
-.dictionary-table { min-width: 1380px; white-space: normal; }.dictionary-table th:nth-child(1) { width: 140px; }.dictionary-table th:nth-child(2) { width: 190px; }.dictionary-table th:nth-child(3) { width: 230px; }.dictionary-table td { vertical-align: top; line-height: 1.45; font-size: 12px; }.dictionary-table td:first-child { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }.dictionary-table code { white-space: normal; line-height: 1.45; }
+.dictionary-table { min-width: 1380px; white-space: normal; }.dictionary-table th:nth-child(1) { width: 170px; }.dictionary-table th:nth-child(2) { width: 190px; }.dictionary-table th:nth-child(3) { width: 230px; }.dictionary-table td { vertical-align: top; line-height: 1.45; font-size: 12px; }.dictionary-table code { white-space: normal; line-height: 1.45; }
+/* td 一旦 display:flex 就脱离表格布局，行高与边框全部错位（“编辑状态样式乱”的根因）。
+   竖排的“序号在上、名称在下”交给单元格内的 .seq-name 容器来做，td 保持 table-cell。 */
+.seq-name { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+/* 操作列：图标与文字按钮曾各有各的高度，一行里上下错开。统一装进 .action-cell，
+   垂直居中、间距一致、尺寸收敛到 30px，跟随 td 的 text-align 居中。 */
+.data-table td.action-col { vertical-align: middle; }
+.action-cell { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; vertical-align: middle; }
+.action-cell .icon-button { width: 30px; height: 30px; border-radius: 8px; }
+.action-cell .text-button { padding: 5px 6px; display: inline-flex; align-items: center; gap: 4px; }
 .dimension-pill { padding: 3px 6px; border-radius: 5px; color: var(--primary); background: var(--primary-soft); font-size: 12px; }.dimension-quality { color: var(--violet); background: var(--violet-soft); }.dimension-experience { color: var(--cyan); background: color-mix(in srgb, var(--cyan) 12%, transparent); }.dimension-reliability { color: var(--green); background: var(--green-soft); }.dimension-efficiency { color: var(--orange); background: var(--orange-soft); }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(8, 19, 30, .45); backdrop-filter: blur(2px); display: flex; justify-content: flex-end; }
