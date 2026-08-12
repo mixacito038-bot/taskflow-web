@@ -547,7 +547,11 @@ test("uses hospital-scoped D1 state and account-scoped preferences for authentic
   assert.match(component, /persistCloudResource\("modules"/);
   assert.match(component, /persistCloudResource\("dataSources"/);
   assert.match(component, /persistCloudResource\("analysisProfiles"/);
-  assert.match(component, /云端数据已同步/);
+  // 常驻的云同步状态展示（"云端已同步"徽章、"云端数据已同步"小字、"重新同步云端"按钮）
+  // 已按需求移除；底层 persistCloudResource 同步机制保留（上方断言仍在守护）。
+  assert.doesNotMatch(component, /云端数据已同步/);
+  assert.doesNotMatch(component, /重新同步云端/);
+  assert.doesNotMatch(component, /cloud-sync-badge/);
 
   assert.match(cloudTypes, /"devices"/);
   assert.match(cloudTypes, /"costEntries"/);

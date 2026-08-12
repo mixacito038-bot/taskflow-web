@@ -246,10 +246,6 @@ function statusTone(status: DeviceStatus) {
   return "success";
 }
 
-function displayCloudTime(value: string) {
-  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-}
-
 function cloneDevices() {
   return initialDevices.map((device) => ({ ...device, cost: { ...device.cost } }));
 }
@@ -422,7 +418,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const readNotificationIdsRef = useRef<string[]>([]);
   const [cloudSyncState, setCloudSyncState] = useState<CloudSyncState>(viewer.authenticated ? "idle" : "ready");
   const [cloudHydrated, setCloudHydrated] = useState(!viewer.authenticated);
-  const [cloudUpdatedAt, setCloudUpdatedAt] = useState<string | null>(null);
   const [cloudRetryKey, setCloudRetryKey] = useState(0);
   const [cloudError, setCloudError] = useState("");
   const cloudRequestId = useRef(0);
@@ -664,7 +659,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     readNotificationIdsRef.current = preferences.readNotificationIds ?? [];
     setReadNotificationIds(readNotificationIdsRef.current);
     cloudRevisions.current[hospitalId] = result.revisions;
-    setCloudUpdatedAt(result.updatedAt);
     setCloudError("");
     setCloudHydrated(true);
     setCloudSyncState("ready");
@@ -734,8 +728,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     const previous = cloudWriteQueues.current[key] ?? Promise.resolve();
     const task = previous.catch(() => undefined).then(async () => {
       try {
-        const result = await request();
-        setCloudUpdatedAt(result.updatedAt);
+        await request();
         if (cloudWriteVersions.current[key] === version) cloudDirtyKeys.current.delete(key);
       } catch (error) {
         const code = error instanceof CloudRequestError && typeof error.payload.error === "string"
@@ -847,13 +840,12 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setCloudConflictAction("local");
     setCloudSyncState("saving");
     try {
-      const result = await requestCloudResource(
+      await requestCloudResource(
         conflict.hospitalId,
         conflict.resource,
         conflict.localValue,
         conflict.currentRevision,
       );
-      setCloudUpdatedAt(result.updatedAt);
       settleCloudConflict(conflict);
       notify(`已明确使用本机${cloudResourceLabels[conflict.resource]}覆盖上一云端版本，并保留审计记录`);
     } catch (error) {
@@ -1002,7 +994,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setSessionState("loading");
     setCloudHydrated(false);
     setCloudSyncState("idle");
-    setCloudUpdatedAt(null);
     setCloudError("");
     setCloudConflict(null);
     setHeaderPanel(null);
@@ -2247,10 +2238,10 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               </select>
             </label>
           ) : null}
-          <div className="data-health"><span><i />{activeHospital?.shortName ?? "医院未配置"}</span><small>{sessionState === "verified" ? cloudSyncState === "saving" ? "正在保存到云端" : cloudSyncState === "error" ? "云端同步需重试" : "云端数据已同步" : "演示租户上下文"}{cloudUpdatedAt ? ` · ${displayCloudTime(cloudUpdatedAt)}` : ""}</small></div>
+          <div className="data-health"><span><i />{activeHospital?.shortName ?? "医院未配置"}</span>{sessionState === "demo" ? <small>演示租户上下文</small> : null}</div>
           {sessionState === "demo"
             ? <button onClick={() => setResetConfirmOpen(true)}><RotateCcw size={16} />恢复演示数据</button>
-            : <button onClick={() => setCloudRetryKey((current) => current + 1)}><Cloud size={16} />重新同步云端</button>}
+            : null}
         </div>
       </aside>
 
@@ -2261,7 +2252,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           <button className="icon-button menu-button" aria-label="打开导航" onClick={() => setMobileNavOpen(true)}><Menu size={20} /></button>
           <div className="breadcrumb"><span>大型设备效益分析</span><b>/</b><strong>{pageTitle}</strong></div>
           <div className="topbar-actions">
-            {sessionState === "verified" ? <span className={`cloud-sync-badge sync-${cloudSyncState}`} title={cloudUpdatedAt ? `最近同步：${new Date(cloudUpdatedAt).toLocaleString("zh-CN", { hour12: false })}` : "云端工作区"}>{cloudSyncState === "saving" ? <LoaderCircle className="spin" size={14} /> : cloudSyncState === "error" ? <CloudOff size={14} /> : <Cloud size={14} />}{cloudSyncState === "saving" ? "保存中" : cloudSyncState === "error" ? "同步失败" : "云端已同步"}</span> : null}
             <label className="hospital-switcher" title="切换当前医院">
               <Building2 size={16} />
               <select value={effectiveHospitalId} onChange={(event) => switchHospital(event.target.value)} aria-label="当前医院">
@@ -2607,8 +2597,6 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                 absoluteExpiresAt: applicationSession.appSession.absoluteExpiresAt,
                 mfa: applicationSession.mfa,
               } : null}
-              cloudUpdatedAt={cloudUpdatedAt}
-              cloudSyncState={cloudSyncState}
               onLockApplication={() => setExitConfirmMode("lock")}
               onRevokeAllApplicationSessions={() => setExitConfirmMode("all")}
               onSignOutIdentity={() => setExitConfirmMode("identity")}
@@ -2684,7 +2672,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                 : exitConfirmMode === "all"
                   ? "当前账号在所有设备上的平台应用会话都会撤销。医院成员关系和云端数据不会删除。"
                   : "当前平台会话会先撤销，然后退出当前登录身份并返回登录页；不会删除医院成员关系或云端数据。"}</p>
-              <dl className="exit-session-facts"><div><dt>账号</dt><dd>{viewer.email}</dd></div><div><dt>当前医院</dt><dd>{activeHospital.shortName}</dd></div><div><dt>云端状态</dt><dd>{cloudSyncState === "saving" ? "仍在保存，请稍候" : cloudSyncState === "error" ? "存在未同步修改，请先处理" : "已完成同步"}</dd></div></dl>
+              <dl className="exit-session-facts"><div><dt>账号</dt><dd>{viewer.email}</dd></div><div><dt>当前医院</dt><dd>{activeHospital.shortName}</dd></div></dl>
             </div>
             <footer>
               <button className="secondary-button" disabled={applicationSessionBusy} onClick={() => setExitConfirmMode(null)}>取消</button>

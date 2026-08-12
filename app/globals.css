@@ -198,9 +198,6 @@ a { color: inherit; }
 .guide-shortcut { min-height: 34px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; color: var(--text-soft); background: var(--surface); display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .guide-shortcut:hover, .guide-shortcut.active { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 32%, var(--border)); background: var(--primary-soft); }
 .guide-shortcut:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.cloud-sync-badge { min-height: 32px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--green) 22%, var(--border)); border-radius: 9px; color: var(--green); background: var(--green-soft); display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; white-space: nowrap; }
-.cloud-sync-badge.sync-saving { color: var(--primary); background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 22%, var(--border)); }
-.cloud-sync-badge.sync-error { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 22%, var(--border)); }
 .cloud-conflict-banner { margin: 14px clamp(18px, 1.55vw, 38px) 0; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--orange) 38%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--orange-soft) 78%, var(--surface)); box-shadow: var(--shadow); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 13px; }
 .cloud-conflict-icon { width: 38px; height: 38px; border-radius: 10px; color: var(--orange); background: var(--surface); display: grid; place-items: center; }
 .cloud-conflict-banner > div { min-width: 0; }

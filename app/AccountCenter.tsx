@@ -84,8 +84,6 @@ export default function AccountCenter({
   onOpenAccess,
   onExitDemo,
   applicationSession,
-  cloudUpdatedAt,
-  cloudSyncState,
   onLockApplication,
   onRevokeAllApplicationSessions,
   onSignOutIdentity,
@@ -105,8 +103,6 @@ export default function AccountCenter({
   onOpenAccess: () => void;
   onExitDemo: () => void;
   applicationSession: AccountSessionSummary | null;
-  cloudUpdatedAt: string | null;
-  cloudSyncState: "idle" | "loading" | "saving" | "ready" | "error";
   onLockApplication: () => void;
   onRevokeAllApplicationSessions: () => void;
   onSignOutIdentity: () => void;
@@ -416,7 +412,6 @@ export default function AccountCenter({
                 <div><span>最近服务端活动</span><strong>{formatSecurityTime(applicationSession?.lastSeenAt)}</strong></div>
                 <div><span>空闲到期</span><strong>{formatSecurityTime(applicationSession?.idleExpiresAt)}</strong></div>
                 <div><span>最长有效期</span><strong>{formatSecurityTime(applicationSession?.absoluteExpiresAt)}</strong></div>
-                <div><span>云端业务同步</span><strong>{cloudSyncState === "saving" ? "正在保存" : cloudSyncState === "error" ? "需要重试" : cloudUpdatedAt ? formatSecurityTime(cloudUpdatedAt) : "尚无同步时间"}</strong></div>
               </div>
               {viewer.authenticated ? (
                 <div className="session-actions">
@@ -470,7 +465,7 @@ export default function AccountCenter({
 
       {tab === "preferences" ? (
         <section className="panel account-panel preferences-panel">
-          <div className="panel-heading"><div><h3>消息接收偏好</h3><p>紧急安全消息始终进入消息中心；正式登录后的设置会跟随账号跨设备同步。</p></div><span className="chart-note">{sessionState === "verified" ? "云端同步" : "当前演示会话"}</span></div>
+          <div className="panel-heading"><div><h3>消息接收偏好</h3><p>紧急安全消息始终进入消息中心；正式登录后的设置会跟随账号跨设备同步。</p></div></div>
           <div className="preference-list">
             {[
               ["benefitAlerts", "效益与使用率预警", "亏损、低使用率、回本延期和资源配置异常"],
