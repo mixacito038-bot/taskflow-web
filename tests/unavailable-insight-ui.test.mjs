@@ -32,7 +32,7 @@ test("formal mode cannot reset demo actions or display a demo supply label", asy
   // 守卫只有一处，比组件和平台各判一次更不容易漏。
   assert.doesNotMatch(improvement, /demoMode\?: boolean/);
   assert.match(platform, /improvementStore\[effectiveHospitalId\] \?\? \(demoMode \? initialActions : \[\]\)/);
-  assert.match(platform, /const current = currentStore\[effectiveHospitalId\] \?\? \(demoMode \? initialActions : \[\]\)/);
+  assert.match(platform, /const current = normalizeActionBenefitUnits\(currentStore\[effectiveHospitalId\] \?\? \(demoMode \? initialActions : \[\]\)\)/);
   assert.match(platform, /const publishedSupplyStatus = sessionState !== "verified"/);
   assert.match(platform, /:\s*"正式数据未发布"/);
   assert.match(platform, /\{sessionState !== "verified" \|\| publishedData\.publication \? <section className="role-summary"/);

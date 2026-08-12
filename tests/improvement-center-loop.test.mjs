@@ -5,6 +5,7 @@ import test from "node:test";
 // 静态源码断言：运营改进中心是一个纯 UI 页，跑起来要整个平台的上下文；
 // 这里守的是「页面只做闭环这一件事」的结构边界，源码级检查足够稳、也不会被样式改动带偏。
 const source = await readFile(new URL("../app/ImprovementCenter.tsx", import.meta.url), "utf8");
+const model = await readFile(new URL("../app/improvement-actions.ts", import.meta.url), "utf8");
 const moduleCss = await readFile(new URL("../app/ImprovementAlerts.module.css", import.meta.url), "utf8");
 
 /** 取出文件里所有 import 的来源模块，用来核对依赖，而不是在全文里瞎搜关键字。 */
@@ -86,7 +87,8 @@ test("已认领的问题带任务标题单列，不再重复出现在待认领�
 test("认领判定优先用 sourceFinding，老任务按标题文本兼容", () => {
   // initialActions 与已存档数据没有 sourceFinding，只能退回文本匹配，否则老任务会被判成未认领。
   assert.match(source, /sourceFinding\?: ActionSource;/);
-  assert.match(source, /export type ActionSource = \{ deviceId: string; code: FindingCode; title: string \}/);
+  // 模型已拆到 app/improvement-actions.ts：组件 import 了 CSS Module，模型跟着它就没法真跑单测
+  assert.match(model, /export type ActionSource = \{ deviceId: string; code: FindingCode; title: string \}/);
   assert.match(source, /if \(action\.sourceFinding\) \{[\s\S]*?action\.sourceFinding\.code === finding\.code;/);
   assert.match(source, /action\.deviceId === deviceId && \(action\.issue\.includes\(finding\.title\) \|\| action\.title\.includes\(finding\.title\)\)/);
   assert.match(source, /sourceFinding: \{ deviceId, code: finding\.code, title: finding\.title \}/);
@@ -136,12 +138,15 @@ test("module.css 字号不小于 12px 且不写裸十六进制颜色", () => {
 
 test("ImprovementAction 与 initialActions 仍然导出", () => {
   // cloud-state.ts 与 EquipmentPlatform.tsx 都依赖这两个导出，精简页面不能顺手把它们删了。
-  assert.match(source, /export type ImprovementAction = \{/);
-  assert.match(source, /export const initialActions: ImprovementAction\[\] = \[/);
-  assert.match(source, /export type ActionStatus =/);
-  assert.match(source, /export type Priority =/);
+  assert.match(model, /export type ImprovementAction = \{/);
+  assert.match(model, /export const initialActions: ImprovementAction\[\] = \[/);
+  // 组件继续转出这两个符号，调用方不必改 import
+  assert.match(source, /export \{ initialActions, normalizeActionBenefitUnits \}/);
+  assert.match(source, /export type \{ ActionSource, ActionStatus, ImprovementAction, Priority \}/);
+  assert.match(model, /export type ActionStatus =/);
+  assert.match(model, /export type Priority =/);
   // 老数据里没有 sourceFinding，字段必须是可选的，否则历史任务无法通过类型检查。
-  assert.ok(!/sourceFinding: \{ deviceId: string/.test(source), "sourceFinding 不能是必填字段");
+  assert.ok(!/sourceFinding: \{ deviceId: string/.test(model), "sourceFinding 不能是必填字段");
 });
 
 test("组件签名与接线契约逐项一致", () => {

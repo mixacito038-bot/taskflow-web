@@ -106,7 +106,7 @@ import {
   WorkforcePerformancePanel,
 } from "./InsightViews";
 import AccessControlCenter, { TenantContext } from "./AccessControlCenter";
-import ImprovementCenter, { initialActions, type ImprovementAction } from "./ImprovementCenter";
+import ImprovementCenter, { initialActions, normalizeActionBenefitUnits, type ImprovementAction } from "./ImprovementCenter";
 import { insightFor } from "./metric-definitions";
 import { Hospital, initialHospitals, permissionColumns, ViewerIdentity } from "./access-control-data";
 import AccountCenter, { AccountTab } from "./AccountCenter";
@@ -563,7 +563,16 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     return [...published, ...manual];
   }, [publishedData.devices, sessionState, workspaceDevices]);
   const costEntries = costEntryStore[effectiveHospitalId] ?? (demoMode ? cloneCostEntriesForHospital(effectiveHospitalId) : []);
-  const improvementActions = improvementStore[effectiveHospitalId] ?? (demoMode ? initialActions : []);
+  /**
+   * 收益字段统一按元。云端存量任务是按万元存的，读出来先换算一次。
+   * 换算在读取处做而不是写一次性迁移脚本：医院的数据在各自的云端资源里，
+   * 迁移脚本要么漏掉没登录过的医院，要么得等一次全量刷库；就地换算 + 标记
+   * 则是谁读到谁修好，且反复读不会重复乘。
+   */
+  const improvementActions = useMemo(
+    () => normalizeActionBenefitUnits(improvementStore[effectiveHospitalId] ?? (demoMode ? initialActions : [])),
+    [improvementStore, effectiveHospitalId, demoMode],
+  );
   const currentDataSources = sourceStore[effectiveHospitalId] ?? (demoMode ? initialDataSources : []);
   const currentLedgerFields = ledgerFieldStore[effectiveHospitalId] ?? [];
   // 医院还没自定义过就用出厂口径；一旦配置过（哪怕清空成 0 条）就以医院的为准。
@@ -1008,7 +1017,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
   const setImprovementActions: Dispatch<SetStateAction<ImprovementAction[]>> = (update) => {
     setImprovementStoreLocal((currentStore) => {
-      const current = currentStore[effectiveHospitalId] ?? (demoMode ? initialActions : []);
+      const current = normalizeActionBenefitUnits(currentStore[effectiveHospitalId] ?? (demoMode ? initialActions : []));
       const next = resolveStateUpdate(update, current);
       void persistCloudResource("improvementActions", next);
       return { ...currentStore, [effectiveHospitalId]: next };

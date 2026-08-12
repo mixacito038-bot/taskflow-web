@@ -13,167 +13,20 @@ import {
 } from "lucide-react";
 import type { DeviceDiagnosis, DeviceFacts, Finding, FindingCode, FindingSeverity } from "./benefit-diagnosis";
 import styles from "./ImprovementAlerts.module.css";
+import {
+  initialActions,
+  normalizeActionBenefitUnits,
+  type ActionSource,
+  type ActionStatus,
+  type ImprovementAction,
+  type Priority,
+} from "./improvement-actions";
 
-export type ActionStatus = "待启动" | "进行中" | "已完成";
-export type Priority = "高" | "中" | "低";
-
-/** 任务是从哪条诊断问题认领来的。deviceId + code 就能唯一定位一条问题，
- *  比拿文案去猜可靠；老任务（initialActions、已存档数据）没有这个字段，按标题文本兜底匹配。 */
-export type ActionSource = { deviceId: string; code: FindingCode; title: string };
-
-export type ImprovementAction = {
-  id: string;
-  deviceId: string;
-  title: string;
-  issue: string;
-  owner: string;
-  dueDate: string;
-  expectedBenefit: number;
-  status: ActionStatus;
-  priority: Priority;
-  progress: number;
-  actualBenefit?: number;
-  baselineValue?: number;
-  targetValue?: number;
-  actualValue?: number;
-  metricUnit?: string;
-  evidence?: string;
-  reviewDate?: string;
-  history?: Array<{ at: string; status: ActionStatus; note: string }>;
-  sourceFinding?: ActionSource;
-};
+// 模型与出厂数据现在住在 improvement-actions.ts；这里转出去，调用方不必跟着改 import。
+export { initialActions, normalizeActionBenefitUnits };
+export type { ActionSource, ActionStatus, ImprovementAction, Priority };
 
 const currency = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
-
-export const initialActions: ImprovementAction[] = [
-  {
-    id: "action-robot-capacity",
-    deviceId: "robot-01",
-    title: "建立跨科室适应证池并按周统筹排台",
-    issue: "使用率 48%，预计回本较计划延后 2.6 年",
-    owner: "手术部 / 医务处",
-    dueDate: "2026-08-31",
-    expectedBenefit: 118,
-    status: "进行中",
-    priority: "高",
-    progress: 55,
-    baselineValue: 48,
-    targetValue: 65,
-    metricUnit: "% 使用率",
-    evidence: "跨科室适应证池已建立，等待首轮月度复测。",
-    history: [{ at: "2026-07-08", status: "进行中", note: "医务处完成方案立项" }],
-  },
-  {
-    id: "action-linac-reliability",
-    deviceId: "linac-01",
-    title: "射频系统故障复盘与关键备件前置",
-    issue: "可用率 93.8%，年度停机 78 小时",
-    owner: "医学装备部 / 放疗科",
-    dueDate: "2026-07-31",
-    expectedBenefit: 46,
-    status: "进行中",
-    priority: "高",
-    progress: 72,
-  },
-  {
-    id: "action-mri-wait",
-    deviceId: "mri-01",
-    title: "增开晚间增强检查时段并重排预约模板",
-    issue: "预约等待 3.2 天，高峰时段集中度 62.4%",
-    owner: "医学影像科 / 运营部",
-    dueDate: "2026-08-15",
-    expectedBenefit: 62,
-    status: "待启动",
-    priority: "中",
-    progress: 15,
-  },
-  {
-    id: "action-ct-flow",
-    deviceId: "ct-01",
-    title: "建立取消原因清单并配置午间机动班次",
-    issue: "需求高峰与排班错位，需持续压降积压和取消",
-    owner: "医学影像科",
-    dueDate: "2026-08-08",
-    expectedBenefit: 38,
-    status: "已完成",
-    priority: "中",
-    progress: 100,
-    actualBenefit: 31,
-    baselineValue: 58,
-    targetValue: 35,
-    actualValue: 37,
-    metricUnit: "次取消/周",
-    evidence: "午间机动班次排班表、取消原因台账与连续四周复测记录。",
-    reviewDate: "2026-08-08",
-    history: [{ at: "2026-08-08", status: "已完成", note: "科室复核并确认阶段收益" }],
-  },
-  {
-    id: "action-dr03-merge",
-    deviceId: "dr-03",
-    title: "体检 DR 与门诊时段合并并开放团检预约",
-    issue: "使用率 46%，年度净收益 -26 万元，预计回本超 12 年",
-    owner: "健康管理中心 / 医学影像科",
-    dueDate: "2026-09-30",
-    expectedBenefit: 34,
-    status: "待启动",
-    priority: "高",
-    progress: 5,
-    baselineValue: 46,
-    targetValue: 62,
-    metricUnit: "% 使用率",
-    evidence: "团检客户排期意向表已收集，待运营部排班评审。",
-    history: [{ at: "2026-08-05", status: "待启动", note: "低使用率专项立项，纳入三季度改进清单" }],
-  },
-  {
-    id: "action-mri03-warranty",
-    deviceId: "mri-03",
-    title: "1.5T MRI 脱保设备维保方案比价与签约",
-    issue: "脱保运行，故障 6.8 次/千小时，年度停机 126 小时",
-    owner: "医学装备部 / 采购中心",
-    dueDate: "2026-09-15",
-    expectedBenefit: 52,
-    status: "进行中",
-    priority: "高",
-    progress: 40,
-    baselineValue: 126,
-    targetValue: 60,
-    metricUnit: "小时停机/年",
-    evidence: "原厂与两家第三方维保报价已入围，等待院内比价会议。",
-    history: [{ at: "2026-07-28", status: "进行中", note: "完成维保需求清单与故障史整理" }],
-  },
-  {
-    id: "action-usportable-dispatch",
-    deviceId: "us-portable-01",
-    title: "便携彩超转入共享调度池按床旁需求派单",
-    issue: "使用率 52%，科室专占导致闲置与重复购置申请并存",
-    owner: "超声医学科 / 医学装备部",
-    dueDate: "2026-09-10",
-    expectedBenefit: 18,
-    status: "进行中",
-    priority: "中",
-    progress: 30,
-    baselineValue: 52,
-    targetValue: 70,
-    metricUnit: "% 使用率",
-    evidence: "共享调度试行方案已发科室征求意见。",
-  },
-  {
-    id: "action-ct02-capacity",
-    deviceId: "ct-02",
-    title: "256 排 CT 超负荷分流与增购论证",
-    issue: "使用率 93%，预约等待 4.5 天，节假日积压明显",
-    owner: "医学影像科 / 运营部",
-    dueDate: "2026-10-31",
-    expectedBenefit: 96,
-    status: "待启动",
-    priority: "中",
-    progress: 10,
-    baselineValue: 4.5,
-    targetValue: 2.5,
-    metricUnit: "天预约等待",
-    evidence: "分流至 ct-03 的时段方案与增购可行性初稿编制中。",
-  },
-];
 
 const STATUS_COLUMNS: ActionStatus[] = ["待启动", "进行中", "已完成"];
 const SEVERITY_ORDER: Record<FindingSeverity, number> = { high: 0, medium: 1, low: 2 };
@@ -545,7 +398,7 @@ export default function ImprovementCenter({
           <span>本期已完成</span><strong>{stats.done}</strong><small>{periodLabel}</small>
         </article>
         <article className={styles.statCard}>
-          <span>已兑现收益</span><strong>{currency.format(stats.benefit)}</strong><small>万元 · 复测确认口径</small>
+          <span>已兑现收益</span><strong>{currency.format(stats.benefit)}</strong><small>元 · 复测确认口径</small>
         </article>
         <article className={`${styles.statCard} ${stats.overdue ? styles.statAlarm : ""}`}>
           <span>逾期任务</span><strong>{stats.overdue}</strong><small>截止日已过且未完成</small>
@@ -701,9 +554,9 @@ export default function ImprovementCenter({
                               <dt>截止日</dt>
                               <dd className={overdue ? styles.overdueText : ""}>{action.dueDate}</dd>
                             </div>
-                            <div><dt>预计收益</dt><dd>{currency.format(action.expectedBenefit)} 万元</dd></div>
+                            <div><dt>预计收益</dt><dd>{currency.format(action.expectedBenefit)} 元</dd></div>
                             {action.actualBenefit !== undefined ? (
-                              <div><dt>实际收益</dt><dd>{currency.format(action.actualBenefit)} 万元</dd></div>
+                              <div><dt>实际收益</dt><dd>{currency.format(action.actualBenefit)} 元</dd></div>
                             ) : null}
                           </dl>
                           {action.baselineValue !== undefined ? (
@@ -865,11 +718,11 @@ export default function ImprovementCenter({
                 <input type="number" value={draft.actualValue} onChange={(event) => setDraft({ ...draft, actualValue: event.target.value })} />
               </label>
               <label className={styles.field}>
-                <span>预计收益（万元）</span>
+                <span>预计收益（元）</span>
                 <input type="number" value={draft.expectedBenefit} onChange={(event) => setDraft({ ...draft, expectedBenefit: event.target.value })} />
               </label>
               <label className={styles.field}>
-                <span>实际收益（万元）</span>
+                <span>实际收益（元）</span>
                 <input type="number" value={draft.actualBenefit} onChange={(event) => setDraft({ ...draft, actualBenefit: event.target.value })} />
               </label>
               <label className={styles.fieldWide}>
