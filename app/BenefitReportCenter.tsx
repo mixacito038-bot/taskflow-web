@@ -8,6 +8,10 @@ import {
   CalendarClock,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
   CircleAlert,
   Clock3,
   ClipboardCheck,
@@ -18,6 +22,7 @@ import {
   FileText,
   History,
   ListChecks,
+  ListTree,
   RefreshCcw,
   Save,
   Send,
@@ -111,6 +116,26 @@ const number = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
 const templateScopeLabels = { hospital: "全院", category: "设备品类", device: "单台设备" } as const;
 const templatePeriodLabels = { month: "月", quarter: "季", half_year: "半年", year: "年" } as const;
 const reportPeriodOptions = ["2026年6月", "2026年第二季度", "2026年上半年", "2026年度"];
+
+/**
+ * 报告正文的十二章目录。anchor 与正文 section 的 id 一一对应且必须保持稳定：
+ * 导出、外链和历史书签都按这些 id 定位，改一个就是断链。
+ * title 只用于目录显示，正文标题（“一、报告摘要”等）是合规产物，不在此处生成。
+ */
+const reportChapters: Array<{ id: ReportSectionId; anchor: string; ordinal: string; title: string }> = [
+  { id: "summary", anchor: "report-summary", ordinal: "一", title: "报告摘要" },
+  { id: "scope", anchor: "report-scope", ordinal: "二", title: "范围与数据来源" },
+  { id: "inventory", anchor: "report-inventory", ordinal: "三", title: "设备基本情况" },
+  { id: "economic", anchor: "report-economic", ordinal: "四", title: "经济效益与回收" },
+  { id: "efficiency", anchor: "report-efficiency", ordinal: "五", title: "使用效率分析" },
+  { id: "quality", anchor: "report-quality", ordinal: "六", title: "质量安全与设备保障" },
+  { id: "social", anchor: "report-social", ordinal: "七", title: "社会效益" },
+  { id: "lifecycle", anchor: "report-lifecycle", ordinal: "八", title: "配置与全生命周期" },
+  { id: "evaluation", anchor: "report-evaluation", ordinal: "九", title: "综合评价" },
+  { id: "issues", anchor: "report-issues", ordinal: "十", title: "问题清单与整改计划" },
+  { id: "conclusion", anchor: "report-conclusion", ordinal: "十一", title: "结论与建议" },
+  { id: "appendix", anchor: "report-appendix", ordinal: "十二", title: "指标与口径附录" },
+];
 
 function periodCapability(period: string) {
   const labels = { month: "月度", quarter: "季度", half_year: "半年度", year: "年度" } as const;
@@ -420,7 +445,11 @@ export default function BenefitReportCenter({
   const [ledgerLoading, setLedgerLoading] = useState(serverPersistence);
   const [artifactLoading, setArtifactLoading] = useState(serverPersistence && canExport);
   const [exporting, setExporting] = useState(false);
+  const [activeChapter, setActiveChapter] = useState<ReportSectionId>(reportChapters[0].id);
+  // 默认全部展开：正式报告默认就该是完整的，折叠只是查阅时的便利。
+  const [collapsedChapters, setCollapsedChapters] = useState<ReportSectionId[]>([]);
   const defaultAppliedHospital = useRef("");
+  const chapterVisibility = useRef(new Map<string, boolean>());
 
   const reportConfig = useMemo(
     () => applyPublicationRules(config, publishedData?.publication),
@@ -464,6 +493,9 @@ export default function BenefitReportCenter({
     [templateCategoryFilter],
   );
   const monthlyTargetPeriod = useMemo(() => resolveMonthlyReportPeriod(new Date(), reportPeriodOptions), []);
+  const collapsedChapterSet = new Set(collapsedChapters);
+  const activeChapterIndex = Math.max(0, reportChapters.findIndex((chapter) => chapter.id === activeChapter));
+  const chapterProgress = (activeChapterIndex + 1) / reportChapters.length * 100;
 
   function sourceMatch(sourceId: TemplateSourceRequirementId) {
     const requirement = sourceRequirementCatalog.find((item) => item.id === sourceId);
@@ -539,6 +571,59 @@ export default function BenefitReportCenter({
       .finally(() => { if (!cancelled) setArtifactLoading(false); });
     return () => { cancelled = true; };
   }, [canExport, hospital.id, notify, serverPersistence]);
+
+  // 目录高亮走 IntersectionObserver：正文一万两千字、页面一万六千像素，
+  // scroll 事件轮询会在滚动时持续重排取位；观察器只在章节进出视口时回调。
+  useEffect(() => {
+    if (tab !== "preview" || typeof IntersectionObserver === "undefined") return;
+    const visible = chapterVisibility.current;
+    visible.clear();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) visible.set(entry.target.id, entry.isIntersecting);
+      // 视口里可能同时有多章，取最靠前的一章，滚动方向不同也不会来回跳。
+      const current = reportChapters.find((chapter) => visible.get(chapter.anchor));
+      if (current) setActiveChapter(current.id);
+    }, { rootMargin: "-92px 0px -62% 0px", threshold: 0 });
+    for (const chapter of reportChapters) {
+      const node = document.getElementById(chapter.anchor);
+      if (node) observer.observe(node);
+    }
+    return () => observer.disconnect();
+  }, [collapsedChapters, config.sections, tab]);
+
+  function scrollToChapter(chapter: (typeof reportChapters)[number]) {
+    const node = document.getElementById(chapter.anchor);
+    if (!node) return;
+    setActiveChapter(chapter.id);
+    // 系统关掉动效的用户不做平滑滚动，直接定位。
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    node.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  }
+
+  function toggleChapter(id: ReportSectionId) {
+    setCollapsedChapters((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function chapterCollapsed(id: ReportSectionId) {
+    return collapsedChapterSet.has(id) ? "true" : "false";
+  }
+
+  /** 章节标题右侧的折叠按钮；折叠只改 data-collapsed，正文始终留在 DOM 里。 */
+  function chapterToggle(id: ReportSectionId, title: string) {
+    const collapsed = collapsedChapterSet.has(id);
+    return (
+      <button
+        type="button"
+        className={styles.chapterToggle}
+        aria-expanded={!collapsed}
+        aria-controls={`report-${id}-body`}
+        aria-label={`${collapsed ? "展开" : "收起"}${title}`}
+        onClick={() => toggleChapter(id)}
+      >
+        {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}{collapsed ? "展开" : "收起"}
+      </button>
+    );
+  }
 
   function applyLedger(ledger: LedgerResponse) {
     const normalized = normalizeLedgerResponse(ledger);
@@ -1051,11 +1136,35 @@ export default function BenefitReportCenter({
       </div>
 
       {tab === "preview" ? (
-        <div className="report-preview-layout">
-          <aside className="report-outline panel">
-            <header><span><FileText size={18} /></span><div><strong>报告目录</strong><small>已选 {config.sections.length} / {reportSections.length} 个章节</small></div></header>
-            <nav>{reportSections.map((section, index) => <button key={section.id} disabled={!config.sections.includes(section.id)} onClick={() => document.getElementById(`report-${section.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}><i>{index + 1}</i><span><strong>{section.label}</strong><small>{config.sections.includes(section.id) ? "已纳入" : "未纳入"}</small></span>{config.sections.includes(section.id) ? <Check size={14} /> : null}</button>)}</nav>
-            <footer><button className="secondary-button" onClick={exportDetailCsv}><Download size={15} />导出明细 CSV</button></footer>
+        <div className={styles.previewLayout}>
+          <aside className={styles.tocRail} aria-label="报告目录">
+            <div className={styles.tocHead}>
+              <span><ListTree size={17} /></span>
+              <div><strong>报告目录</strong><small>已选 {config.sections.length} / {reportChapters.length} 章</small></div>
+            </div>
+            <div className={styles.tocBulk}>
+              <button type="button" onClick={() => setCollapsedChapters([])}><ChevronsUpDown size={13} />全部展开</button>
+              <button type="button" onClick={() => setCollapsedChapters(reportChapters.map((chapter) => chapter.id))}><ChevronsDownUp size={13} />全部收起</button>
+            </div>
+            <nav className={styles.tocList}>
+              {reportChapters.map((chapter) => (
+                <button
+                  type="button"
+                  key={chapter.id}
+                  className={`${styles.tocLink} ${activeChapter === chapter.id ? styles.tocLinkActive : ""}`}
+                  aria-current={activeChapter === chapter.id ? "true" : undefined}
+                  disabled={!config.sections.includes(chapter.id)}
+                  onClick={() => scrollToChapter(chapter)}
+                >
+                  <i>{chapter.ordinal}</i><span>{chapter.title}</span>
+                </button>
+              ))}
+            </nav>
+            <div className={styles.tocProgress}>
+              <div className={styles.tocProgressLabel}><span>第 {activeChapterIndex + 1} / {reportChapters.length} 章</span><span>{chapterProgress.toFixed(0)}%</span></div>
+              <div className={styles.tocProgressTrack}><b className={styles.tocProgressBar} style={{ width: `${chapterProgress}%` }} /></div>
+            </div>
+            <div className={styles.tocFooter}><button className="secondary-button" onClick={exportDetailCsv}><Download size={15} />导出明细 CSV</button></div>
           </aside>
 
           <div className="report-paper">
@@ -1075,57 +1184,67 @@ export default function BenefitReportCenter({
               <div><span>综合评分</span><strong>{model.overallScore.toFixed(1)}</strong><small>{model.grade} · 五维评价</small></div>
             </section>
 
-            {config.sections.includes("summary") ? <section className="report-paper-section" id="report-summary"><h3>一、报告摘要</h3><div className="report-findings"><article><strong>重点发现</strong>{model.keyFindings.map((item) => <p key={item}><CheckCircle2 size={15} />{item}</p>)}</article><article className="warning"><strong>管理问题</strong>{model.issues.slice(0, 3).map((issue) => <p key={`${issue.device}-${issue.type}`}><CircleAlert size={15} />{issue.device}：{issue.type}</p>)}</article></div></section> : null}
+            {config.sections.includes("summary") ? <section className={`report-paper-section ${styles.chapter}`} id="report-summary"><div className={styles.chapterHead}><h3>一、报告摘要</h3>{chapterToggle("summary", "一、报告摘要")}</div><div className={styles.chapterBody} id="report-summary-body" data-collapsed={chapterCollapsed("summary")}><div className="report-findings"><article><strong>重点发现</strong>{model.keyFindings.map((item) => <p key={item}><CheckCircle2 size={15} />{item}</p>)}</article><article className="warning"><strong>管理问题</strong>{model.issues.slice(0, 3).map((issue) => <p key={`${issue.device}-${issue.type}`}><CircleAlert size={15} />{issue.device}：{issue.type}</p>)}</article></div></div></section> : null}
 
             {config.sections.includes("scope") ? (
-              <section className="report-paper-section" id="report-scope">
-                <h3>二、范围与数据来源</h3>
+              <section className={`report-paper-section ${styles.chapter}`} id="report-scope">
+                <div className={styles.chapterHead}><h3>二、范围与数据来源</h3>{chapterToggle("scope", "二、范围与数据来源")}</div>
+                <div className={styles.chapterBody} id="report-scope-body" data-collapsed={chapterCollapsed("scope")}>
                 <div className="report-scope-note"><strong>分析口径</strong><span>{scopeLabel(config, model.rows)}；原值不低于 {config.minimumInvestment} 万元</span><span>成本口径：{model.costLabel}</span><span>报告期间：{config.period}</span><span>采集规则：{model.analysisProfileCoverage.enabled}/{model.analysisProfileCoverage.total} 个相关品类已启用</span></div>
                 <div className="report-table-wrap"><table className="report-table"><thead><tr><th>数据来源</th><th>主要字段</th><th>状态</th></tr></thead><tbody>{model.dataSources.slice(0, 6).map((source) => <tr key={source.name}><td><strong>{source.name}</strong><small>{source.category}</small></td><td>{source.fields}</td><td>{source.status}</td></tr>)}</tbody></table></div>
+                </div>
               </section>
             ) : null}
 
             {config.sections.includes("inventory") ? (
-              <section className="report-paper-section" id="report-inventory">
-                <h3>三、设备基本情况</h3>
+              <section className={`report-paper-section ${styles.chapter}`} id="report-inventory">
+                <div className={styles.chapterHead}><h3>三、设备基本情况</h3>{chapterToggle("inventory", "三、设备基本情况")}</div>
+                <div className={styles.chapterBody} id="report-inventory-body" data-collapsed={chapterCollapsed("inventory")}>
                 <div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备</th><th>类别 / 厂家</th><th>资产编号 / SN</th><th>科室 / 地点</th><th>启用日期</th><th>原值</th></tr></thead><tbody>{model.rows.map((row) => <tr key={row.device.id}><td><strong>{row.device.shortName}</strong><small>{row.device.model}</small></td><td>{row.device.category ?? "未配置"}<small>{row.device.manufacturer ?? "未配置"}</small></td><td>{row.device.assetCode}<small>{row.device.serialNumber ?? "未配置"}</small></td><td>{row.device.department}<small>{row.device.location ?? "未配置"}</small></td><td>{row.device.enabledDate}</td><td>{row.device.investment.toFixed(1)}万</td></tr>)}</tbody></table></div>
+                </div>
               </section>
             ) : null}
 
-            {config.sections.includes("economic") ? <section className="report-paper-section" id="report-economic"><h3>四、经济效益与回收</h3><div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备</th><th>收入</th><th>{model.costLabel}</th><th>结余</th><th>使用率</th><th>回收期</th></tr></thead><tbody>{model.rows.map((row) => <tr key={row.device.id}><td><strong>{row.device.shortName}</strong><small>{row.device.department}</small></td><td>{row.revenue.toFixed(1)}万</td><td>{row.cost.toFixed(1)}万</td><td className={row.net >= 0 ? "positive" : "negative"}>{row.net.toFixed(1)}万</td><td>{row.device.utilization}%</td><td>{row.payback ? `${row.payback.toFixed(1)}年` : "不可回收"}</td></tr>)}</tbody></table></div></section> : null}
+            {config.sections.includes("economic") ? <section className={`report-paper-section ${styles.chapter}`} id="report-economic"><div className={styles.chapterHead}><h3>四、经济效益与回收</h3>{chapterToggle("economic", "四、经济效益与回收")}</div><div className={styles.chapterBody} id="report-economic-body" data-collapsed={chapterCollapsed("economic")}><div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备</th><th>收入</th><th>{model.costLabel}</th><th>结余</th><th>使用率</th><th>回收期</th></tr></thead><tbody>{model.rows.map((row) => <tr key={row.device.id}><td><strong>{row.device.shortName}</strong><small>{row.device.department}</small></td><td>{row.revenue.toFixed(1)}万</td><td>{row.cost.toFixed(1)}万</td><td className={row.net >= 0 ? "positive" : "negative"}>{row.net.toFixed(1)}万</td><td>{row.device.utilization}%</td><td>{row.payback ? `${row.payback.toFixed(1)}年` : "不可回收"}</td></tr>)}</tbody></table></div></div></section> : null}
 
             {config.sections.includes("efficiency") ? (
-              <section className="report-paper-section" id="report-efficiency">
-                <h3>五、使用效率分析</h3>
+              <section className={`report-paper-section ${styles.chapter}`} id="report-efficiency">
+                <div className={styles.chapterHead}><h3>五、使用效率分析</h3>{chapterToggle("efficiency", "五、使用效率分析")}</div>
+                <div className={styles.chapterBody} id="report-efficiency-body" data-collapsed={chapterCollapsed("efficiency")}>
                 <div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备</th><th>使用率</th><th>开机率</th><th>负荷率</th><th>有效时长</th><th>预约 / 现场等待</th></tr></thead><tbody>{model.rows.map((row) => <tr key={row.device.id}><td>{row.device.shortName}</td><td>{row.device.utilization}%</td><td>{row.hasInsight ? `${row.insight.uptimeRate}%` : "数据缺失"}</td><td>{row.hasInsight ? `${row.insight.loadRate}%` : "数据缺失"}</td><td>{row.hasInsight ? `${row.insight.activeHours}小时/日` : "数据缺失"}</td><td>{row.hasInsight ? `${row.insight.appointmentWaitDays}天 / ${row.insight.onSiteWaitMinutes}分钟` : "数据缺失"}</td></tr>)}</tbody></table></div>
+                </div>
               </section>
             ) : null}
 
             {config.sections.includes("quality") ? (
-              <section className="report-paper-section" id="report-quality">
-                <h3>六、质量安全与设备保障</h3>
+              <section className={`report-paper-section ${styles.chapter}`} id="report-quality">
+                <div className={styles.chapterHead}><h3>六、质量安全与设备保障</h3>{chapterToggle("quality", "六、质量安全与设备保障")}</div>
+                <div className={styles.chapterBody} id="report-quality-body" data-collapsed={chapterCollapsed("quality")}>
                 <div className="report-reliability-summary"><span><ShieldCheck size={17} />设备可用率<strong>{model.dataBoundary.formalConclusionEligible ? `${model.totals.avgAvailability.toFixed(1)}%` : "数据缺失"}</strong></span><span><ClipboardCheck size={17} />PM完成率<strong>{model.dataBoundary.formalConclusionEligible ? `${model.totals.avgPm.toFixed(1)}%` : "数据缺失"}</strong></span><span><Database size={17} />平均使用率<strong>{model.totals.avgUtilization.toFixed(1)}%</strong></span></div>
                 <div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备</th><th>质控合格率</th><th>可用率</th><th>故障率</th><th>停机</th><th>MTTR</th></tr></thead><tbody>{model.rows.map((row) => <tr key={row.device.id}><td>{row.device.shortName}</td><td>{row.hasInsight ? `${row.insight.reportQualityRate}%` : "数据缺失"}</td><td>{row.hasInsight ? `${row.insight.availabilityRate}%` : "数据缺失"}</td><td>{row.hasInsight ? `${row.insight.failuresPer1000Hours}次/千小时` : "数据缺失"}</td><td>{row.hasInsight ? `${row.insight.downtimeHours}小时` : "数据缺失"}</td><td>{row.hasInsight ? `${row.insight.mttrHours}小时` : "数据缺失"}</td></tr>)}</tbody></table></div>
+                </div>
               </section>
             ) : null}
 
             {config.sections.includes("social") ? (
-              <section className="report-paper-section" id="report-social"><h3>七、社会效益</h3><div className="report-note-list"><p><strong>服务可及性</strong>通过预约等待、现场等待、服务人次与跨院转诊变化评价。</p><p><strong>临床能力</strong>记录新增技术、新项目、复杂病例支持及 DRG/DIP 病组贡献。</p><p><strong>教学与应急</strong>记录科研课题、培训带教、应急调配和重大保障等非财务产出。</p></div></section>
+              <section className={`report-paper-section ${styles.chapter}`} id="report-social"><div className={styles.chapterHead}><h3>七、社会效益</h3>{chapterToggle("social", "七、社会效益")}</div><div className={styles.chapterBody} id="report-social-body" data-collapsed={chapterCollapsed("social")}><div className="report-note-list"><p><strong>服务可及性</strong>通过预约等待、现场等待、服务人次与跨院转诊变化评价。</p><p><strong>临床能力</strong>记录新增技术、新项目、复杂病例支持及 DRG/DIP 病组贡献。</p><p><strong>教学与应急</strong>记录科研课题、培训带教、应急调配和重大保障等非财务产出。</p></div></div></section>
             ) : null}
 
             {config.sections.includes("lifecycle") ? (
-              <section className="report-paper-section" id="report-lifecycle"><h3>八、配置与全生命周期</h3><div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备</th><th>资金来源</th><th>预计年限</th><th>折旧方法</th><th>维保 / 监测状态</th><th>配置建议</th></tr></thead><tbody>{model.rows.map((row) => <tr key={row.device.id}><td>{row.device.shortName}</td><td>{row.device.fundingSource ?? "未配置"}</td><td>{row.device.usefulLifeYears ?? "未配置"}年</td><td>{row.device.depreciationMethod ?? "未配置"}</td><td>{row.device.maintenanceStatus ?? "未配置"}<small>{row.device.monitoringStatus ?? "未配置"}</small></td><td>{row.device.utilization >= 80 ? "保障运行，跟踪扩容阈值" : row.net < 0 ? "限期整改，评估调配或处置" : "优化共享，半年后复评"}</td></tr>)}</tbody></table></div></section>
+              <section className={`report-paper-section ${styles.chapter}`} id="report-lifecycle"><div className={styles.chapterHead}><h3>八、配置与全生命周期</h3>{chapterToggle("lifecycle", "八、配置与全生命周期")}</div><div className={styles.chapterBody} id="report-lifecycle-body" data-collapsed={chapterCollapsed("lifecycle")}><div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备</th><th>资金来源</th><th>预计年限</th><th>折旧方法</th><th>维保 / 监测状态</th><th>配置建议</th></tr></thead><tbody>{model.rows.map((row) => <tr key={row.device.id}><td>{row.device.shortName}</td><td>{row.device.fundingSource ?? "未配置"}</td><td>{row.device.usefulLifeYears ?? "未配置"}年</td><td>{row.device.depreciationMethod ?? "未配置"}</td><td>{row.device.maintenanceStatus ?? "未配置"}<small>{row.device.monitoringStatus ?? "未配置"}</small></td><td>{row.device.utilization >= 80 ? "保障运行，跟踪扩容阈值" : row.net < 0 ? "限期整改，评估调配或处置" : "优化共享，半年后复评"}</td></tr>)}</tbody></table></div></div></section>
             ) : null}
 
-            {config.sections.includes("evaluation") ? <section className="report-paper-section" id="report-evaluation"><h3>九、综合评价</h3><div className="report-dimension-grid">{model.scoreRows.map((item) => <div key={item.label}><span>{item.label}<strong>{item.score.toFixed(0)}</strong></span><i><b style={{ width: `${item.score}%` }} /></i><small>权重 {item.weight}% · 加权 {item.weighted.toFixed(1)}</small></div>)}</div></section> : null}
+            {config.sections.includes("evaluation") ? <section className={`report-paper-section ${styles.chapter}`} id="report-evaluation"><div className={styles.chapterHead}><h3>九、综合评价</h3>{chapterToggle("evaluation", "九、综合评价")}</div><div className={styles.chapterBody} id="report-evaluation-body" data-collapsed={chapterCollapsed("evaluation")}><div className="report-dimension-grid">{model.scoreRows.map((item) => <div key={item.label}><span>{item.label}<strong>{item.score.toFixed(0)}</strong></span><i><b style={{ width: `${item.score}%` }} /></i><small>权重 {item.weight}% · 加权 {item.weighted.toFixed(1)}</small></div>)}</div></div></section> : null}
 
-            {config.sections.includes("issues") ? <section className="report-paper-section" id="report-issues"><h3>十、问题清单与整改计划</h3><div className="report-table-wrap"><table className="report-table issue-table"><thead><tr><th>设备</th><th>问题</th><th>具体表现</th><th>责任部门</th><th>时限</th></tr></thead><tbody>{model.issues.map((issue) => <tr key={`${issue.device}-${issue.type}`}><td>{issue.device}</td><td><span className={`report-priority priority-${issue.priority}`}>{issue.priority}</span>{issue.type}</td><td>{issue.evidence}</td><td>{issue.owner}</td><td>{issue.due}</td></tr>)}</tbody></table></div></section> : null}
+            {config.sections.includes("issues") ? <section className={`report-paper-section ${styles.chapter}`} id="report-issues"><div className={styles.chapterHead}><h3>十、问题清单与整改计划</h3>{chapterToggle("issues", "十、问题清单与整改计划")}</div><div className={styles.chapterBody} id="report-issues-body" data-collapsed={chapterCollapsed("issues")}><div className="report-table-wrap"><table className="report-table issue-table"><thead><tr><th>设备</th><th>问题</th><th>具体表现</th><th>责任部门</th><th>时限</th></tr></thead><tbody>{model.issues.map((issue) => <tr key={`${issue.device}-${issue.type}`}><td>{issue.device}</td><td><span className={`report-priority priority-${issue.priority}`}>{issue.priority}</span>{issue.type}</td><td>{issue.evidence}</td><td>{issue.owner}</td><td>{issue.due}</td></tr>)}</tbody></table></div></div></section> : null}
 
-            {config.sections.includes("conclusion") ? <section className="report-paper-section report-conclusion" id="report-conclusion"><h3>十一、结论与建议</h3>{model.recommendations.map((item, index) => <p key={item}><i>{index + 1}</i>{item}</p>)}<footer><span>编制：{config.compiler || "—"}</span><span>审核：{config.reviewer || "—"}</span></footer></section> : null}
+            {/* report-conclusion 落在正文容器上：全局样式用的是 .report-conclusion > p / > footer 直接子选择器。 */}
+            {config.sections.includes("conclusion") ? <section className={`report-paper-section ${styles.chapter}`} id="report-conclusion"><div className={styles.chapterHead}><h3>十一、结论与建议</h3>{chapterToggle("conclusion", "十一、结论与建议")}</div><div className={`report-conclusion ${styles.chapterBody}`} id="report-conclusion-body" data-collapsed={chapterCollapsed("conclusion")}>{model.recommendations.map((item, index) => <p key={item}><i>{index + 1}</i>{item}</p>)}<footer><span>编制：{config.compiler || "—"}</span><span>审核：{config.reviewer || "—"}</span></footer></div></section> : null}
 
             {config.sections.includes("appendix") ? (
-              <section className="report-paper-section" id="report-appendix">
-                <h3>十二、指标与口径附录</h3>
+              <section className={`report-paper-section ${styles.chapter}`} id="report-appendix">
+                <div className={styles.chapterHead}><h3>十二、指标与口径附录</h3>{chapterToggle("appendix", "十二、指标与口径附录")}</div>
+                <div className={styles.chapterBody} id="report-appendix-body" data-collapsed={chapterCollapsed("appendix")}>
                 <div className="report-version-banner"><ShieldCheck size={16} /><span>医院指标模板：{config.commonRules.hospitalMetricTemplateVersion ?? HOSPITAL_METRIC_CATALOG_VERSION}<small>与报告一同冻结，历史报告不随之后的口径修改而漂移。</small></span></div>
                 <h4>字段覆盖情况</h4>
                 <div className="report-table-wrap"><table className="report-table"><thead><tr><th>数据域</th><th>字段数</th><th>已覆盖</th><th>首选来源</th><th>待补内容</th></tr></thead><tbody>{reportFieldDomains.map((item) => <tr key={item.domain}><td>{item.domain}</td><td>{item.fields}</td><td>{item.covered}</td><td>{item.source}</td><td>{item.additions}</td></tr>)}</tbody></table></div>
@@ -1133,6 +1252,7 @@ export default function BenefitReportCenter({
                 <div className="report-table-wrap"><table className="report-table"><thead><tr><th>原表</th><th>指标</th><th>公式 / 分母</th><th>状态</th><th>口径控制</th></tr></thead><tbody>{hospitalMetricCatalog.map((metric) => <tr key={metric.code}><td>{metric.sourceItem}</td><td><strong>{metric.name}</strong><small>{metric.code}</small></td><td><code>{metric.formula}</code><small>分母：{metric.denominator}</small></td><td>{metric.readiness === "ready" ? "首批核心" : metric.readiness === "configure" ? "配置后启用" : "暂缓展示"}<small>{metric.evidence === "direct" ? "资料直接依据" : metric.evidence === "partial" ? "部分相关依据" : metric.evidence === "industry" ? "行业补充依据" : "依据待补"}</small></td><td>{metric.validation}</td></tr>)}</tbody></table></div>
                 <h4>采集、设备绑定与对账规则快照</h4>
                 <div className="report-table-wrap"><table className="report-table"><thead><tr><th>设备品类</th><th>状态</th><th>设备身份绑定</th><th>质量与对账阈值</th><th>使用率分母</th></tr></thead><tbody>{model.analysisProfiles.map((profile) => <tr key={profile.id}><td><strong>{profile.category}</strong><small>{profile.sourceSystems.join("、")}</small></td><td>{profile.status}<small>{profile.effectiveDate}</small></td><td>{profile.deviceIdentityBinding}</td><td>完整率≥{profile.completenessThreshold}%<small>绑定率≥{profile.bindingRateThreshold}% · 差异≤{profile.reconciliationTolerance}%</small></td><td>{profile.utilizationDenominator}</td></tr>)}</tbody></table></div>
+                </div>
               </section>
             ) : null}
           </div>

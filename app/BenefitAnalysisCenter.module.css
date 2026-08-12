@@ -1,0 +1,500 @@
+/* 效益分析页样式。
+   颜色一律走 globals.css 的主题变量：本页在浅色、teal、midnight 三套主题下都要成立，
+   写死十六进制会在深色主题下变成刺眼的白块（半透明阴影用 rgba 是例外，它叠在底色上跟着主题走）。
+   字号下限 12px：医院端大量是 1366×768 的老机器加中年用户，11px 中文在那种屏上糊成一团。 */
+
+/* 全局 .admin-stats 是四列，本页有五个数（收入/成本/结余/使用率/待处置问题），
+   少一列会把「待处置问题」挤到第二排、看着像另一组数。
+   用 [class] 把权重抬到 (0,2,0) 而不是靠样式表加载顺序赢过 .admin-stats：
+   顺序是打包器决定的，赢不赢不该由它说了算。 */
+.statsRow[class] {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+/* 口径开关放页头右侧：它决定下面每一个数字算不算数，属于「读这一页之前先看一眼」的东西 */
+.scopeSwitch {
+  display: grid;
+  grid-template-columns: auto minmax(0, 240px);
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.scopeToggle {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin-top: 2px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.scopeToggle i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(23, 32, 51, .25);
+  transition: transform .15s ease;
+}
+
+.scopeToggleOn {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.scopeToggleOn i {
+  transform: translateX(16px);
+}
+
+.scopeText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scopeText strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.scopeText small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 「已填报 N / 共 M 台 · 期间」是数值卡的口径脚注，贴着卡片下沿，不另开一块面板 */
+.summaryLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.panelGap {
+  margin-bottom: 16px;
+}
+
+/* 散点在左、补数清单在右：待补数设备没有坐标进不了图，
+   但它们恰恰是「这张图为什么不全」的答案，摆在图边上才有人去补。 */
+.scatterLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 208px;
+  align-items: start;
+  gap: 14px;
+}
+
+/* 图表自己滚动：viewBox 会跟着容器缩放，容器一旦窄过图宽，
+   轴上的 12px 文字会被一起缩小到读不清，所以给个下限宽度再横滚。 */
+.chartScroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.chartSvg {
+  display: block;
+  width: 100%;
+  min-width: 520px;
+  height: auto;
+}
+
+.chartEmpty {
+  margin: 0;
+  padding: 46px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+/* 点可点击进单机分析，给出手型和聚焦圈：键盘用户靠 Tab 也能逐台走过去 */
+.dot {
+  cursor: pointer;
+  transition: opacity .15s ease;
+}
+
+.dot:hover {
+  opacity: .78;
+}
+
+.dot:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.pendingBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.pendingTitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.pendingTitle svg {
+  color: var(--orange);
+}
+
+/* 缺数设备可能几十台，清单自己滚，不能把整块面板顶长 */
+.pendingList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 268px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.pendingItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.pendingItem:last-child {
+  border-bottom: 0;
+}
+
+/* 设备名长的多，压成一行省略：右边的「去填报」按钮必须始终露着，否则这块清单没用 */
+.pendingItem > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pendingItem > button {
+  flex: none;
+}
+
+.pendingEmpty {
+  margin: 0;
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* 四个象限卡同时当图例和筛选器：颜色点对上散点配色，数字对上清单条数 */
+.quadRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.quadCard {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px 7px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  transition: border-color .16s ease, background .16s ease;
+}
+
+.quadCard:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.quadCardActive,
+.quadCardActive:hover {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+  background: var(--primary-soft);
+}
+
+.quadCard > span {
+  min-width: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.quadCard > strong {
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1;
+  letter-spacing: -.02em;
+}
+
+/* 一句话解释这一格是什么设备，占满整行：不写的话「潜力」「低效」全靠猜 */
+.quadCard > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.quadDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+/* 筛选条里搜索框吃掉剩余宽度；全局 .filter-bar label 会给每个标签加右分隔线，
+   搜索框自己有边框，再叠一条竖线就成了双线。权重靠后代选择器压过全局，不改 globals。 */
+.filterRow .searchBox {
+  flex: 1 1 240px;
+  max-width: 380px;
+  height: 38px;
+  padding: 0 11px;
+  border-right: 1px solid var(--border);
+}
+
+.filterRow {
+  margin-bottom: 13px;
+}
+
+/* 名称和型号叠两行：同型号设备只靠名称分不出来，型号跟着名称走比单开一列省一整列宽度 */
+.deviceCell {
+  display: grid;
+  gap: 2px;
+}
+
+.deviceCell strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deviceCell small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 设备名做成按钮但长得像链接：它是进单机分析的唯一入口，做成按钮样式会撑高整行 */
+.deviceButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.deviceButton:hover {
+  text-decoration: underline;
+}
+
+/* 结余为负标红是这张表最关键的一眼信息：亏损设备要能在一屏里被扫出来 */
+.netPositive {
+  color: var(--green);
+  font-weight: 650;
+}
+
+.netNegative {
+  color: var(--red);
+  font-weight: 650;
+}
+
+.riskCell {
+  display: grid;
+  gap: 4px;
+  min-width: 76px;
+}
+
+.riskCell b {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 只写轨道形状，宽度和颜色由组件按分数 inline 传：分数是数据，塞进 CSS 得写死几档阈值 */
+.riskTrack {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.riskTrack > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width .25s ease;
+}
+
+/* 一台设备可能同时触发好几条问题，标签允许折行，但整列限宽，否则会把操作列挤出屏幕 */
+/* 十列的表在 .table-scroll 里被 width:100% 压到容器宽度，最后两列会被挤成
+   一个字一行的竖条。给一个下限宽度让它横向滚出去，列宽才回得来。 */
+.problemTable {
+  min-width: 1180px;
+}
+
+.findingCell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 240px;
+  white-space: normal;
+}
+
+.findingPill {
+  display: inline-flex;
+  align-items: center;
+  /* 标签本身绝不断字：「使用率不足」竖成五行比换行更难读 */
+  white-space: nowrap;
+  min-height: 21px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: help;
+}
+
+.sevHigh {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.sevMedium {
+  color: var(--orange);
+  background: var(--orange-soft);
+}
+
+.sevLow {
+  color: var(--muted);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+}
+
+/* 按钮按问题逐条竖排：一台设备的「使用率不足」和「回本滞后」去向不同，
+   合成一个按钮就得让人在下一页再选一次问题。 */
+.actionStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.actionButton:hover {
+  text-decoration: underline;
+}
+
+/* 按钮尾巴上挂问题名，说明这一下是对哪条问题动手，而不是对整台设备 */
+.actionButton em,
+.readonlyAction em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+/* 无 cost.manage 时按钮变说明文字：留一个点不动的灰按钮只会让人反复点 */
+.readonlyAction {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 0;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* 面板右上角的计数 pill 里带图标，全局 .status-pill 没有 gap，图标会贴着数字 */
+.countPill {
+  gap: 5px;
+}
+
+/* globals 的 .status-pill 只有 success/warning/danger/neutral，「共享调拨」需要一档中性偏蓝 */
+.pillInfo {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+/* 窄屏（笔记本分屏、平板）：补数清单折到散点图下面，象限卡折成两列，
+   两者都比横向压扁强——压扁后象限卡的数字和说明会挤成一坨。 */
+@media (max-width: 1100px) {
+  .statsRow[class] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .scatterLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pendingList {
+    max-height: 200px;
+  }
+
+  .quadRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .statsRow[class] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scopeSwitch {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .filterRow .searchBox {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .findingCell {
+    max-width: 200px;
+  }
+}

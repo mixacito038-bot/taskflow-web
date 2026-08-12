@@ -15,7 +15,7 @@ export type MenuCatalogItem = {
 
 export const menuCatalog: readonly MenuCatalogItem[] = [
   { id: "cockpit", label: "效益驾驶舱", group: "show", permissions: ["dashboard.view"] },
-  { id: "analysis", label: "采集与分析", group: "show", permissions: ["dashboard.view", "source.manage"] },
+  { id: "analysis", label: "效益分析", group: "show", permissions: ["dashboard.view", "source.manage"] },
   { id: "report", label: "效益分析报告", group: "show", permissions: ["report.manage", "report.review", "report.approve", "report.export"] },
   { id: "improvement", label: "运营改进中心", group: "show", permissions: ["improvement.manage"] },
   { id: "capital", label: "资本计划", group: "show", permissions: ["improvement.manage", "report.approve"] },
@@ -59,7 +59,7 @@ export function togglePermissionsForMenu(
 /**
  * 判断“取消勾选某菜单”是否真的能让它从左侧隐藏。
  *
- * 当该菜单赖以显示的权限全部被其它已勾选菜单共享时（如“效益驾驶舱”和“采集与分析”
+ * 当该菜单赖以显示的权限全部被其它已勾选菜单共享时（如“效益驾驶舱”和“效益分析”
  * 都需要 dashboard.view），取消其中一个并不会改变其可见性——形成“死复选框”。
  * 此时返回 false，供 UI 呈现“受共享约束”态并给出说明，避免静默无效的点击。
  * 若该菜单当前本就不可见，或取消后确实会隐藏，则返回 true。

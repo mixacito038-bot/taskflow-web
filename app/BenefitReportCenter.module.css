@@ -11,3 +11,71 @@
 .monthlyRhythm strong { font-size: 13px; }
 .monthlyRhythm small { color: var(--muted); font-size: 12px; line-height: 1.55; }
 @media (max-width: 900px) { .monthlyLauncher { grid-template-columns: 1fr; } .monthlyAction { flex-wrap: wrap; } .monthlyAction button { width: 100%; } }
+
+/* ---- 报告目录导航 ---- */
+.previewLayout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* top 与章节的 scroll-margin-top 配套：顶栏约 84px，两者不一致标题就会被顶栏盖住。 */
+.tocRail { position: sticky; top: 84px; max-height: calc(100vh - 108px); padding: 13px; border: 1px solid var(--border); border-radius: var(--card-radius); background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.tocHead { padding-bottom: 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 9px; }
+.tocHead > span { width: 32px; height: 32px; flex: none; border-radius: 9px; color: var(--primary); background: var(--primary-soft); display: grid; place-items: center; }
+.tocHead > div { min-width: 0; display: grid; gap: 2px; }
+.tocHead strong { font-size: 13px; }
+.tocHead small { color: var(--muted); font-size: 12px; }
+
+.tocBulk { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tocBulk button { min-height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; cursor: pointer; }
+.tocBulk button:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 32%, var(--border)); background: var(--primary-soft); }
+
+.tocList { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 2px; }
+.tocLink { width: 100%; min-height: 34px; padding: 5px 8px; border: 0; border-left: 2px solid transparent; border-radius: 8px; color: var(--text-soft); background: transparent; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 8px; text-align: left; cursor: pointer; }
+.tocLink:hover:not(:disabled) { background: var(--surface-soft); }
+.tocLink:disabled { opacity: .45; cursor: not-allowed; }
+.tocLink > i { width: 24px; height: 22px; border-radius: 6px; color: var(--primary); background: var(--primary-soft); display: grid; place-items: center; font-size: 12px; font-style: normal; }
+.tocLink > span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.tocLinkActive { color: var(--primary); background: var(--primary-soft); border-left-color: var(--primary); font-weight: 600; }
+.tocLinkActive > i { color: var(--surface); background: var(--primary); }
+
+.tocProgress { padding-top: 9px; border-top: 1px solid var(--border); display: grid; gap: 5px; }
+.tocProgressLabel { color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.tocProgressTrack { height: 4px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.tocProgressBar { height: 100%; border-radius: inherit; background: var(--primary); display: block; transition: width .18s ease; }
+.tocFooter { display: grid; }
+.tocFooter button { width: 100%; }
+
+/* ---- 章节标题与折叠 ---- */
+.chapter { scroll-margin-top: 92px; }
+.chapterHead { margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* 全局 .report-paper-section > h3 因为多了一层标题行不再命中，这里按原样式复述。 */
+.chapterHead h3 { margin: 0; color: color-mix(in srgb, var(--primary) 78%, var(--text)); font-size: 18px; letter-spacing: -.01em; }
+.chapterToggle { min-height: 28px; flex: none; padding: 0 9px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); display: inline-flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }
+.chapterToggle:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 32%, var(--border)); background: var(--primary-soft); }
+/* 折叠只隐藏、不卸载：正文留在 DOM 里，打印时才能强制展开（见 @media print）。 */
+.chapterBody { display: block; }
+.chapterBody[data-collapsed="true"] { display: none; }
+.chapterBody h4 { margin: 20px 0 10px; color: var(--text); font-size: 15px; }
+
+@media (prefers-reduced-motion: reduce) { .tocProgressBar { transition: none; } }
+
+/* 窄屏：目录变成正文上方的一行横向滚动 chip，不再占正文宽度。 */
+@media (max-width: 1100px) {
+  .previewLayout { grid-template-columns: minmax(0, 1fr); }
+  .tocRail { position: static; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px 12px; }
+  .tocHead { padding-bottom: 0; border-bottom: 0; }
+  .tocBulk { grid-template-columns: auto auto; }
+  .tocList { grid-column: 1 / -1; grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; overflow-y: hidden; gap: 6px; padding-bottom: 2px; }
+  .tocLink { width: auto; min-height: 32px; border: 1px solid var(--border); border-left-width: 1px; border-radius: 999px; }
+  .tocLinkActive { border-color: color-mix(in srgb, var(--primary) 38%, var(--border)); }
+  .tocProgress { grid-column: 1 / -1; padding-top: 0; border-top: 0; }
+  .tocFooter { grid-column: 1 / -1; justify-items: end; }
+  .tocFooter button { width: auto; }
+}
+
+/* 打印：目录是屏幕上的查阅工具，纸面不需要；更重要的是把收起的章节强制展开——
+   这份报告要交院长和卫健委，绝不能因为谁点了折叠就少印一章。 */
+@media print {
+  .previewLayout { display: block; }
+  .tocRail { display: none !important; }
+  .chapterToggle { display: none !important; }
+  .chapterBody, .chapterBody[data-collapsed="true"] { display: block !important; }
+}

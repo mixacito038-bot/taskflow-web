@@ -7,6 +7,7 @@ import {
   ArrowDown,
   ArrowUp,
   BarChart3,
+  Gauge,
   Boxes,
   Building2,
   Cable,
@@ -119,6 +120,7 @@ import {
 } from "./benefit-analysis-config";
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
+import BenefitAnalysisCenter from "./BenefitAnalysisCenter";
 import DeviceReportCenter, { DeviceReportWorkload } from "./DeviceReportCenter";
 import LedgerFieldSettings from "./LedgerFieldSettings";
 import MetricCockpitConfig from "./MetricCockpitConfig";
@@ -141,6 +143,10 @@ import {
   mergeReportFields,
   ReportFieldDefinition,
 } from "./device-report-fields";
+import {
+  buildDiagnoses,
+  type Finding,
+} from "./benefit-diagnosis";
 import {
   ChartComputeContext,
   ChartTemplate,
@@ -462,6 +468,13 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [equipmentSearch, setEquipmentSearch] = useState("");
   // 台账“眼睛”入口带过来的设备：进入设备数据填报时直接打开这台设备的抽屉
   const [reportFocusDeviceId, setReportFocusDeviceId] = useState("");
+  // 效益分析页的统计口径：开=只算已确认的填报数据（正式口径），关=含填报中/已提交（预览）
+  const [analysisOnlyConfirmed, setAnalysisOnlyConfirmed] = useState(true);
+  const [analysisTab, setAnalysisTab] = useState<"overview" | "monitor" | "custom">("overview");
+  // 分析页点「建改进任务」带去改进中心的那条问题；改进中心消费一次后清空
+  const [pendingFinding, setPendingFinding] = useState<{ deviceId: string; finding: Finding } | null>(null);
+  // 分析页/改进中心点「送资本论证」带去资本计划的设备
+  const [capitalFocusDeviceId, setCapitalFocusDeviceId] = useState("");
   // 驾驶舱配置分两类：行业驾驶舱（现有模块编排）与指标字典驾驶舱（17 条口径成图）
   const [cockpitConfigKind, setCockpitConfigKind] = useState<"industry" | "dictionary">("industry");
   const [equipmentStatus, setEquipmentStatus] = useState("全部状态");
@@ -1650,6 +1663,12 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     navigate("detail");
   }
 
+  /** 分析类页面只拿得到 deviceId，这里按 id 打开单机分析 */
+  function openDeviceDetailById(deviceId: string) {
+    setSelectedDeviceId(deviceId);
+    navigate("detail");
+  }
+
   function switchHospital(hospitalId: string) {
     const hospital = accessibleHospitals.find((item) => item.id === hospitalId);
     if (!hospital) {
@@ -1817,6 +1836,40 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [ledgerDevices, currentDeviceReports, currentMetricCockpit.onlyConfirmed, currentReportFields, workloadIndex, demoWorkloadIndex]);
 
+  /**
+   * 四个分析页（效益分析 / 运营改进 / 资本计划 / 效益报告）共用的诊断结果。
+   *
+   * 以前这四页各算各的：alert-rules 一套阈值、资本计划一套 riskScore、改进中心一套情景测算，
+   * 同一台设备能给出互相矛盾的结论。现在只有这一处判断，四页都从这里取。
+   */
+  const analysisPeriods = useMemo(() => listPeriods("month", new Date().getFullYear()), []);
+  const analysisPeriodLabel = `${new Date().getFullYear()} 年度 · 按月填报（${analysisPeriods.length} 期）`;
+  const diagnoses = useMemo(() => buildDiagnoses({
+    devices: ledgerDevices,
+    records: currentDeviceReports,
+    periods: analysisPeriods,
+    fields: currentReportFields,
+    workloadOf,
+    onlyConfirmed: analysisOnlyConfirmed,
+  }),
+  // workloadOf 是两个索引的薄封装，跟着它们一起变
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [ledgerDevices, currentDeviceReports, analysisPeriods, currentReportFields, analysisOnlyConfirmed, workloadIndex, demoWorkloadIndex]);
+
+  /** 分析页 →（改进 / 资本 / 填报）的三条去向，集中在这里，页面只管调用 */
+  function routeFindingToImprovement(deviceId: string, finding: Finding) {
+    setPendingFinding({ deviceId, finding });
+    navigate("improvement");
+  }
+  function routeDeviceToCapital(deviceId: string) {
+    setCapitalFocusDeviceId(deviceId);
+    navigate("capital");
+  }
+  function routeDeviceToReporting(deviceId: string) {
+    setReportFocusDeviceId(deviceId);
+    navigate("costs");
+  }
+
   function moveModule(id: string, direction: -1 | 1) {
     setModules((current) => {
       const index = current.findIndex((module) => module.id === id);
@@ -1872,7 +1925,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
   const navItems: Array<{ id: View; label: string; icon: React.ReactNode; group: "show" | "manage"; permissions: string[] }> = [
     { id: "cockpit", label: "效益驾驶舱", icon: <LayoutDashboard size={18} />, group: "show", permissions: ["dashboard.view"] },
-    { id: "analysis", label: "采集与分析", icon: <Activity size={18} />, group: "show", permissions: ["dashboard.view", "source.manage"] },
+    { id: "analysis", label: "效益分析", icon: <Activity size={18} />, group: "show", permissions: ["dashboard.view", "source.manage"] },
     { id: "report", label: "效益分析报告", icon: <FileText size={18} />, group: "show", permissions: ["report.manage", "report.review", "report.approve", "report.export"] },
     { id: "improvement", label: "运营改进中心", icon: <Target size={18} />, group: "show", permissions: ["improvement.manage"] },
     { id: "capital", label: "资本计划", icon: <Boxes size={18} />, group: "show", permissions: ["improvement.manage", "report.approve"] },
@@ -2086,7 +2139,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
   const pageTitle = {
     cockpit: "大型医疗设备效益驾驶舱",
-    analysis: "采集与效益分析",
+    analysis: "效益分析",
     report: "效益分析报告",
     improvement: "运营改进中心",
     capital: "3—5 年资本计划",
@@ -2401,14 +2454,37 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           ) : null}
 
           {view === "analysis" ? (
+            <div className="analysis-tabs" role="tablist" aria-label="效益分析页签">
+              <button role="tab" aria-selected={analysisTab === "overview"} className={analysisTab === "overview" ? "active" : ""} onClick={() => setAnalysisTab("overview")}><Activity size={16} />效益总览</button>
+              <button role="tab" aria-selected={analysisTab === "monitor"} className={analysisTab === "monitor" ? "active" : ""} onClick={() => setAnalysisTab("monitor")}><Gauge size={16} />全面监测</button>
+              <button role="tab" aria-selected={analysisTab === "custom"} className={analysisTab === "custom" ? "active" : ""} onClick={() => setAnalysisTab("custom")}><BarChart3 size={16} />自定义视图</button>
+            </div>
+          ) : null}
+
+          {view === "analysis" && analysisTab === "overview" ? (
+            <BenefitAnalysisCenter
+              diagnoses={diagnoses}
+              periodLabel={analysisPeriodLabel}
+              onlyConfirmed={analysisOnlyConfirmed}
+              onOnlyConfirmedChange={setAnalysisOnlyConfirmed}
+              onOpenDevice={openDeviceDetailById}
+              onCreateAction={routeFindingToImprovement}
+              onSendToCapital={routeDeviceToCapital}
+              onOpenReporting={routeDeviceToReporting}
+              canManage={hasPermission("improvement.manage")}
+              notify={notify}
+            />
+          ) : null}
+
+          {view === "analysis" && analysisTab !== "overview" ? (
             <BenefitAnalysisStudio
               profiles={currentAnalysisProfiles}
               setProfiles={setCurrentAnalysisProfiles}
               devices={devices}
-              sources={currentDataSources}
               canManage={hasPermission("source.manage")}
               notify={notify}
-              onOpenSources={hasPermission("source.manage") ? () => navigate("sources") : undefined}
+              tab={analysisTab}
+              onTabChange={setAnalysisTab}
             />
           ) : null}
 
@@ -2452,18 +2528,29 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
           {view === "improvement" ? (
             <ImprovementCenter
-              devices={devices}
+              diagnoses={diagnoses}
               actions={improvementActions}
               setActions={setImprovementActions}
-              onSelectDevice={openDeviceDetail}
+              periodLabel={analysisPeriodLabel}
+              onSelectDevice={openDeviceDetailById}
+              onSendToCapital={routeDeviceToCapital}
               notify={notify}
-              publishedData={sessionState === "verified" ? publishedData : undefined}
-              demoMode={demoMode}
+              canManage={hasPermission("improvement.manage")}
+              pendingFinding={pendingFinding ?? undefined}
+              onPendingFindingConsumed={() => setPendingFinding(null)}
             />
           ) : null}
 
           {view === "capital" ? (
-            <CapitalPlanningCenter devices={devices} onSelectDevice={openDeviceDetail} />
+            <CapitalPlanningCenter
+              diagnoses={diagnoses}
+              periodLabel={analysisPeriodLabel}
+              onSelectDevice={openDeviceDetailById}
+              focusDeviceId={capitalFocusDeviceId || undefined}
+              onFocusConsumed={() => setCapitalFocusDeviceId("")}
+              canManage={hasPermission("improvement.manage")}
+              notify={notify}
+            />
           ) : null}
 
           {view === "detail" && selectedDevice ? (

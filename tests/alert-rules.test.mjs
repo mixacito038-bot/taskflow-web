@@ -136,15 +136,19 @@ test("validateAlertRule reports Chinese messages for empty name and non-finite t
   assert.deepEqual(validateAlertRule(defaultAlertRules[0]), []);
 });
 
-test("improvement center wires alerts to actions with a dedupe id and honest empty state", async () => {
+test("改进中心把诊断问题接成任务，去重靠结构化来源而不是拼字符串 id", async () => {
   const source = await readFile(new URL("../app/ImprovementCenter.tsx", import.meta.url), "utf8");
-  assert.match(source, /action-alert-\$\{alert\.ruleId\}-\$\{alert\.deviceId\}/);
-  assert.match(source, /该预警已有对应改进任务/);
-  assert.match(source, /已生成改进任务，请指认负责人与期限/);
-  assert.match(source, /暂无可评估设备/);
-  assert.match(source, /规则暂存当前会话，正式版本随医院配置下发/);
-  assert.match(source, /转为改进任务/);
-  assert.match(source, /baselineValue: alert\.currentValue/);
-  assert.match(source, /targetValue: alert\.threshold/);
-  assert.match(source, /dataStatus === "unavailable" \? undefined : insight/);
+  // 旧实现把 ruleId+deviceId 拼成 action id 当去重键：一旦规则改名或设备换 id，
+  // 同一个问题就会被当成新问题再冒出来一次。改成任务上挂结构化的 sourceFinding。
+  assert.match(source, /sourceFinding\?: ActionSource/);
+  assert.match(source, /function matchesFinding\(action: ImprovementAction, deviceId: string, finding: Finding\)/);
+  // 已认领的问题要从待认领里摘掉，并显示是被哪条任务领走的
+  assert.match(source, /pendingRows/);
+  assert.match(source, /claimedRows/);
+  assert.match(source, /已认领/);
+  // 空态要说清是"没问题"还是"没数据"，不能笼统一句"暂无"
+  assert.match(source, /本期诊断没有产生问题，或数据尚未发布。/);
+  assert.match(source, /运营类问题都已认领。/);
+  // 基线取自诊断事实，目标取自阈值；取不到就留空，不编数字
+  assert.match(source, /没有对应事实就留空，不编数字/);
 });

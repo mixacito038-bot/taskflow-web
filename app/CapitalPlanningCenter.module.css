@@ -1,39 +1,627 @@
-.root { display: grid; gap: 18px; }
-.heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; }
-.heading > div:first-child > span, .kicker { display: flex; align-items: center; gap: 6px; color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
-.heading h1 { margin: 6px 0; font-size: 26px; }
-.heading p, .panelTitle p, .detail p { margin: 0; color: var(--muted); line-height: 1.55; }
-.guardrail { display: flex; align-items: center; gap: 8px; padding: 10px 12px; color: var(--green); background: var(--green-soft); border: 1px solid color-mix(in srgb, var(--green) 22%, var(--border)); border-radius: 10px; font-size: 12px; }
-.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.metrics article { display: flex; gap: 12px; padding: 17px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow); }
-.metrics svg { color: var(--primary); }
-.metrics article div { display: grid; gap: 4px; }
-.metrics span, .metrics small { color: var(--muted); font-size: 12px; }
-.metrics strong { font-size: 22px; }
-.layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .7fr); gap: 14px; }
-.tablePanel, .detail, .scenarios { padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow); }
-.panelTitle h2, .detail h2 { margin: 0 0 5px; font-size: 16px; }
-.tableWrap { margin-top: 14px; overflow: auto; }
-.tableWrap table { width: 100%; border-collapse: collapse; }
-.tableWrap th { color: var(--muted); font-size: 12px; font-weight: 600; text-align: left; background: var(--surface-soft); }
-.tableWrap th, .tableWrap td { padding: 11px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.tableWrap tbody tr { cursor: pointer; }
-.tableWrap tbody tr:hover, .selected { background: var(--primary-soft); }
-.tableWrap td:first-child, .tableWrap td:nth-child(2) { display: table-cell; }
-.tableWrap td small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
-.band { padding: 4px 7px; border-radius: 7px; font-size: 11px; background: var(--surface-soft); }
-.band必须替换 { color: var(--red); background: var(--red-soft); }
-.band计划替换, .band可延寿 { color: var(--orange); background: var(--orange-soft); }
-.band共享调拨 { color: var(--violet); background: var(--violet-soft); }
-.detail { display: flex; flex-direction: column; gap: 14px; }
-.score { display: flex; align-items: baseline; gap: 4px; padding: 14px; border-radius: 11px; background: var(--surface-soft); }
-.score strong { color: var(--primary); font-size: 34px; }.score span { color: var(--muted); }
-.detail ul { margin: 0; padding-left: 19px; color: var(--text-soft); line-height: 1.75; }
-.detail dl, .scenarioGrid dl { margin: 0; display: grid; gap: 8px; }
-.detail dl div, .scenarioGrid dl div { display: flex; justify-content: space-between; gap: 12px; }.detail dt, .scenarioGrid dt { color: var(--muted); }.detail dd, .scenarioGrid dd { margin: 0; font-weight: 650; }
-.detail button { margin-top: auto; min-height: 38px; border: 0; border-radius: 9px; color: #fff; background: var(--primary); display: flex; align-items: center; justify-content: center; gap: 7px; }
-.scenarioGrid { margin-top: 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.scenarioGrid article { padding: 15px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-soft); display: grid; gap: 7px; }
-.scenarioGrid article > span { color: var(--primary); font-weight: 700; }.scenarioGrid article > strong { font-size: 22px; }.scenarioGrid article > small, .scenarioGrid article > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.empty { padding: 24px; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
-@media (max-width: 980px) { .layout { grid-template-columns: 1fr; } .metrics, .scenarioGrid { grid-template-columns: 1fr; } .heading { align-items: flex-start; flex-direction: column; } }
+/* 资本计划页样式。
+   颜色一律走 globals.css 的主题变量：本页在浅色、teal、midnight 三套主题下都要能用，
+   写死十六进制在深色主题下会变成刺眼的色块（半透明阴影用 rgba 是例外，它跟着底色走）。
+   字号下限 12px 是平台硬性规定：医院端多是 1366×768 的老机器加中年用户。 */
+
+.root {
+  display: grid;
+  gap: 16px;
+}
+
+/* 边界声明贴在页头右上：这一页给的是更新/延寿/调拨的钱，读者必须先看到「这不是审批结论」 */
+.guardrail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--green) 22%, var(--border));
+  border-radius: 10px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 12px;
+}
+
+/* 五张概览卡：四个分档 + 预算合计。auto-fit 而不是写死五列，
+   窄屏时自己折行，预算那张不会被压成一条读不出数的窄条。 */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.metricCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* 图标底色由分档类给的 currentColor 推出来：一个分档只在一处定色，
+   卡片图标和表格里的 pill 永远不会跑成两种红。 */
+.metricIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 13%, transparent);
+}
+
+.metricIconBudget {
+  color: var(--primary);
+}
+
+.metricCard > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.metricCard span,
+.metricCard small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* 金额可能是七八位数，允许换行，别把卡片撑破 */
+.metricCard strong {
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  overflow-wrap: anywhere;
+}
+
+/* 左表右详情：详情面板是「选中这台设备的论证材料」，跟表格并排才能边看排名边看依据。
+   右列给到 340px 下限，四张情景卡在里面竖排时数字不至于被挤断行。 */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(340px, .85fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.tablePanel,
+.detail {
+  min-width: 0;
+  padding: var(--panel-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.panelHead {
+  display: grid;
+  gap: 11px;
+  margin-bottom: 12px;
+}
+
+.panelHead h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.panelHead p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+
+/* 用 flex-basis 而不是 width 覆盖全局 .search-field 的定宽：
+   同为单类选择器时谁后加载谁赢，flex-basis 在弹性布局里稳定压过 width。 */
+.searchBox {
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+
+/* 分档筛选做成带计数的 chip：管理者第一个问题就是「必须替换有几台」，
+   数字长在筛选按钮上，不用先切一遍再数行数。 */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 12px;
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.chip i {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.chipActive,
+.chipActive:hover {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.chipActive i {
+  color: var(--primary);
+}
+
+/* 十列的宽表只让自己横向滚，绝不让页面主体横滚：主体一滚，左侧导航和页头会一起跑出视野 */
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.tableWrap::-webkit-scrollbar {
+  height: 8px;
+}
+
+.tableWrap::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.tableWrap tbody tr {
+  cursor: pointer;
+}
+
+/* 名称和型号叠两行：同型号设备只靠名称分不出来，型号跟着名称走比单开一列省一整列宽度 */
+.deviceCell {
+  display: grid;
+  gap: 2px;
+}
+
+.deviceCell strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deviceCell small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.subLine {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 选中行是右侧详情的上下文，底色要压过 hover 态，否则鼠标一移开就找不到自己选的是哪台。
+   选择器带上 table/tbody/tr 是为了压过 globals 的 .data-table tbody tr:hover td——
+   那条规则元素数更多，只写 .selectedRow 会被它盖掉。 */
+.tableWrap table tbody tr.selectedRow > td,
+.tableWrap table tbody tr.selectedRow:hover > td {
+  background: var(--primary-soft);
+}
+
+/* 左侧再加一条主色竖条：底色在浅色主题下很淡，光靠它在长表里容易看丢 */
+.tableWrap table tbody tr.selectedRow > td:first-child {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.tableWrap .emptyRow {
+  padding: 26px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* 亏损标红是这张表最关键的一眼信息：负结余设备要能在一屏里被扫出来。
+   两个上下文各写一次，是要压过 globals 的 .data-table td 和本文件的 .factList dd ——
+   那两条都直接给单元格定了色，单类选择器抢不过。 */
+.tableWrap .marginNegative,
+.factList .marginNegative {
+  color: var(--red);
+  font-weight: 650;
+}
+
+/* 风险分给一条细进度条：光看数字读者要在心里换算「68 算高吗」，
+   条长是免费的量感。不引图表库（离线部署红线），纯 CSS 画。 */
+.riskCell {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  min-width: 72px;
+}
+
+.riskCell strong {
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.riskTrack {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+/* 宽度和颜色由组件按分数 inline 传（>=70 红、>=45 橙、其余主色）：
+   阈值是数据口径，写进 CSS 就等于在样式表里又养了一套判定。 */
+.riskTrack > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+/* 问题标签这一列允许换行：一台设备可能同时命中三四个问题，
+   压成一行会把表格撑到两屏宽。 */
+.findingTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 220px;
+  white-space: normal;
+}
+
+.tag {
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: var(--muted);
+  background: color-mix(in srgb, currentColor 13%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: help;
+}
+
+/* 严重度只定颜色，形状由 .tag / .findingList li 各自给：
+   同一套色在标签、列表条上复用，读者不用记两套配色。 */
+.sevHigh {
+  color: var(--red);
+}
+
+.sevMedium {
+  color: var(--orange);
+}
+
+.sevLow {
+  color: var(--muted);
+}
+
+.band {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, currentColor 13%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bandReplaceNow {
+  color: var(--red);
+}
+
+.bandReplacePlan {
+  color: var(--orange);
+}
+
+.bandExtend {
+  color: var(--green);
+}
+
+.bandShare {
+  color: var(--violet);
+}
+
+.bandWatch {
+  color: var(--muted);
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.detailHead h2 {
+  margin: 5px 0 4px;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.detailHead p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.scoreBox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+  padding: 13px 14px;
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.scoreBox strong {
+  color: var(--primary);
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreBox > span:first-of-type {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quadrantPill {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+/* 缺数说明用弱色框：没填报是常态（本期还没到填报日），不该长得像报错 */
+.noteBox {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* 评分依据逐条列：左边一条按严重度上色的竖线，扫一眼就知道哪条是高危，
+   不用去读每条正文。 */
+/* 竖条颜色靠 currentColor 从严重度类取，所以 li 自己绝不能再写 color：
+   .findingList li 是「类+元素」，会盖过只有一个类的 .sevHigh，把三档颜色全压成一种。
+   没命中严重度的兜底条走 ul 上继承来的弱色。 */
+.findingList {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  color: var(--border-strong);
+  list-style: none;
+}
+
+.findingList li {
+  padding: 9px 11px;
+  border-left: 3px solid currentColor;
+  border-radius: 0 9px 9px 0;
+  background: var(--surface-soft);
+}
+
+.findingList strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.findingList p {
+  margin: 3px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.findingList small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.factList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.factList > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.factList dt {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.factList dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.detailAction {
+  width: 100%;
+}
+
+/* 情景比较跟在依据后面，用一条分隔线断开：上面是「这台设备现在怎么了」，
+   下面是「四种处置各要花多少、换回什么」，两件事不能糊在一起读。 */
+.scenarioBlock {
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.scenarioBlock h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+/* 右栏窄时自动竖排、宽时并排两张：四种情景要能互相对着看 */
+.scenarioGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.scenarioCard {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.scenarioHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.scenarioHead span {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+/* 风险变化是这四张卡唯一可直接横比的量：降分绿、升分红，方向不用读文字 */
+.riskDown {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.riskUp {
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.scenarioCard dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.scenarioCard dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scenarioCard dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scenarioCard dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.missingNote {
+  margin: 0;
+  color: var(--orange);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.scenarioNote {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 免责说明压到卡片最底、字色最弱：它必须在场（估算不是财务确认值），但不该抢走数字的位置 */
+.caveat {
+  padding-top: 7px;
+  border-top: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.empty {
+  padding: 24px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--card-radius);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* 窄屏（笔记本分屏、平板）下两栏挤不开：详情落到表格下方，情景卡改单列。
+   概览卡不用额外处理，auto-fit 会自己折。 */
+@media (max-width: 1180px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scenarioGrid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .searchBox {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .findingTags {
+    max-width: 160px;
+  }
+}

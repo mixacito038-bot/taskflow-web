@@ -136,7 +136,7 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   assert.doesNotMatch(component, /function usePersistentState/);
   assert.match(component, /BenefitReportCenter/);
   assert.match(component, /BenefitAnalysisStudio/);
-  assert.match(component, /采集与分析/);
+  assert.match(component, /效益分析/);
   assert.match(component, /生成效益报告/);
   assert.match(component, /openDeviceDetail/);
   assert.match(component, /SingleEquipmentDetail/);
@@ -269,17 +269,21 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   assert.match(styles, /platform-template-grid/);
   assert.match(styles, /template-source-mapping-grid/);
 
-  assert.match(improvement, /需求—产能周监测/);
-  assert.match(improvement, /单机效益情景测算/);
-  assert.match(improvement, /管理行动闭环/);
-  assert.match(improvement, /全生命周期资源配置建议/);
+  // 改进中心只做「问题→任务→目标→兑现」这一件事。
+  // 下面这些要么属于资本计划（情景测算、全生命周期建议），要么与效益分析页重复（需求—产能），
+  // 要么是纯说明文（三段行业案例）——搬走或删掉之后不能再长回来。
+  assert.doesNotMatch(improvement, /需求—产能周监测/);
+  assert.doesNotMatch(improvement, /单机效益情景测算/);
+  assert.doesNotMatch(improvement, /方案前后效益对比/);
+  assert.doesNotMatch(improvement, /全生命周期资源配置建议/);
+  assert.doesNotMatch(improvement, /大型医用设备绩效专项审计/);
+  assert.doesNotMatch(improvement, /WHO 设备台账与维护信息系统/);
+  assert.doesNotMatch(improvement, /NHS CT 需求—产能改进/);
+  // 闭环本身要在
   assert.match(improvement, /actions: ImprovementAction\[\]/);
   assert.match(improvement, /setActions: Dispatch<SetStateAction<ImprovementAction\[\]>>/);
-  assert.match(improvement, /ImprovementCenter\(\{ devices, actions, setActions/);
+  assert.match(improvement, /diagnoses: DeviceDiagnosis\[\]/);
   assert.doesNotMatch(improvement, /equip-benefit-improvement-actions-v1|localStorage/);
-  assert.match(improvement, /大型医用设备绩效专项审计/);
-  assert.match(improvement, /WHO 设备台账与维护信息系统/);
-  assert.match(improvement, /NHS CT 需求—产能改进/);
 
   assert.match(data, /mri-01/);
   assert.match(data, /robot-01/);
@@ -424,7 +428,7 @@ test("uses hospital-scoped D1 state and account-scoped preferences for authentic
   assert.match(component, /persistCloudResource\("improvementActions"/);
   assert.match(component, /persistCloudResource\("modules"/);
   // 文件来源的编辑界面已随「文件数据清单」一起移除，不再有写入点；
-  // 但资源本身仍被采集与分析、报告读取，所以保留读取侧断言。
+  // 但资源本身仍被效益分析、报告读取，所以保留读取侧断言。
   assert.match(component, /result\.shared\.dataSources/);
   assert.match(component, /persistCloudResource\("ledgerFields"/);
   assert.match(component, /persistCloudResource\("metricDictionary"/);
@@ -587,31 +591,19 @@ test("provides configurable category-specific collection, quality, and benefit r
   assert.match(profiles, /allocationCountWeight/);
   assert.match(profiles, /allocationTimeWeight/);
 
-  // Rules are editable, validated, and explicit about evidence/privacy boundaries.
-  assert.match(studio, /采集方案/);
-  assert.match(studio, /质量与对账/);
-  assert.match(studio, /分析口径/);
+  // 品类模板本身（放射/超声/内镜…、三种采集方式、分摊权重）继续由 benefit-analysis-config 承载，
+  // 但「采集方案 / 质量与对账 / 分析口径」三个页签已从 studio 删掉：
+  // 采集与质量归数据准备中心，口径归指标字典，留在这里就是第二份真相。
+  assert.doesNotMatch(studio, /采集方案/);
+  assert.doesNotMatch(studio, /质量与对账/);
+  assert.doesNotMatch(studio, /分析口径/);
+  assert.doesNotMatch(studio, /analysis-ingestion-flow/);
+  assert.doesNotMatch(studio, /配置待办/);
+  // 保留的两个页签与规则编辑弹窗（含校验）必须还在
+  assert.match(studio, /type StudioTab = "monitor" \| "custom"/);
   assert.match(studio, /分摊权重合计必须为 100%/);
-  assert.match(studio, /云端分析事件不得采集直接身份字段/);
-  assert.match(studio, /仅为规则演示，不代表真实接入/);
-  assert.match(studio, /设备实际完成工作量－有效收费工作量/);
-  assert.match(studio, /净现值 NPV/);
-  assert.match(studio, /盈亏平衡工作量/);
-  assert.match(studio, /analysis-ingestion-flow/);
-  assert.match(studio, /label: "来源"/);
-  assert.match(studio, /label: "事件"/);
-  assert.match(studio, /label: "质检"/);
-  assert.match(studio, /label: "对账"/);
-  assert.match(studio, /label: "指标"/);
-  assert.match(studio, /配置待办/);
-  assert.match(studio, /不冒充后台已执行修复/);
-  assert.doesNotMatch(studio, /样例任务 23 条/);
-  assert.match(studio, /data-label="下一步"/);
-  assert.match(styles, /analysis-collection-layout/);
   assert.match(styles, /modal-backdrop\.analysis-modal/);
   assert.match(styles, /100dvh/);
-  assert.match(styles, /analysis-responsive-table td::before/);
-  assert.match(styles, /@media \(max-width: 390px\)/);
   assert.match(styles, /min-height: 44px/);
   assert.match(styles, /overflow-x: clip/);
 

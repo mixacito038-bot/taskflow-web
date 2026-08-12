@@ -52,7 +52,7 @@ test("menu catalog toggling grants and revokes permissions without breaking shar
   permissions = togglePermissionsForMenu(permissions, analysis, true, grantable);
   assert.ok(permissions.includes("source.manage"));
 
-  // 取消“采集与分析”不应移除“效益驾驶舱”仍需要的 dashboard.view。
+  // 取消“效益分析”不应移除“效益驾驶舱”仍需要的 dashboard.view。
   permissions = togglePermissionsForMenu(permissions, analysis, false, grantable);
   assert.ok(permissions.includes("dashboard.view"));
   assert.ok(menuVisibleForPermissions(cockpit, new Set(permissions)));
@@ -83,7 +83,7 @@ test("canHideMenu flags dead checkboxes when a menu's permissions are shared", (
   const workbenchOnly = togglePermissionsForMenu([], workbench, true, grantable);
   assert.equal(canHideMenu("workbench", workbenchOnly), true);
 
-  // 效益驾驶舱与采集与分析共享 dashboard.view：取消驾驶舱无法使其隐藏 → 受共享约束的死复选框。
+  // 效益驾驶舱与效益分析共享 dashboard.view：取消驾驶舱无法使其隐藏 → 受共享约束的死复选框。
   let shared = togglePermissionsForMenu([], cockpit, true, grantable);
   shared = togglePermissionsForMenu(shared, analysis, true, grantable);
   assert.equal(canHideMenu("cockpit", shared), false);

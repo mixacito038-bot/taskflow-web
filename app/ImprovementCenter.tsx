@@ -1,46 +1,25 @@
 "use client";
 
-import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
-  BellRing,
-  Calculator,
-  CheckCircle2,
+  CalendarClock,
   ChevronRight,
-  CircleAlert,
   ClipboardCheck,
-  Clock3,
-  ExternalLink,
-  Gauge,
-  Lightbulb,
-  RefreshCw,
-  ShieldCheck,
+  CircleAlert,
   Target,
-  TrendingDown,
-  TrendingUp,
-  Wrench,
+  TriangleAlert,
+  X,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Device, netBenefit, roi, totalCost } from "./mock-data";
-import { insightFor } from "./metric-definitions";
-import type { PublishedDatasetView } from "./published-data";
-import { defaultAlertRules, evaluateAlertRules, validateAlertRule, type AlertRule, type DeviceAlert } from "./alert-rules";
-import alertStyles from "./ImprovementAlerts.module.css";
+import type { DeviceDiagnosis, DeviceFacts, Finding, FindingCode, FindingSeverity } from "./benefit-diagnosis";
+import styles from "./ImprovementAlerts.module.css";
 
 export type ActionStatus = "待启动" | "进行中" | "已完成";
 export type Priority = "高" | "中" | "低";
+
+/** 任务是从哪条诊断问题认领来的。deviceId + code 就能唯一定位一条问题，
+ *  比拿文案去猜可靠；老任务（initialActions、已存档数据）没有这个字段，按标题文本兜底匹配。 */
+export type ActionSource = { deviceId: string; code: FindingCode; title: string };
 
 export type ImprovementAction = {
   id: string;
@@ -61,16 +40,7 @@ export type ImprovementAction = {
   evidence?: string;
   reviewDate?: string;
   history?: Array<{ at: string; status: ActionStatus; note: string }>;
-};
-
-type ImprovementCenterProps = {
-  devices: Device[];
-  actions: ImprovementAction[];
-  setActions: Dispatch<SetStateAction<ImprovementAction[]>>;
-  onSelectDevice: (device: Device) => void;
-  notify: (message: string) => void;
-  publishedData?: PublishedDatasetView;
-  demoMode?: boolean;
+  sourceFinding?: ActionSource;
 };
 
 const currency = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
@@ -205,608 +175,718 @@ export const initialActions: ImprovementAction[] = [
   },
 ];
 
-const weeklyFlow = [
-  { week: "第1周", referrals: 950, activity: 840, backlog: 1160, cancellations: 58, leadTime: 18, utilization: 78 },
-  { week: "第2周", referrals: 930, activity: 875, backlog: 1215, cancellations: 55, leadTime: 17, utilization: 81 },
-  { week: "第3周", referrals: 910, activity: 925, backlog: 1200, cancellations: 43, leadTime: 15, utilization: 85 },
-  { week: "第4周", referrals: 895, activity: 940, backlog: 1155, cancellations: 37, leadTime: 13, utilization: 88 },
-  { week: "第5周", referrals: 870, activity: 945, backlog: 1080, cancellations: 31, leadTime: 11, utilization: 91 },
-  { week: "第6周", referrals: 860, activity: 950, backlog: 990, cancellations: 26, leadTime: 9, utilization: 92 },
-];
+const STATUS_COLUMNS: ActionStatus[] = ["待启动", "进行中", "已完成"];
+const SEVERITY_ORDER: Record<FindingSeverity, number> = { high: 0, medium: 1, low: 2 };
+const SEVERITY_LABEL: Record<FindingSeverity, string> = { high: "高", medium: "中", low: "低" };
+const SEVERITY_TONE: Record<FindingSeverity, string> = { high: "danger", medium: "warning", low: "neutral" };
+const STATUS_TONE: Record<ActionStatus, string> = { 待启动: "neutral", 进行中: "warning", 已完成: "success" };
 
-const practiceCards = [
-  {
-    label: "国家规范",
-    title: "大型医用设备绩效专项审计",
-    practice: "按单机贯通配置、采购、验收、使用、维修、盘点、处置和绩效评价，并保留公式与证据链。",
-    applied: "已转化：生命周期组合、指标目标差距、单机追溯与责任行动。",
-    href: "https://www.nhc.gov.cn/caiwusi/c100043/202311/a830e1effc8e458886dde10a49c2d906/files/1734002081819_92969.pdf",
-  },
-  {
-    label: "国际方法",
-    title: "WHO 设备台账与维护信息系统",
-    practice: "把资产状态、预防性维护、维修工单、备件、合同和退役统一到可追踪的设备生命周期。",
-    applied: "已转化：设备可用率/PM 目标、保障类任务和更新论证建议。",
-    href: "https://www.who.int/publications/i/item/9789240111257",
-    overseas: true,
-  },
-  {
-    label: "运营案例",
-    title: "NHS CT 需求—产能改进",
-    practice: "每周同时观察转诊、活动量、在制/积压、取消和等待时间，用流程图找约束并小步验证方案。",
-    applied: "已转化：周度需求—产能生命体征和情景方案收益跟踪。",
-    href: "https://www.england.nhs.uk/long-read/case-study-improving-access-to-computed-tomography-ct/",
-    overseas: true,
-  },
-];
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
 
-const alertThresholdBounds: Record<AlertRule["metric"], { min: number; max: number; step: number }> = {
-  utilization: { min: 0, max: 100, step: 1 },
-  forecastPayback: { min: 0, max: 30, step: 0.5 },
-  netBenefit: { min: -500, max: 500, step: 5 },
-  reliabilityScore: { min: 0, max: 100, step: 1 },
+function shiftDays(days: number) {
+  const target = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  return target.toISOString().slice(0, 10);
+}
+
+/** 逾期＝截止日早于今天且没完成。看板要靠它标红，别处也复用同一判定，避免两套口径。 */
+function isOverdue(action: ImprovementAction, today: string) {
+  return action.status !== "已完成" && action.dueDate < today;
+}
+
+function overdueDays(dueDate: string, today: string) {
+  const diff = Date.parse(today) - Date.parse(dueDate);
+  return Number.isFinite(diff) ? Math.max(1, Math.round(diff / (24 * 60 * 60 * 1000))) : 1;
+}
+
+/** 一条问题是否已被某个任务认领：优先用 sourceFinding，老任务退回文本包含判断。 */
+function matchesFinding(action: ImprovementAction, deviceId: string, finding: Finding) {
+  if (action.sourceFinding) {
+    return action.sourceFinding.deviceId === deviceId && action.sourceFinding.code === finding.code;
+  }
+  return action.deviceId === deviceId && (action.issue.includes(finding.title) || action.title.includes(finding.title));
+}
+
+/** 问题类型决定拿哪个事实当基线；没有对应事实就留空，不编数字。 */
+function baselineOf(code: FindingCode, facts: DeviceFacts | undefined): { value: number | null; unit: string } {
+  if (!facts) return { value: null, unit: "" };
+  switch (code) {
+    case "low_utilization":
+      return { value: facts.utilization, unit: "% 使用率" };
+    case "loss":
+      return { value: facts.margin, unit: "元结余" };
+    case "payback_delay":
+      return { value: facts.paybackYears, unit: "年回本" };
+    case "high_fault":
+      return { value: facts.integrity, unit: "% 完好率" };
+    case "high_maintenance":
+      return { value: facts.maintenanceRatio, unit: "% 维护占收入" };
+    default:
+      return { value: null, unit: "" };
+  }
+}
+
+function numberText(value: number | null | undefined) {
+  return value === null || value === undefined || !Number.isFinite(value) ? "" : String(Math.round(value * 100) / 100);
+}
+
+type ActionDraft = {
+  id: string;
+  deviceId: string;
+  title: string;
+  issue: string;
+  owner: string;
+  dueDate: string;
+  priority: Priority;
+  status: ActionStatus;
+  progress: string;
+  expectedBenefit: string;
+  baselineValue: string;
+  targetValue: string;
+  actualValue: string;
+  metricUnit: string;
+  actualBenefit: string;
+  evidence: string;
+  sourceFinding?: ActionSource;
 };
 
-function targetTone(value: number, target: number, inverse = false) {
-  const achieved = inverse ? value <= target : value >= target;
-  const near = inverse ? value <= target * 1.2 : value >= target * 0.94;
-  return achieved ? "success" : near ? "warning" : "danger";
-}
-
-function MetricTarget({
-  label,
-  value,
-  unit,
-  target,
-  targetLabel,
-  inverse = false,
-  icon,
-}: {
-  label: string;
-  value: number | null;
-  unit: string;
-  target: number;
-  targetLabel: string;
-  inverse?: boolean;
-  icon: React.ReactNode;
-}) {
-  if (value === null || !Number.isFinite(value)) {
-    return (
-      <article className="target-card target-unavailable">
-        <div className="target-card-top"><span>{icon}</span><small>{targetLabel}</small></div>
-        <p>{label}</p>
-        <strong>待发布</strong>
-        <div className="target-progress" aria-hidden="true"><i style={{ width: "0%" }} /></div>
-        <footer><span>目标 {target}{unit}</span><b>数据缺失</b></footer>
-      </article>
-    );
-  }
-  const tone = targetTone(value, target, inverse);
-  const gap = inverse ? target - value : value - target;
-  return (
-    <article className={`target-card target-${tone}`}>
-      <div className="target-card-top"><span>{icon}</span><small>{targetLabel}</small></div>
-      <p>{label}</p>
-      <strong>{value.toFixed(1)}{unit}</strong>
-      <div className="target-progress"><i style={{ width: `${Math.min(100, Math.max(8, inverse ? (target / value) * 100 : (value / target) * 100))}%` }} /></div>
-      <footer><span>目标 {target}{unit}</span><b>{gap >= 0 ? "已达标" : `差 ${Math.abs(gap).toFixed(1)}${unit}`}</b></footer>
-    </article>
-  );
-}
-
-function resolvedInsightFor(publishedData: PublishedDatasetView | undefined, deviceId: string) {
-  return publishedData?.insights[deviceId]
-    ?? insightFor(publishedData ? `published-missing:${deviceId}` : deviceId);
-}
-
-function finiteAverage(values: number[]) {
-  const available = values.filter((value) => Number.isFinite(value));
-  return available.length
-    ? available.reduce((sum, value) => sum + value, 0) / available.length
-    : null;
-}
-
-export default function ImprovementCenter({ devices, actions, setActions, onSelectDevice, notify, publishedData, demoMode = false }: ImprovementCenterProps) {
-  const [selectedDeviceId, setSelectedDeviceId] = useState(devices[0]?.id ?? "");
-  const [volumeLift, setVolumeLift] = useState(10);
-  const [costReduction, setCostReduction] = useState(4);
-  const [availabilityLift, setAvailabilityLift] = useState(2);
-  const [reviewingActionId, setReviewingActionId] = useState("");
-  const [reviewDraft, setReviewDraft] = useState({ actualValue: "", actualBenefit: "", evidence: "", reviewDate: "2026-08-11" });
-  const [alertRules, setAlertRules] = useState<AlertRule[]>(() => defaultAlertRules.map((rule) => ({ ...rule })));
-
-  const selectedDevice = devices.find((device) => device.id === selectedDeviceId) ?? devices[0];
-  const insights = devices.map((device) => resolvedInsightFor(publishedData, device.id)).filter((item) => item.dataStatus !== "unavailable");
-  const averages = {
-    utilization: finiteAverage(devices.map((device) => device.utilization)),
-    availability: finiteAverage(insights.map((item) => item.availabilityRate)),
-    pm: finiteAverage(insights.map((item) => item.pmCompletionRate)),
-    wait: finiteAverage(insights.map((item) => item.onSiteWaitMinutes)),
+function emptyDraft(deviceId: string): ActionDraft {
+  return {
+    id: "",
+    deviceId,
+    title: "",
+    issue: "",
+    owner: "",
+    dueDate: shiftDays(60),
+    priority: "中",
+    status: "待启动",
+    progress: "0",
+    expectedBenefit: "",
+    baselineValue: "",
+    targetValue: "",
+    actualValue: "",
+    metricUnit: "",
+    actualBenefit: "",
+    evidence: "",
   };
+}
 
-  const scenario = useMemo(() => {
-    if (!selectedDevice) return null;
-    const currentRevenue = selectedDevice.revenue;
-    const currentCashCost = totalCost(selectedDevice) - selectedDevice.cost.depreciation;
-    const controllableCost = selectedDevice.cost.maintenance + selectedDevice.cost.energy + selectedDevice.cost.indirect;
-    const projectedRevenue = currentRevenue * (1 + volumeLift / 100);
-    const projectedCashCost = currentCashCost
-      + selectedDevice.cost.consumables * (volumeLift / 100)
-      - controllableCost * (costReduction / 100);
-    const currentContribution = currentRevenue - currentCashCost;
-    const projectedContribution = projectedRevenue - projectedCashCost;
-    const currentPayback = currentContribution > 0 ? selectedDevice.investment / currentContribution : null;
-    const projectedPayback = projectedContribution > 0 ? selectedDevice.investment / projectedContribution : null;
-    return {
-      currentRevenue,
-      projectedRevenue,
-      currentContribution,
-      projectedContribution,
-      currentPayback,
-      projectedPayback,
-      incremental: projectedContribution - currentContribution,
-      projectedAvailability: Number.isFinite(resolvedInsightFor(publishedData, selectedDevice.id).availabilityRate)
-        ? Math.min(99.9, resolvedInsightFor(publishedData, selectedDevice.id).availabilityRate + availabilityLift)
-        : null,
-    };
-  }, [availabilityLift, costReduction, publishedData, selectedDevice, volumeLift]);
+/** 从诊断问题预填任务：标题用诊断建议，问题描述保留证据原文，基线取对应事实。 */
+function draftFromFinding(deviceId: string, finding: Finding, facts: DeviceFacts | undefined): ActionDraft {
+  const baseline = baselineOf(finding.code, facts);
+  return {
+    ...emptyDraft(deviceId),
+    title: finding.suggestion,
+    issue: `${finding.title}：${finding.evidence}`,
+    owner: facts?.department ?? "",
+    dueDate: shiftDays(finding.severity === "high" ? 30 : finding.severity === "medium" ? 60 : 90),
+    priority: finding.severity === "high" ? "高" : finding.severity === "medium" ? "中" : "低",
+    baselineValue: numberText(baseline.value),
+    metricUnit: baseline.unit,
+    sourceFinding: { deviceId, code: finding.code, title: finding.title },
+  };
+}
 
-  const portfolio = useMemo(() => devices.map((device) => {
-    const insight = resolvedInsightFor(publishedData, device.id);
-    const age = 2026 - Number(device.enabledDate.slice(0, 4));
-    const paybackDelay = device.forecastPayback - device.planPayback;
-    const riskScore = age * 4
-      + (Number.isFinite(insight.availabilityRate) ? Math.max(0, 97 - insight.availabilityRate) * 4 : 0)
-      + Math.max(0, 70 - device.utilization) * 1.2
-      + Math.max(0, paybackDelay) * 7;
-    let recommendation = "持续运行";
-    let tone = "success";
-    if (device.utilization < 60 || paybackDelay >= 2) {
-      recommendation = "专项优化";
-      tone = "danger";
-    } else if (age >= 5 && Number.isFinite(insight.availabilityRate) && insight.availabilityRate < 95) {
-      recommendation = "更新论证";
-      tone = "warning";
-    } else if ((Number.isFinite(insight.availabilityRate) && insight.availabilityRate < 97) || (Number.isFinite(insight.pmCompletionRate) && insight.pmCompletionRate < 95)) {
-      recommendation = "保障提升";
-      tone = "warning";
+function draftFromAction(action: ImprovementAction): ActionDraft {
+  return {
+    id: action.id,
+    deviceId: action.deviceId,
+    title: action.title,
+    issue: action.issue,
+    owner: action.owner,
+    dueDate: action.dueDate,
+    priority: action.priority,
+    status: action.status,
+    progress: String(action.progress),
+    expectedBenefit: numberText(action.expectedBenefit),
+    baselineValue: numberText(action.baselineValue),
+    targetValue: numberText(action.targetValue),
+    actualValue: numberText(action.actualValue),
+    metricUnit: action.metricUnit ?? "",
+    actualBenefit: numberText(action.actualBenefit),
+    evidence: action.evidence ?? "",
+    sourceFinding: action.sourceFinding,
+  };
+}
+
+function optionalNumber(raw: string) {
+  return raw.trim() === "" ? undefined : Number(raw);
+}
+
+/** 达成率对「越高越好」和「越低越好」都成立：都按基线到目标这段距离走了多少算。 */
+function achievement(action: ImprovementAction) {
+  const { baselineValue, targetValue, actualValue } = action;
+  if (baselineValue === undefined || targetValue === undefined) return null;
+  if (actualValue === undefined) return 0;
+  const span = targetValue - baselineValue;
+  if (span === 0) return actualValue === targetValue ? 100 : 0;
+  return Math.max(0, Math.min(100, Math.round(((actualValue - baselineValue) / span) * 100)));
+}
+
+export default function ImprovementCenter({
+  diagnoses,
+  actions,
+  setActions,
+  periodLabel,
+  onSelectDevice,
+  onSendToCapital,
+  notify,
+  canManage,
+  pendingFinding,
+  onPendingFindingConsumed,
+}: {
+  diagnoses: DeviceDiagnosis[];
+  actions: ImprovementAction[];
+  setActions: Dispatch<SetStateAction<ImprovementAction[]>>;
+  periodLabel: string;
+  onSelectDevice: (deviceId: string) => void;
+  /** route 为 capital 的问题，一键转去资本计划 */
+  onSendToCapital: (deviceId: string) => void;
+  notify: (message: string, tone?: "info" | "error") => void;
+  canManage: boolean;
+  /** 从效益分析页点「建改进任务」带过来的问题：进页面就把新建任务弹窗打开并预填 */
+  pendingFinding?: { deviceId: string; finding: Finding };
+  onPendingFindingConsumed?: () => void;
+}) {
+  /**
+   * 效益分析页带过来的问题要一进页面就把弹窗开好。
+   * 用惰性初值而不是 effect：切到本页时组件是全新挂载，
+   * effect 里再 setState 会先渲染一帧空列表再弹窗，看着像闪了一下。
+   */
+  const [draft, setDraft] = useState<ActionDraft | null>(() => {
+    if (!pendingFinding) return null;
+    const facts = diagnoses.find((item) => item.facts.deviceId === pendingFinding.deviceId)?.facts;
+    return draftFromFinding(pendingFinding.deviceId, pendingFinding.finding, facts);
+  });
+  const today = todayISO();
+
+  const factsById = useMemo(
+    () => new Map(diagnoses.map((item) => [item.facts.deviceId, item.facts])),
+    [diagnoses],
+  );
+
+  // Esc 关弹窗。只在弹窗打开时注册，避免常驻一个全局键盘监听。
+  useEffect(() => {
+    if (!draft) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setDraft(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [draft]);
+
+  // 弹窗已在惰性初值里开好，这里只回告父组件「这条问题已消费」，避免来回切页反复弹。
+  const consumedRef = useRef(false);
+  useEffect(() => {
+    if (consumedRef.current || !pendingFinding) return;
+    consumedRef.current = true;
+    onPendingFindingConsumed?.();
+  }, [pendingFinding, onPendingFindingConsumed]);
+
+  const findingRows = useMemo(() => {
+    const rows = diagnoses.flatMap((diagnosis) =>
+      diagnosis.findings.map((finding) => ({ finding, facts: diagnosis.facts, riskScore: diagnosis.riskScore })),
+    );
+    return rows.sort(
+      (a, b) =>
+        SEVERITY_ORDER[a.finding.severity] - SEVERITY_ORDER[b.finding.severity] || b.riskScore - a.riskScore,
+    );
+  }, [diagnoses]);
+
+  /** 本页只认领 route === "improvement"；capital 交给资本计划，data 是填报的事，不在本页出现。 */
+  const { pendingRows, claimedRows } = useMemo(() => {
+    const pending: typeof findingRows = [];
+    const claimed: Array<(typeof findingRows)[number] & { action: ImprovementAction }> = [];
+    for (const row of findingRows) {
+      if (row.finding.route !== "improvement") continue;
+      const owner = actions.find((action) => matchesFinding(action, row.facts.deviceId, row.finding));
+      if (owner) claimed.push({ ...row, action: owner });
+      else pending.push(row);
     }
-    return { device, insight, age, riskScore, recommendation, tone };
-  }).sort((a, b) => b.riskScore - a.riskScore), [devices, publishedData]);
+    return { pendingRows: pending, claimedRows: claimed };
+  }, [actions, findingRows]);
 
-  const deviceAlerts = useMemo(() => evaluateAlertRules(alertRules, devices, (deviceId) => {
-    const insight = resolvedInsightFor(publishedData, deviceId);
-    return insight.dataStatus === "unavailable" ? undefined : insight;
-  }), [alertRules, devices, publishedData]);
-  const enabledAlertRuleCount = alertRules.filter((rule) => rule.enabled).length;
+  const capitalRows = useMemo(() => findingRows.filter((row) => row.finding.route === "capital"), [findingRows]);
 
-  const completedActions = actions.filter((action) => action.status === "已完成");
-  const activeActions = actions.filter((action) => action.status !== "已完成");
-  const expectedBenefit = activeActions.reduce((sum, action) => sum + action.expectedBenefit, 0);
-  const confirmedBenefit = completedActions.reduce((sum, action) => sum + (action.actualBenefit ?? 0), 0);
+  const stats = useMemo(() => {
+    const done = actions.filter((action) => action.status === "已完成");
+    return {
+      pending: pendingRows.length,
+      running: actions.filter((action) => action.status === "进行中").length,
+      done: done.length,
+      benefit: done.reduce((sum, action) => sum + (action.actualBenefit ?? 0), 0),
+      overdue: actions.filter((action) => isOverdue(action, today)).length,
+    };
+  }, [actions, pendingRows.length, today]);
+
+  const targetRows = useMemo(
+    () => actions.filter((action) => action.targetValue !== undefined && action.baselineValue !== undefined),
+    [actions],
+  );
+
+  function deviceLabel(deviceId: string) {
+    const facts = factsById.get(deviceId);
+    return facts ? `${facts.name}${facts.model ? ` · ${facts.model}` : ""}` : deviceId;
+  }
+
+  function guard() {
+    if (canManage) return true;
+    notify("当前账号只能查看改进任务，不能新建或修改", "error");
+    return false;
+  }
+
+  function openCreate(deviceId: string, finding?: Finding) {
+    if (!guard()) return;
+    setDraft(finding ? draftFromFinding(deviceId, finding, factsById.get(deviceId)) : emptyDraft(deviceId));
+  }
 
   function advanceAction(action: ImprovementAction) {
-    const nextStatus: ActionStatus = action.status === "待启动" ? "进行中" : action.status === "进行中" ? "已完成" : "待启动";
-    const nextProgress = nextStatus === "待启动" ? 15 : nextStatus === "进行中" ? 55 : 100;
-    setActions((current) => current.map((item) => item.id === action.id ? {
-      ...item,
-      status: nextStatus,
-      progress: nextProgress,
-      history: [...(item.history ?? []), { at: new Date().toISOString(), status: nextStatus, note: "任务状态更新" }],
-    } : item));
-    notify(`${action.title} 已更新为“${nextStatus}”`);
-  }
-
-  function openReview(action: ImprovementAction) {
-    setReviewingActionId(action.id);
-    setReviewDraft({
-      actualValue: action.actualValue?.toString() ?? "",
-      actualBenefit: action.actualBenefit?.toString() ?? "",
-      evidence: action.evidence ?? "",
-      reviewDate: action.reviewDate ?? "2026-08-11",
-    });
-  }
-
-  function saveReview(action: ImprovementAction) {
-    const actualValue = Number(reviewDraft.actualValue);
-    const actualBenefit = Number(reviewDraft.actualBenefit);
-    if (!Number.isFinite(actualValue) || !Number.isFinite(actualBenefit) || !reviewDraft.evidence.trim()) {
-      notify("请填写复测实际值、已确认收益和执行证据");
-      return;
-    }
-    setActions((current) => current.map((item) => item.id === action.id ? {
-      ...item,
-      actualValue,
-      actualBenefit,
-      evidence: reviewDraft.evidence.trim(),
-      reviewDate: reviewDraft.reviewDate,
-      status: "已完成",
-      progress: 100,
-      history: [...(item.history ?? []), { at: new Date().toISOString(), status: "已完成", note: "完成复测并登记已确认收益" }],
-    } : item));
-    setReviewingActionId("");
-    notify("复测结果和已确认收益已保存");
-  }
-
-  function saveScenario() {
-    if (!selectedDevice || !scenario) return;
-    const action: ImprovementAction = {
-      id: `scenario-${selectedDevice.id}-${Date.now()}`,
-      deviceId: selectedDevice.id,
-      title: `${selectedDevice.shortName}产能与可控成本优化方案`,
-      issue: `服务量 +${volumeLift}%、可控成本 -${costReduction}%、可用率 +${availabilityLift} 个百分点`,
-      owner: `${selectedDevice.department} / 医学装备部`,
-      dueDate: "2026-09-30",
-      expectedBenefit: Math.max(0, Number(scenario.incremental.toFixed(1))),
-      status: "待启动",
-      priority: scenario.incremental >= 80 ? "高" : "中",
-      progress: 10,
-      baselineValue: selectedDevice.utilization,
-      targetValue: Math.min(100, selectedDevice.utilization + volumeLift),
-      metricUnit: "% 使用率",
-      evidence: "",
-      history: [{ at: new Date().toISOString(), status: "待启动", note: "由情景测算创建" }],
-    };
-    setActions((current) => [action, ...current]);
-    notify("情景方案已保存到改进行动清单");
-  }
-
-  function resetActions() {
-    if (!demoMode) {
-      notify("正式模式不能写入演示任务");
-      return;
-    }
-    setActions(initialActions);
-    notify("改进行动已恢复为演示初始状态");
-  }
-
-  function toggleAlertRule(ruleId: string) {
-    setAlertRules((current) => current.map((rule) => rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule));
-  }
-
-  function updateAlertThreshold(rule: AlertRule, rawValue: string) {
-    if (!rawValue.trim()) return;
-    const nextThreshold = Number(rawValue);
-    const errors = validateAlertRule({ ...rule, threshold: nextThreshold });
-    if (errors.length) {
-      notify(errors[0]);
-      return;
-    }
-    const bounds = alertThresholdBounds[rule.metric];
-    const bounded = Math.min(bounds.max, Math.max(bounds.min, nextThreshold));
-    setAlertRules((current) => current.map((item) => item.id === rule.id ? { ...item, threshold: bounded } : item));
-  }
-
-  function convertAlertToAction(alert: DeviceAlert) {
-    const actionId = `action-alert-${alert.ruleId}-${alert.deviceId}`;
-    if (actions.some((action) => action.id === actionId)) {
-      notify("该预警已有对应改进任务");
-      return;
-    }
-    const nextAction: ImprovementAction = {
-      id: actionId,
-      deviceId: alert.deviceId,
-      title: alert.suggestedAction.title,
-      issue: alert.message,
-      owner: alert.suggestedAction.owner,
-      dueDate: alert.severity === "high" ? "2026-09-15" : "2026-10-15",
-      expectedBenefit: 0,
-      status: "待启动",
-      priority: alert.severity === "high" ? "高" : "中",
-      progress: 0,
-      baselineValue: alert.currentValue,
-      targetValue: alert.threshold,
-      metricUnit: alert.unit,
-      evidence: "",
-      history: [{ at: new Date().toISOString(), status: "待启动", note: "由预警中心命中规则生成" }],
-    };
-    setActions((current) => [nextAction, ...current]);
-    notify("已生成改进任务，请指认负责人与期限");
-  }
-
-  if (!demoMode && devices.length === 0) {
-    return (
-      <>
-        <div className="page-heading improvement-heading">
-          <div>
-            <div className="eyebrow"><Target size={15} />从指标预警到收益兑现</div>
-            <h1>运营改进中心</h1>
-          </div>
-        </div>
-        <section className="panel insight-unavailable">
-          <CircleAlert size={22} />
-          <div>
-            <h3>正式模式下暂无已发布设备</h3>
-            <p>改进中心只使用已发布数据；请先在数据准备中心完成发布，或联系管理员一键载入示范数据。</p>
-          </div>
-        </section>
-      </>
+    if (!guard()) return;
+    const next: ActionStatus =
+      action.status === "待启动" ? "进行中" : action.status === "进行中" ? "已完成" : "进行中";
+    const progress = next === "已完成" ? 100 : next === "进行中" ? Math.max(action.progress, 40) : action.progress;
+    setActions((current) =>
+      current.map((item) =>
+        item.id === action.id
+          ? {
+              ...item,
+              status: next,
+              progress,
+              history: [
+                ...(item.history ?? []),
+                { at: today, status: next, note: `状态由「${action.status}」推进到「${next}」` },
+              ],
+            }
+          : item,
+      ),
     );
+    notify(`${action.title} 已更新为「${next}」`);
   }
 
-  if (!selectedDevice || !scenario) return null;
-
-  const scenarioBars = [
-    { name: "现金贡献", 当前: Number(scenario.currentContribution.toFixed(1)), 方案后: Number(scenario.projectedContribution.toFixed(1)) },
-    { name: "设备收入", 当前: Number(scenario.currentRevenue.toFixed(1)), 方案后: Number(scenario.projectedRevenue.toFixed(1)) },
-  ];
+  function saveDraft() {
+    if (!draft || !guard()) return;
+    const title = draft.title.trim();
+    const owner = draft.owner.trim();
+    if (!title || !owner || !draft.dueDate) {
+      notify("任务标题、负责人和截止日必须填写", "error");
+      return;
+    }
+    const numericFields = [
+      draft.progress,
+      draft.expectedBenefit,
+      draft.baselineValue,
+      draft.targetValue,
+      draft.actualValue,
+      draft.actualBenefit,
+    ];
+    if (numericFields.some((value) => value.trim() !== "" && !Number.isFinite(Number(value)))) {
+      notify("进度、收益、基线/目标/实际值只能填数字", "error");
+      return;
+    }
+    const status = draft.status;
+    const next: ImprovementAction = {
+      id: draft.id || `action-${draft.deviceId || "device"}-${Date.now()}`,
+      deviceId: draft.deviceId,
+      title,
+      issue: draft.issue.trim(),
+      owner,
+      dueDate: draft.dueDate,
+      expectedBenefit: Number(draft.expectedBenefit || 0),
+      status,
+      priority: draft.priority,
+      progress: Math.max(0, Math.min(100, Number(draft.progress || 0))),
+      actualBenefit: optionalNumber(draft.actualBenefit),
+      baselineValue: optionalNumber(draft.baselineValue),
+      targetValue: optionalNumber(draft.targetValue),
+      actualValue: optionalNumber(draft.actualValue),
+      metricUnit: draft.metricUnit.trim() || undefined,
+      evidence: draft.evidence.trim() || undefined,
+      reviewDate: draft.actualValue.trim() ? today : undefined,
+      sourceFinding: draft.sourceFinding,
+    };
+    setActions((current) => {
+      const existing = current.find((item) => item.id === next.id);
+      if (!existing) {
+        return [{ ...next, history: [{ at: today, status, note: "由待认领问题建立改进任务" }] }, ...current];
+      }
+      const statusChanged = existing.status !== status;
+      return current.map((item) =>
+        item.id === next.id
+          ? {
+              ...next,
+              history: statusChanged
+                ? [...(item.history ?? []), { at: today, status, note: `编辑任务并改为「${status}」` }]
+                : item.history,
+            }
+          : item,
+      );
+    });
+    setDraft(null);
+    notify(draft.id ? "任务已更新" : "改进任务已建立，请跟进负责人与期限");
+  }
 
   return (
-    <>
-      <div className="page-heading improvement-heading">
+    <div className={styles.root}>
+      <div className="page-heading">
         <div>
-          <div className="eyebrow"><Target size={15} />从指标预警到收益兑现</div>
+          <div className="eyebrow"><Target size={15} />问题到收益的闭环</div>
           <h1>运营改进中心</h1>
         </div>
-        <div className="heading-actions">
-          <span className="page-badge"><ShieldCheck size={16} />示例目标 · 可按院内制度配置</span>
-          {demoMode ? <button className="secondary-button" onClick={resetActions}><RefreshCw size={16} />重置演示任务</button> : null}
-        </div>
+        <div className={styles.headingMeta}><CalendarClock size={14} />数据期间 {periodLabel}</div>
       </div>
 
-      <section className="improvement-loop" aria-label="运营改进闭环">
-        {[
-          ["01", "发现差距", "对标目标、同类设备和趋势", <Gauge key="gauge" size={18} />],
-          ["02", "情景测算", "统一收入、现金成本与回收口径", <Calculator key="calculator" size={18} />],
-          ["03", "责任到人", "形成负责人、期限和预期收益", <ClipboardCheck key="clipboard" size={18} />],
-          ["04", "复盘收益", "验证等待、可用率和效益改善", <CheckCircle2 key="check" size={18} />],
-        ].map(([index, title, note, icon], itemIndex) => (
-          <article key={String(title)}>
-            <span>{icon}</span>
-            <div><small>{index}</small><strong>{title}</strong><p>{note}</p></div>
-            {itemIndex < 3 ? <ArrowRight className="loop-arrow" size={17} /> : null}
-          </article>
-        ))}
+      <section className={styles.stats} aria-label="闭环概览">
+        <article className={styles.statCard}>
+          <span>待认领问题</span><strong>{stats.pending}</strong><small>诊断命中且未建任务</small>
+        </article>
+        <article className={styles.statCard}>
+          <span>进行中任务</span><strong>{stats.running}</strong><small>已指认负责人</small>
+        </article>
+        <article className={styles.statCard}>
+          <span>本期已完成</span><strong>{stats.done}</strong><small>{periodLabel}</small>
+        </article>
+        <article className={styles.statCard}>
+          <span>已兑现收益</span><strong>{currency.format(stats.benefit)}</strong><small>万元 · 复测确认口径</small>
+        </article>
+        <article className={`${styles.statCard} ${stats.overdue ? styles.statAlarm : ""}`}>
+          <span>逾期任务</span><strong>{stats.overdue}</strong><small>截止日已过且未完成</small>
+        </article>
       </section>
 
-      <div className="section-heading compact-section-heading">
-        <div><h2>预警中心</h2></div>
-        <span className="chart-note">{enabledAlertRuleCount} 条规则启用 · 命中 {deviceAlerts.length} 条</span>
-      </div>
-      <section className={alertStyles.alertCenter} aria-label="预警中心">
-        <section className="panel">
-          <div className="panel-heading">
-            <div><h3>预警规则配置</h3><p>高/中严重度对应改进任务的高/中优先级。</p></div>
+      <section className={styles.panel} aria-label="待认领问题">
+        <header className={styles.panelHead}>
+          <div>
+            <h2>待认领问题</h2>
+            <p>来自效益诊断，按严重度与风险分排序。</p>
           </div>
-          <ul className={alertStyles.ruleList}>
-            {alertRules.map((rule) => {
-              const bounds = alertThresholdBounds[rule.metric];
+          <span className={styles.panelNote}>待认领 {pendingRows.length} 条 · 已认领 {claimedRows.length} 条</span>
+        </header>
+
+        {pendingRows.length === 0 ? (
+          <p className={styles.empty}>
+            {findingRows.length === 0 ? "本期诊断没有产生问题，或数据尚未发布。" : "运营类问题都已认领。"}
+          </p>
+        ) : (
+          <ul className={styles.findingList}>
+            {pendingRows.map((row) => (
+              <li key={`${row.facts.deviceId}-${row.finding.code}`} className={styles.findingRow}>
+                <span className={`status-pill ${SEVERITY_TONE[row.finding.severity]}`}>
+                  {SEVERITY_LABEL[row.finding.severity]}
+                </span>
+                <div className={styles.findingBody}>
+                  <button type="button" className={styles.deviceLink} onClick={() => onSelectDevice(row.facts.deviceId)}>
+                    <strong>{row.facts.name}</strong>
+                    <span>{row.facts.model}</span>
+                    <small>{row.facts.department}</small>
+                    <ChevronRight size={13} />
+                  </button>
+                  <p className={styles.findingTitle}>{row.finding.title}</p>
+                  <p className={styles.findingEvidence}>{row.finding.evidence}</p>
+                  <p className={styles.findingSuggestion}>建议：{row.finding.suggestion}</p>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button compact-action"
+                  onClick={() => openCreate(row.facts.deviceId, row.finding)}
+                >
+                  建改进任务
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {claimedRows.length ? (
+          <div className={styles.claimedBlock}>
+            <span className={styles.blockTitle}>已认领</span>
+            <ul className={styles.claimedList}>
+              {claimedRows.map((row) => (
+                <li key={`claimed-${row.facts.deviceId}-${row.finding.code}`}>
+                  <span className="status-pill success">已认领</span>
+                  <span className={styles.claimedFinding}>{row.facts.name} · {row.finding.title}</span>
+                  <span className={styles.claimedAction}>{row.action.title}</span>
+                  <span className={`status-pill ${STATUS_TONE[row.action.status]}`}>{row.action.status}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {capitalRows.length ? (
+          <div className={styles.capitalBlock}>
+            <span className={styles.blockTitle}>属于更新与处置，转资本计划</span>
+            <ul className={styles.capitalList}>
+              {capitalRows.map((row) => (
+                <li key={`capital-${row.facts.deviceId}-${row.finding.code}`}>
+                  <div>
+                    <strong>{row.facts.name} · {row.finding.title}</strong>
+                    <small>{row.finding.evidence}</small>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button compact-action"
+                    onClick={() => onSendToCapital(row.facts.deviceId)}
+                  >
+                    转资本计划<ArrowRight size={13} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
+
+      <section className={styles.panel} aria-label="任务闭环看板">
+        <header className={styles.panelHead}>
+          <div>
+            <h2>任务闭环看板</h2>
+            <p>推进状态与填实际值都会写入任务历史。</p>
+          </div>
+          {canManage ? (
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => openCreate(diagnoses[0]?.facts.deviceId ?? "")}
+            >
+              <ClipboardCheck size={15} />新建任务
+            </button>
+          ) : null}
+        </header>
+
+        {actions.length === 0 ? (
+          <p className={styles.empty}>还没有改进任务，从上面的待认领问题建一条。</p>
+        ) : (
+          <div className={styles.board}>
+            {STATUS_COLUMNS.map((column) => {
+              const columnActions = actions.filter((action) => action.status === column);
               return (
-                <li key={rule.id} className={alertStyles.ruleRow} data-enabled={rule.enabled}>
-                  <label className={alertStyles.ruleToggle}>
-                    <input type="checkbox" checked={rule.enabled} onChange={() => toggleAlertRule(rule.id)} />
-                    <span>{rule.name}</span>
-                  </label>
-                  <span className={`status-pill ${rule.severity === "high" ? "danger" : "warning"}`}>{rule.severity === "high" ? "高" : "中"}</span>
-                  <label className={alertStyles.ruleThreshold}>
-                    <span>{rule.operator === "lt" ? "低于" : "高于"}</span>
-                    <input
-                      type="number"
-                      min={bounds.min}
-                      max={bounds.max}
-                      step={bounds.step}
-                      value={rule.threshold}
-                      onChange={(event) => updateAlertThreshold(rule, event.target.value)}
-                      aria-label={`${rule.name}阈值`}
-                    />
-                    <span>{rule.unit}</span>
-                  </label>
+                <div key={column} className={styles.boardColumn}>
+                  <header className={styles.boardHead}>
+                    <span className={`status-pill ${STATUS_TONE[column]}`}>{column}</span>
+                    <b>{columnActions.length}</b>
+                  </header>
+                  {columnActions.length === 0 ? (
+                    <p className={styles.columnEmpty}>暂无任务</p>
+                  ) : (
+                    columnActions.map((action) => {
+                      const overdue = isOverdue(action, today);
+                      const facts = factsById.get(action.deviceId);
+                      const unit = action.metricUnit ?? "";
+                      return (
+                        <article
+                          key={action.id}
+                          className={`${styles.taskCard} ${overdue ? styles.taskOverdue : ""}`}
+                        >
+                          <div className={styles.taskTop}>
+                            <span className={`status-pill ${action.priority === "高" ? "danger" : action.priority === "中" ? "warning" : "neutral"}`}>
+                              {action.priority}优先级
+                            </span>
+                            {overdue ? (
+                              <span className={styles.overdueTag}>
+                                <TriangleAlert size={12} />逾期 {overdueDays(action.dueDate, today)} 天
+                              </span>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            className={styles.taskTitle}
+                            onClick={() => onSelectDevice(action.deviceId)}
+                          >
+                            <strong>{action.title}</strong><ChevronRight size={14} />
+                          </button>
+                          <p className={styles.taskIssue}>{action.issue}</p>
+                          <dl className={styles.taskMeta}>
+                            <div><dt>设备</dt><dd>{facts ? `${facts.name} · ${facts.department}` : action.deviceId}</dd></div>
+                            <div><dt>负责人</dt><dd>{action.owner}</dd></div>
+                            <div>
+                              <dt>截止日</dt>
+                              <dd className={overdue ? styles.overdueText : ""}>{action.dueDate}</dd>
+                            </div>
+                            <div><dt>预计收益</dt><dd>{currency.format(action.expectedBenefit)} 万元</dd></div>
+                            {action.actualBenefit !== undefined ? (
+                              <div><dt>实际收益</dt><dd>{currency.format(action.actualBenefit)} 万元</dd></div>
+                            ) : null}
+                          </dl>
+                          {action.baselineValue !== undefined ? (
+                            <p className={styles.taskMetric}>
+                              基线 {action.baselineValue}{unit} → 目标 {action.targetValue ?? "—"}{unit} → 实际{" "}
+                              {action.actualValue ?? "待复测"}{unit}
+                            </p>
+                          ) : null}
+                          {action.evidence ? <p className={styles.taskEvidence}>{action.evidence}</p> : null}
+                          <div className={styles.progressTrack}>
+                            <i style={{ width: `${Math.max(0, Math.min(100, action.progress))}%` }} />
+                          </div>
+                          <footer className={styles.taskFoot}>
+                            <span>{action.progress}%</span>
+                            {canManage ? (
+                              <div className={styles.taskButtons}>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-action"
+                                  onClick={() => setDraft(draftFromAction(action))}
+                                >
+                                  编辑 / 填实际值
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-action"
+                                  onClick={() => advanceAction(action)}
+                                >
+                                  {action.status === "待启动" ? "开始处理" : action.status === "进行中" ? "标记完成" : "重新打开"}
+                                  <ArrowRight size={13} />
+                                </button>
+                              </div>
+                            ) : null}
+                          </footer>
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className={styles.panel} aria-label="目标达成">
+        <header className={styles.panelHead}>
+          <div>
+            <h2>目标达成</h2>
+            <p>只统计设定了基线与目标的任务，实际值来自复测。</p>
+          </div>
+          <span className={styles.panelNote}>{targetRows.length} 项有目标</span>
+        </header>
+        {targetRows.length === 0 ? (
+          <p className={styles.empty}>还没有任务设定基线与目标，编辑任务补上后这里出现达成率。</p>
+        ) : (
+          <ul className={styles.targetList}>
+            {targetRows.map((action) => {
+              const rate = achievement(action) ?? 0;
+              const unit = action.metricUnit ?? "";
+              return (
+                <li key={`target-${action.id}`} className={styles.targetRow}>
+                  <div className={styles.targetHead}>
+                    <strong>{action.title}</strong>
+                    <small>{deviceLabel(action.deviceId)}</small>
+                  </div>
+                  <div className={styles.targetNumbers}>
+                    <span>基线 {action.baselineValue}{unit}</span>
+                    <span>目标 {action.targetValue}{unit}</span>
+                    <span>实际 {action.actualValue === undefined ? "待复测" : `${action.actualValue}${unit}`}</span>
+                  </div>
+                  <div className={styles.targetBar}>
+                    <i style={{ width: `${rate}%` }} data-reached={rate >= 100} />
+                  </div>
+                  <span className={styles.targetRate}>{rate}%</span>
                 </li>
               );
             })}
           </ul>
-          <p className={alertStyles.rulePersistNote}>规则暂存当前会话，正式版本随医院配置下发。</p>
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <div><h3>实时预警清单</h3><p>按严重度与偏离幅度排序；无洞察事实的设备不参与可靠性评分预警，不做估算代替。</p></div>
-            <span className="chart-note"><BellRing size={13} /> 命中 {deviceAlerts.length} 条</span>
-          </div>
-          {devices.length === 0 ? (
-            <p className={alertStyles.alertEmpty}>暂无可评估设备</p>
-          ) : deviceAlerts.length === 0 ? (
-            <p className={alertStyles.alertEmpty}>当前规则下暂无预警命中</p>
-          ) : (
-            <ul className={alertStyles.alertRows}>
-              {deviceAlerts.map((alert) => {
-                const converted = actions.some((action) => action.id === `action-alert-${alert.ruleId}-${alert.deviceId}`);
-                return (
-                  <li key={`${alert.ruleId}-${alert.deviceId}`} className={alertStyles.alertRow}>
-                    <span className={`status-pill ${alert.severity === "high" ? "danger" : "warning"}`}>{alert.severity === "high" ? "高" : "中"}</span>
-                    <div className={alertStyles.alertBody}>
-                      <strong>{alert.deviceName}<small>{alert.department}</small></strong>
-                      <span className={alertStyles.alertValues}>指标现值 {alert.currentValue}{alert.unit} · 阈值 {alert.threshold}{alert.unit}</span>
-                      <span className={alertStyles.alertMessage}>{alert.message}</span>
-                    </div>
-                    <button className={`secondary-button${converted ? ` ${alertStyles.alertActionDone}` : ""}`} disabled={converted} onClick={() => convertAlertToAction(alert)}>{converted ? "已生成任务" : "转为改进任务"}</button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+        )}
       </section>
 
-      <div className="section-heading">
-        <div><h2>目标差距雷达</h2><p>目标为院内管理示例；阳性率等质量指标必须按设备类别和适用项目分组，不能直接横向排名。</p></div>
-        <span className="chart-note">按当前纳管设备加权前的简单平均</span>
-      </div>
-      <section className="target-grid">
-        <MetricTarget label="平均使用率" value={averages.utilization} unit="%" target={80} targetLabel="院内示例目标" icon={<Gauge size={17} />} />
-        <MetricTarget label="设备可用率" value={averages.availability} unit="%" target={97} targetLabel="院内示例目标" icon={<Wrench size={17} />} />
-        <MetricTarget label="PM 完成率" value={averages.pm} unit="%" target={95} targetLabel="院内示例目标" icon={<ShieldCheck size={17} />} />
-        <MetricTarget label="现场等待" value={averages.wait} unit="分钟" target={30} targetLabel="院内示例目标" inverse icon={<Clock3 size={17} />} />
-      </section>
-
-      <div className="improvement-two-column scenario-section">
-        <section className="panel scenario-panel">
-          <div className="panel-heading">
-            <div><h3>单机效益情景测算</h3><p>使用现金贡献口径估算回收期，折旧不作为现金支出；耗材随服务量联动。</p></div>
-            <select value={selectedDevice.id} onChange={(event) => setSelectedDeviceId(event.target.value)}>
-              {devices.map((device) => <option key={device.id} value={device.id}>{device.shortName}</option>)}
-            </select>
-          </div>
-          <div className="scenario-controls">
-            <label>
-              <span><b>服务量提升</b><strong>+{volumeLift}%</strong></span>
-              <input type="range" min="0" max="30" step="1" value={volumeLift} onChange={(event) => setVolumeLift(Number(event.target.value))} />
-              <small>假设次均收入不变；耗材成本按服务量同比增加</small>
-            </label>
-            <label>
-              <span><b>可控成本下降</b><strong>-{costReduction}%</strong></span>
-              <input type="range" min="0" max="12" step="1" value={costReduction} onChange={(event) => setCostReduction(Number(event.target.value))} />
-              <small>仅作用于维保、能源与间接成本，不压缩质量投入</small>
-            </label>
-            <label>
-              <span><b>可用率提升</b><strong>+{availabilityLift}pp</strong></span>
-              <input type="range" min="0" max="5" step="0.5" value={availabilityLift} onChange={(event) => setAvailabilityLift(Number(event.target.value))} />
-              <small>作为保障目标展示，不重复折算收入，避免效益高估</small>
-            </label>
-          </div>
-          <div className="scenario-results">
-            <div><span>年度增量现金贡献</span><strong className={scenario.incremental >= 0 ? "positive" : "negative"}>{scenario.incremental >= 0 ? "+" : ""}{currency.format(scenario.incremental)} 万</strong><small>方案前后现金贡献差额</small></div>
-            <div><span>现金回收期</span><strong>{scenario.projectedPayback ? `${scenario.projectedPayback.toFixed(1)} 年` : "尚不可回收"}</strong><small>当前 {scenario.currentPayback ? `${scenario.currentPayback.toFixed(1)} 年` : "尚不可回收"}</small></div>
-            <div><span>目标可用率</span><strong>{scenario.projectedAvailability === null ? "待发布" : `${scenario.projectedAvailability.toFixed(1)}%`}</strong><small>{scenario.projectedAvailability === null ? "尚无设备保障事实" : `当前 ${resolvedInsightFor(publishedData, selectedDevice.id).availabilityRate.toFixed(1)}%`}</small></div>
-          </div>
-          <button className="primary-button scenario-save" onClick={saveScenario}><ClipboardCheck size={16} />保存为改进方案</button>
-        </section>
-
-        <section className="panel scenario-chart-panel">
-          <div className="panel-heading"><div><h3>方案前后效益对比</h3><p>单位：万元/年 · 为管理测算，不替代财务预算审批</p></div></div>
-          <div className="scenario-chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={scenarioBars} margin={{ top: 12, right: 12, left: -12, bottom: 0 }}>
-                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 12 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 12 }} />
-                <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)" }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="当前" fill="var(--primary-soft-strong)" radius={[5, 5, 0, 0]} barSize={34} />
-                <Bar dataKey="方案后" fill="var(--green)" radius={[5, 5, 0, 0]} barSize={34} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="scenario-guardrail"><ShieldCheck size={17} /><span><strong>质量护栏</strong><small>方案执行期间同步监控报告合格率、重复检查率和患者等待，任一恶化即复盘。</small></span></div>
-        </section>
-      </div>
-
-      {!publishedData ? <section className="panel flow-panel">
-        <div className="panel-heading">
-          <div><h3>需求—产能周监测</h3><p>活动量不等于利用率，需同时观察转诊、完成量、积压、取消与等待。</p></div>
-          <span className="chart-note">CT 改进样例 · 非真实诊疗数据</span>
-        </div>
-        <div className="flow-summary">
-          <div><span>周转诊量</span><strong>860</strong><small><TrendingDown size={13} />较首周 -9.5%</small></div>
-          <div><span>周完成量</span><strong>950</strong><small><TrendingUp size={13} />连续 4 周高于需求</small></div>
-          <div><span>在册积压</span><strong>990</strong><small><TrendingDown size={13} />较峰值 -18.5%</small></div>
-          <div><span>转诊至检查</span><strong>9 天</strong><small><TrendingDown size={13} />较首周缩短 9 天</small></div>
-        </div>
-        <div className="flow-chart-grid">
-          <div className="flow-chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weeklyFlow} margin={{ top: 12, right: 15, left: -10, bottom: 0 }}>
-                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
-                <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 12 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 12 }} />
-                <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)" }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="referrals" name="转诊需求" stroke="var(--orange)" strokeWidth={2.2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="activity" name="完成量" stroke="var(--primary)" strokeWidth={2.4} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="backlog" name="积压" stroke="var(--violet)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flow-chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weeklyFlow} margin={{ top: 12, right: 15, left: -10, bottom: 0 }}>
-                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
-                <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 12 }} />
-                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 12 }} />
-                <YAxis yAxisId="right" orientation="right" domain={[70, 100]} tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 12 }} />
-                <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)" }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine yAxisId="right" y={90} stroke="var(--green)" strokeDasharray="4 4" />
-                <Line yAxisId="left" type="monotone" dataKey="cancellations" name="取消数" stroke="var(--red)" strokeWidth={2.2} dot={{ r: 3 }} />
-                <Line yAxisId="left" type="monotone" dataKey="leadTime" name="等待天数" stroke="var(--orange)" strokeWidth={2.2} dot={{ r: 3 }} />
-                <Line yAxisId="right" type="monotone" dataKey="utilization" name="利用率%" stroke="var(--green)" strokeWidth={2.4} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
+      {draft ? (
+        <div
+          className={styles.dialogScrim}
+          role="dialog"
+          aria-modal="true"
+          aria-label={draft.id ? "编辑改进任务" : "新建改进任务"}
+          // 点遮罩和按 Esc 都要能关：仓库里其它弹窗都是这个手感，
+          // 少了这两条，用户只能去找右上角那个小叉，中途还点不动别的菜单。
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setDraft(null); }}
+        >
+          <div className={styles.dialog}>
+            <header className={styles.dialogHead}>
+              <div>
+                <strong>{draft.id ? "编辑改进任务" : "新建改进任务"}</strong>
+                <small>{deviceLabel(draft.deviceId)}</small>
+              </div>
+              <button type="button" className={styles.iconButton} onClick={() => setDraft(null)} aria-label="关闭">
+                <X size={16} />
+              </button>
+            </header>
+            <div className={styles.dialogBody}>
+              <label className={styles.fieldWide}>
+                <span>任务标题</span>
+                <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+              </label>
+              <label className={styles.fieldWide}>
+                <span>问题描述</span>
+                <textarea rows={2} value={draft.issue} onChange={(event) => setDraft({ ...draft, issue: event.target.value })} />
+              </label>
+              <label className={styles.field}>
+                <span>设备</span>
+                <select value={draft.deviceId} onChange={(event) => setDraft({ ...draft, deviceId: event.target.value })}>
+                  {factsById.has(draft.deviceId) ? null : <option value={draft.deviceId}>{draft.deviceId || "未指定"}</option>}
+                  {diagnoses.map((item) => (
+                    <option key={item.facts.deviceId} value={item.facts.deviceId}>{item.facts.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>负责人</span>
+                <input value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} placeholder="科室 / 部门" />
+              </label>
+              <label className={styles.field}>
+                <span>截止日</span>
+                <input type="date" value={draft.dueDate} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} />
+              </label>
+              <label className={styles.field}>
+                <span>优先级</span>
+                <select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as Priority })}>
+                  {(["高", "中", "低"] as Priority[]).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>状态</span>
+                <select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as ActionStatus })}>
+                  {STATUS_COLUMNS.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>进度（%）</span>
+                <input type="number" value={draft.progress} onChange={(event) => setDraft({ ...draft, progress: event.target.value })} />
+              </label>
+              <label className={styles.field}>
+                <span>指标单位</span>
+                <input value={draft.metricUnit} onChange={(event) => setDraft({ ...draft, metricUnit: event.target.value })} placeholder="如 % 使用率" />
+              </label>
+              <label className={styles.field}>
+                <span>基线值</span>
+                <input type="number" value={draft.baselineValue} onChange={(event) => setDraft({ ...draft, baselineValue: event.target.value })} />
+              </label>
+              <label className={styles.field}>
+                <span>目标值</span>
+                <input type="number" value={draft.targetValue} onChange={(event) => setDraft({ ...draft, targetValue: event.target.value })} />
+              </label>
+              <label className={styles.field}>
+                <span>实际值</span>
+                <input type="number" value={draft.actualValue} onChange={(event) => setDraft({ ...draft, actualValue: event.target.value })} />
+              </label>
+              <label className={styles.field}>
+                <span>预计收益（万元）</span>
+                <input type="number" value={draft.expectedBenefit} onChange={(event) => setDraft({ ...draft, expectedBenefit: event.target.value })} />
+              </label>
+              <label className={styles.field}>
+                <span>实际收益（万元）</span>
+                <input type="number" value={draft.actualBenefit} onChange={(event) => setDraft({ ...draft, actualBenefit: event.target.value })} />
+              </label>
+              <label className={styles.fieldWide}>
+                <span>执行证据</span>
+                <textarea rows={2} value={draft.evidence} onChange={(event) => setDraft({ ...draft, evidence: event.target.value })} placeholder="排班表、工单号、会议纪要或复测记录" />
+              </label>
+            </div>
+            <footer className={styles.dialogFoot}>
+              <span className={styles.dialogNote}><CircleAlert size={13} />实际值与实际收益需有可核对的证据</span>
+              <button type="button" className="text-button" onClick={() => setDraft(null)}>取消</button>
+              <button type="button" className="primary-button" onClick={saveDraft}>
+                <ClipboardCheck size={15} />保存任务
+              </button>
+            </footer>
           </div>
         </div>
-      </section> : <section className="panel flow-panel"><div className="panel-heading"><div><h3>需求—产能周监测</h3><p>正式模式只展示发布文件中的期间指标；当前版本尚未发布转诊、完成量、积压、取消与等待序列。</p></div><span className="chart-note">暂无发布事实</span></div></section>}
-
-      <section className="panel action-center">
-        <div className="panel-heading">
-          <div><h3>管理行动闭环</h3></div>
-          <div className="action-summary"><span>{activeActions.length} 项进行中</span><strong>预期增益 {currency.format(expectedBenefit)} 万/年</strong><small>已确认收益 {currency.format(confirmedBenefit)} 万/年 · {completedActions.length} 项已完成</small></div>
-        </div>
-        <div className="action-board">
-          {actions.map((action) => {
-            const device = devices.find((item) => item.id === action.deviceId);
-            const buttonLabel = action.status === "待启动" ? "开始处理" : action.status === "进行中" ? "标记完成" : "重新打开";
-            return (
-              <article key={action.id} className={`action-card action-${action.status === "已完成" ? "done" : action.priority === "高" ? "high" : "normal"}`}>
-                <div className="action-card-head"><span className={`priority-pill priority-${action.priority}`}>{action.priority}优先级</span><span className={`status-pill ${action.status === "已完成" ? "success" : action.status === "进行中" ? "warning" : "neutral"}`}>{action.status}</span></div>
-                <button className="action-title" onClick={() => device && onSelectDevice(device)}><strong>{action.title}</strong><ChevronRight size={15} /></button>
-                <p>{action.issue}</p>
-                <dl><div><dt>责任人</dt><dd>{action.owner}</dd></div><div><dt>完成期限</dt><dd>{action.dueDate}</dd></div><div><dt>预期增益</dt><dd>{currency.format(action.expectedBenefit)} 万/年</dd></div>{action.actualBenefit !== undefined ? <div><dt>已确认收益</dt><dd>{currency.format(action.actualBenefit)} 万/年</dd></div> : null}</dl>
-                {(action.baselineValue !== undefined || action.evidence) ? <div className="action-evidence">
-                  <strong>执行证据与复测</strong>
-                  {action.baselineValue !== undefined ? <span>基线 {action.baselineValue}{action.metricUnit ?? ""} → 目标 {action.targetValue ?? "—"}{action.metricUnit ?? ""} → 实际 {action.actualValue ?? "待复测"}{action.metricUnit ?? ""}</span> : null}
-                  <small>{action.evidence || "尚未上传/登记执行证据"}{action.reviewDate ? ` · 复测 ${action.reviewDate}` : ""}</small>
-                </div> : null}
-                <div className="action-progress"><i style={{ width: `${action.progress}%` }} /></div>
-                <footer><span>{action.progress}%</span><div className="action-footer-buttons"><button className="review-button" onClick={() => openReview(action)}>记录复测</button><button onClick={() => advanceAction(action)}>{buttonLabel}<ArrowRight size={14} /></button></div></footer>
-                {reviewingActionId === action.id ? <div className="action-review-form">
-                  <label><span>复测实际值</span><input type="number" value={reviewDraft.actualValue} onChange={(event) => setReviewDraft((current) => ({ ...current, actualValue: event.target.value }))} /></label>
-                  <label><span>已确认收益（万元/年）</span><input type="number" value={reviewDraft.actualBenefit} onChange={(event) => setReviewDraft((current) => ({ ...current, actualBenefit: event.target.value }))} /></label>
-                  <label><span>复测日期</span><input type="date" value={reviewDraft.reviewDate} onChange={(event) => setReviewDraft((current) => ({ ...current, reviewDate: event.target.value }))} /></label>
-                  <label className="review-evidence"><span>执行证据</span><textarea rows={2} value={reviewDraft.evidence} onChange={(event) => setReviewDraft((current) => ({ ...current, evidence: event.target.value }))} placeholder="填写排班、工单、会议纪要、附件编号或复测数据说明" /></label>
-                  <div><button onClick={() => setReviewingActionId("")}>取消</button><button className="primary-button" onClick={() => saveReview(action)}>保存复测</button></div>
-                </div> : null}
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="panel lifecycle-panel">
-        <div className="panel-heading"><div><h3>全生命周期资源配置建议</h3><p>综合设备年龄、使用率、可用率和回本偏差形成论证线索；最终更新决策仍需临床、技术、财务与合规评审。</p></div><span className="chart-note">风险排序 · 非自动采购结论</span></div>
-        <div className="table-scroll">
-          <table className="data-table lifecycle-table">
-            <thead><tr><th>设备</th><th>启用年限</th><th className="num">使用率</th><th className="num">可用率 / PM</th><th className="num">年度净收益 / ROI</th><th className="num">计划 / 预计回本</th><th>管理建议</th><th>下一步</th></tr></thead>
-            <tbody>
-              {portfolio.map(({ device, insight, age, recommendation, tone }) => (
-                <tr key={device.id}>
-                  <td><button className="device-link" onClick={() => onSelectDevice(device)}><strong>{device.shortName}</strong><span>{device.department}</span></button></td>
-                  <td>{age} 年</td>
-                  <td className="num">{device.utilization}%</td>
-                  <td className="num">{Number.isFinite(insight.availabilityRate) ? `${insight.availabilityRate.toFixed(1)}% / ${insight.pmCompletionRate.toFixed(0)}%` : "待发布"}</td>
-                  <td className={`num ${netBenefit(device) < 0 ? "negative" : "positive"}`}>{currency.format(netBenefit(device))} 万 / {roi(device).toFixed(1)}%</td>
-                  <td className="num">{device.planPayback.toFixed(1)} / {device.forecastPayback.toFixed(1)} 年</td>
-                  <td><span className={`status-pill ${tone}`}>{recommendation}</span></td>
-                  <td><button className="text-button" onClick={() => onSelectDevice(device)}>查看单机分析</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className="section-heading practice-heading"><div><h2>行业优秀实践如何落到系统</h2></div></div>
-      <section className="practice-grid">
-        {practiceCards.map((practice) => (
-          <article key={practice.title}>
-            <div><span>{practice.label}</span><ExternalLink size={15} /></div>
-            <h3>{practice.title}</h3>
-            <p>{practice.practice}</p>
-            <strong><Lightbulb size={15} />{practice.applied}</strong>
-            <a href={practice.href} target="_blank" rel="noreferrer">查看官方来源{"overseas" in practice ? "（境外站点）" : ""}<ArrowRight size={14} /></a>
-          </article>
-        ))}
-      </section>
-
-      <div className="method-note"><CircleAlert size={17} /><span><strong>口径提示：</strong>改进目标值、设备分组、现金流口径及收益复盘规则，需由财务、医务、设备、信息和使用科室共同确认后生效。</span></div>
-    </>
+      ) : null}
+    </div>
   );
 }

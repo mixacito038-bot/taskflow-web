@@ -1,82 +1,124 @@
-.alertCenter {
-  display: grid;
-  grid-template-columns: minmax(300px, 5fr) minmax(0, 7fr);
-  gap: 14px;
-  align-items: start;
-  margin-bottom: 4px;
-}
+/* 运营改进中心样式：问题 → 任务 → 目标 → 兑现四块。
+   颜色一律走 globals.css 的主题变量（半透明阴影用 rgba 是例外，它跟着底色走），
+   字号最小 12px：这页要在会议投屏上看，再小就读不清了。 */
 
-@media (max-width: 1020px) {
-  .alertCenter {
-    grid-template-columns: 1fr;
-  }
-}
-
-.ruleList {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.root {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
 }
 
-.ruleRow {
-  display: flex;
+.headingMeta {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 9px 11px;
+  gap: 6px;
+  padding: 0 11px;
+  min-height: 30px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--surface-soft);
-}
-
-.ruleRow[data-enabled="false"] {
-  opacity: 0.55;
-}
-
-.ruleToggle {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
+  white-space: nowrap;
 }
 
-.ruleToggle input {
-  accent-color: var(--primary);
+/* 概览卡按内容自适应换行：五张卡在窄屏挤成一行会把数字压断。 */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 12px;
 }
 
-.ruleThreshold {
+.statCard {
   display: flex;
-  align-items: center;
-  gap: 5px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.statCard span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.ruleThreshold input {
-  width: 66px;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--text);
+.statCard strong {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -.01em;
+}
+
+.statCard small {
+  color: var(--muted-light);
   font-size: 12px;
 }
 
-.rulePersistNote {
-  margin: 11px 0 0;
+/* 有逾期就整张卡变红：这是唯一需要当场处理的数字，不能和其它卡长一个样。 */
+.statAlarm {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+  background: var(--red-soft);
+}
+
+.statAlarm strong {
+  color: var(--red);
+}
+
+.panel {
+  min-width: 0;
+  padding: var(--panel-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.panelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 13px;
+}
+
+.panelHead h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.panelHead p {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.alertRows {
+.panelNote {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  padding: 22px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---------- 待认领问题 ---------- */
+
+.findingList,
+.claimedList,
+.capitalList,
+.targetList {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -85,59 +127,539 @@
   gap: 8px;
 }
 
-.alertRow {
+.findingRow {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 11px;
+  align-items: start;
+  gap: 11px;
+  padding: 11px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 11px;
   background: var(--surface-soft);
 }
 
-.alertBody {
+.findingBody {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.alertBody strong {
-  font-size: 12px;
+.deviceLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.deviceLink strong {
+  font-size: 13px;
   font-weight: 650;
 }
 
-.alertBody strong small {
-  margin-left: 6px;
+.deviceLink span,
+.deviceLink small {
   color: var(--muted);
-  font-weight: 500;
-}
-
-.alertValues {
-  color: var(--text-soft);
   font-size: 12px;
 }
 
-.alertMessage {
+.deviceLink:hover strong {
+  color: var(--primary);
+}
+
+.findingTitle {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* 证据是这条问题能不能被认账的全部依据，所以不折叠、不截断，原文照登。 */
+.findingEvidence {
+  margin: 0;
+  padding: 6px 9px;
+  border-left: 2px solid var(--primary-soft-strong);
+  border-radius: 0 7px 7px 0;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.findingSuggestion {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.alertEmpty {
-  margin: 0;
-  padding: 18px 0 8px;
+.claimedBlock,
+.capitalBlock {
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.blockTitle {
+  display: block;
+  margin-bottom: 8px;
   color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 已认领的问题只留一行「问题 → 任务」的对账线索，不再占用待办的注意力。 */
+.claimedList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
+.claimedFinding {
+  color: var(--text-soft);
+}
+
+.claimedAction {
+  min-width: 0;
+  flex: 1;
+  color: var(--muted);
+}
+
+.claimedAction::before {
+  content: "→ ";
+}
+
+.capitalList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 11px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.capitalList li > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.capitalList strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.capitalList small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ---------- 任务闭环看板 ---------- */
+
+/* 三列看板：列是状态，卡片自己纵向滚，页面主体不横向滚。 */
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 1080px) {
+  .board {
+    grid-template-columns: 1fr;
+  }
+}
+
+.boardColumn {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.boardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.boardHead b {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.columnEmpty {
+  margin: 0;
+  padding: 14px 0;
+  color: var(--muted-light);
   font-size: 12px;
   text-align: center;
 }
 
-.alertActionDone,
-.alertActionDone:hover {
-  color: var(--green);
-  border-color: color-mix(in srgb, var(--green) 40%, var(--border));
-  background: var(--green-soft);
-  cursor: default;
-  opacity: 1;
+.taskCard {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+/* 逾期任务整卡描红加左侧粗边：看板扫一眼就要看见哪几张欠账。 */
+.taskOverdue {
+  border-color: color-mix(in srgb, var(--red) 50%, var(--border));
+  border-left: 3px solid var(--red);
+  background: var(--red-soft);
+}
+
+.taskTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.overdueTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.overdueText {
+  color: var(--red);
+  font-weight: 650;
+}
+
+.taskTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.taskTitle strong {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.taskTitle:hover strong {
+  color: var(--primary);
+}
+
+.taskIssue {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.taskMeta {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.taskMeta > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.taskMeta dt {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.taskMeta dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  text-align: right;
+}
+
+.taskMetric {
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.taskEvidence {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.progressTrack,
+.targetBar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.progressTrack i,
+.targetBar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.targetBar i[data-reached="true"] {
+  background: var(--green);
+}
+
+.taskFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.taskFoot > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.taskButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---------- 目标达成 ---------- */
+
+.targetRow {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) minmax(90px, 3fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+@media (max-width: 900px) {
+  .targetRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .targetBar {
+    grid-column: 1 / -1;
+  }
+}
+
+.targetHead {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.targetHead strong {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.targetHead small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.targetNumbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.targetRate {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: right;
+}
+
+/* ---------- 新建 / 编辑任务弹窗 ---------- */
+
+.dialogScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 19, 30, .45);
+}
+
+.dialog {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(8, 19, 30, .22);
+}
+
+.dialogHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dialogHead strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dialogHead small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.iconButton:hover {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+/* 表单两列：一行一个字段会让弹窗拉得比屏幕还高，填实际值时来回滚。 */
+.dialogBody {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .dialogBody {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field,
+.fieldWide {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.fieldWide {
+  grid-column: 1 / -1;
+}
+
+.field > span,
+.fieldWide > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field input,
+.field select,
+.fieldWide input,
+.fieldWide textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.fieldWide textarea {
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.field input:focus,
+.field select:focus,
+.fieldWide input:focus,
+.fieldWide textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.dialogFoot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.dialogNote {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
 }
