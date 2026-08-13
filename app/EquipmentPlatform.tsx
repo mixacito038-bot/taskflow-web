@@ -48,6 +48,7 @@ import {
   Trash2,
   SlidersHorizontal,
   Sparkles,
+  Stethoscope,
   Target,
   UserRound,
   Users,
@@ -121,6 +122,7 @@ import {
 import CapitalPlanningCenter from "./CapitalPlanningCenter";
 import DataWorkbench from "./DataWorkbench";
 import BenefitAnalysisCenter from "./BenefitAnalysisCenter";
+import DeviceBenefitBoard from "./DeviceBenefitBoard";
 import DeviceReportCenter, { DeviceReportWorkload } from "./DeviceReportCenter";
 import LedgerFieldSettings from "./LedgerFieldSettings";
 import MetricCockpitConfig, { MetricCockpitBoard } from "./MetricCockpitConfig";
@@ -450,6 +452,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [reportFieldStore, setReportFieldStoreLocal] = useDemoState<Record<string, ReportFieldDefinition[]>>("equip-benefit-report-fields-by-hospital-v1", {}, demoMode);
   const [chartTemplateStore, setChartTemplateStoreLocal] = useDemoState<Record<string, ChartTemplate[]>>("equip-benefit-chart-templates-by-hospital-v1", {}, demoMode);
   const [metricCockpitStore, setMetricCockpitStoreLocal] = useDemoState<Record<string, MetricCockpitConfigState[]>>("equip-benefit-metric-cockpit-by-hospital-v1", {}, demoMode);
+  const [deviceCockpitStore, setDeviceCockpitStoreLocal] = useDemoState<Record<string, MetricCockpitConfigState[]>>("equip-benefit-device-cockpit-by-hospital-v1", {}, demoMode);
   const [analysisProfileStore, setAnalysisProfileStoreLocal] = useDemoState<Record<string, BenefitAnalysisProfile[]>>("equip-benefit-analysis-profiles-by-hospital-v1", demoMode ? initialAnalysisProfileStore() : {}, demoMode);
   const [cloudSyncState, setCloudSyncState] = useState<CloudSyncState>(viewer.authenticated ? "idle" : "ready");
   const [cloudHydrated, setCloudHydrated] = useState(!viewer.authenticated);
@@ -471,7 +474,9 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [reportFocusDeviceId, setReportFocusDeviceId] = useState("");
   // 效益分析页的统计口径：开=只算已确认的填报数据（正式口径），关=含填报中/已提交（预览）
   const [analysisOnlyConfirmed, setAnalysisOnlyConfirmed] = useState(true);
-  const [analysisTab, setAnalysisTab] = useState<"overview" | "monitor" | "custom">("overview");
+  const [analysisTab, setAnalysisTab] = useState<"overview" | "device" | "monitor" | "custom">("overview");
+  // 单机效益页当前选中的设备；从问题清单点设备名进来时预选那一台
+  const [benefitDeviceId, setBenefitDeviceId] = useState("");
   // 分析页点「建改进任务」带去改进中心的那条问题；改进中心消费一次后清空
   const [pendingFinding, setPendingFinding] = useState<{ deviceId: string; finding: Finding } | null>(null);
   // 分析页/改进中心点「送资本论证」带去资本计划的设备
@@ -766,6 +771,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setReportFieldStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.reportFields ?? [] }));
     setChartTemplateStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.chartTemplates ?? [] }));
     setMetricCockpitStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.metricCockpit ?? [] }));
+    setDeviceCockpitStoreLocal((current) => ({ ...current, [hospitalId]: result.shared.deviceCockpit ?? [] }));
     setModulesLocal(result.shared.modules);
     const preferences = result.preferences;
     if (preferences.theme) setThemeLocal(preferences.theme);
@@ -925,6 +931,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       setChartTemplateStoreLocal((current) => ({ ...current, [hospitalId]: value as ChartTemplate[] }));
     } else if (resource === "metricCockpit") {
       setMetricCockpitStoreLocal((current) => ({ ...current, [hospitalId]: value as MetricCockpitConfigState[] }));
+    } else if (resource === "deviceCockpit") {
+      setDeviceCockpitStoreLocal((current) => ({ ...current, [hospitalId]: value as MetricCockpitConfigState[] }));
     } else {
       setAnalysisProfileStoreLocal((current) => ({ ...current, [hospitalId]: value as BenefitAnalysisProfile[] }));
     }
@@ -1066,6 +1074,22 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     setChartTemplateStoreLocal((currentStore) => {
       void persistCloudResource("chartTemplates", next);
       return { ...currentStore, [effectiveHospitalId]: next };
+    });
+  };
+
+  const currentDeviceCockpit = useMemo(
+    () => normalizeCockpitConfig(
+      deviceCockpitStore[effectiveHospitalId]?.[0],
+      new Set(activeMetrics(currentMetricEntries).map((entry) => entry.id)),
+      currentChartTemplates,
+    ),
+    [deviceCockpitStore, effectiveHospitalId, currentMetricEntries, currentChartTemplates],
+  );
+
+  const setCurrentDeviceCockpit = (next: MetricCockpitConfigState) => {
+    setDeviceCockpitStoreLocal((currentStore) => {
+      void persistCloudResource("deviceCockpit", [next]);
+      return { ...currentStore, [effectiveHospitalId]: [next] };
     });
   };
 
@@ -2518,6 +2542,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           {view === "analysis" ? (
             <div className="analysis-tabs" role="tablist" aria-label="效益分析页签">
               <button role="tab" aria-selected={analysisTab === "overview"} className={analysisTab === "overview" ? "active" : ""} onClick={() => setAnalysisTab("overview")}><Activity size={16} />效益总览</button>
+              <button role="tab" aria-selected={analysisTab === "device"} className={analysisTab === "device" ? "active" : ""} onClick={() => setAnalysisTab("device")}><Stethoscope size={16} />单机效益</button>
               <button role="tab" aria-selected={analysisTab === "monitor"} className={analysisTab === "monitor" ? "active" : ""} onClick={() => setAnalysisTab("monitor")}><Gauge size={16} />全面监测</button>
               <button role="tab" aria-selected={analysisTab === "custom"} className={analysisTab === "custom" ? "active" : ""} onClick={() => setAnalysisTab("custom")}><BarChart3 size={16} />自定义视图</button>
             </div>
@@ -2529,7 +2554,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               periodLabel={analysisPeriodLabel}
               onlyConfirmed={analysisOnlyConfirmed}
               onOnlyConfirmedChange={setAnalysisOnlyConfirmed}
-              onOpenDevice={openDeviceDetailById}
+              onOpenDevice={(deviceId) => { setBenefitDeviceId(deviceId); setAnalysisTab("device"); }}
               onCreateAction={routeFindingToImprovement}
               onSendToCapital={routeDeviceToCapital}
               onOpenReporting={routeDeviceToReporting}
@@ -2539,7 +2564,25 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
           ) : null}
 
 
-          {view === "analysis" && analysisTab !== "overview" ? (
+          {view === "analysis" && analysisTab === "device" ? (
+            <DeviceBenefitBoard
+              diagnoses={diagnoses}
+              entries={activeMetrics(currentMetricEntries)}
+              categories={currentMetricCategories}
+              templates={currentChartTemplates}
+              ctx={cockpitComputeContext}
+              config={currentDeviceCockpit}
+              onConfigChange={setCurrentDeviceCockpit}
+              periodLabel={analysisPeriodLabel}
+              selectedDeviceId={benefitDeviceId || diagnoses[0]?.facts.deviceId || ""}
+              onSelectDevice={setBenefitDeviceId}
+              canManage={hasPermission("member.manage")}
+              notify={notify}
+              onOpenReporting={routeDeviceToReporting}
+            />
+          ) : null}
+
+          {view === "analysis" && analysisTab !== "overview" && analysisTab !== "device" ? (
             <BenefitAnalysisStudio
               profiles={currentAnalysisProfiles}
               setProfiles={setCurrentAnalysisProfiles}

@@ -1,0 +1,956 @@
+/* 单机效益看板样式。
+   页面骨架类（panel / panel-heading / status-pill / data-table / search-field）沿用 globals.css，
+   这里只放本页自己的部分，绝不改全局样式。
+   颜色一律引用主题变量：写死的色值在深色主题下不会跟着翻转，一块惨白的卡片糊在深色页面上会亮瞎眼
+   （半透明阴影用 rgba 是例外，它跟着底色走，没有对应的主题变量）。
+   字号下限 12px：本页会投在会议室大屏和护士站的老显示器上，再小就是一团灰。
+   所有动效在文件末尾的 prefers-reduced-motion 块里整体降级。 */
+
+/* ------------------------------------------------ 骨架 */
+
+/* 左边选设备、右边看这台设备的账。设备栏定宽：它只放搜索框和一列设备名，
+   跟着窗口伸缩只会把设备名越拉越长、右边图表越挤越窄。 */
+.layout {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ------------------------------------------------ 设备选择条 */
+
+.rail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.railHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.railHead strong {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.searchBox {
+  width: 100%;
+  height: 34px;
+}
+
+.searchBox input {
+  font-size: 12px;
+}
+
+/* 设备多的医院有几百台：列表自己滚，页面不跟着长高，右边的看板才不会被推到屏幕外。 */
+.deviceList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.deviceRow {
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  transition: background .14s ease, border-color .14s ease;
+}
+
+.deviceRow:hover {
+  border-color: var(--border);
+  background: var(--surface-soft);
+}
+
+/* 选中态给足对比：边框 + 底色 + 加粗，只描一圈边在大屏上远看根本分不出选了哪台。 */
+.deviceRowActive,
+.deviceRowActive:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.deviceRowActive .deviceCell strong {
+  color: var(--primary);
+}
+
+.deviceCell {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.deviceCell strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deviceCell small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 本期有没有填报数据是选设备时最该先知道的一件事：没数的设备点进去只有引导页。 */
+.deviceDot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dotOn {
+  background: var(--green);
+}
+
+.dotOff {
+  background: var(--border-strong);
+}
+
+.railEmpty {
+  padding: 22px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  text-align: center;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------ 档案头 */
+
+.emptyPanel {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  color: var(--muted);
+}
+
+.emptyPanel svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.emptyPanel strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.emptyPanel p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.profilePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.profileHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profileIdent {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.profileName {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.profileMeta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.profilePills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+/* globals 的 status-pill 只有 success/warning/danger/neutral，「共享调拨」这一档要中性偏蓝，在模块里补。 */
+.pillInfo {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.riskPill {
+  min-height: 23px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.riskWarn {
+  color: var(--orange);
+  background: var(--orange-soft);
+  border-color: color-mix(in srgb, var(--orange) 26%, var(--border));
+}
+
+.riskDanger {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: color-mix(in srgb, var(--red) 26%, var(--border));
+}
+
+/* 关键事实一排六格；窄屏自动折行，最小 132px 是「12,345,678 元」不折行的宽度。 */
+.factGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.factCell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 12px;
+  background: var(--surface);
+}
+
+.factLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* tabular-nums：六个格子的数字要竖着对齐，比例字宽下小数点会错开一小截。
+   同样不许从任意字符折行：金额折成两行会被读成两个数，超长时截断，全值挂在 title 上。 */
+.factValue {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 亏损单独标红：结余是这一排里唯一会为负的数，混在黑字里会被一眼滑过去。 */
+.factNegative {
+  color: var(--red);
+}
+
+.factUnit {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 本期没填报就只给引导，不画一堆零值图表：0 会被当成「真的没收入」拿去汇报。 */
+.guide {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--orange) 32%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--orange-soft) 70%, var(--surface));
+}
+
+.guideIcon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--orange);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+}
+
+.guideCopy {
+  min-width: 0;
+  flex: 1;
+}
+
+.guideCopy strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.guideCopy p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------ 看板与编辑区 */
+
+.boardPanel {
+  min-width: 0;
+}
+
+.editSwitch {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-soft);
+  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: 12px;
+  transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+
+.editSwitch i {
+  width: 26px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  position: relative;
+  transition: background .14s ease;
+}
+
+.editSwitch i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform .14s ease;
+}
+
+.editSwitchOn {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.editSwitchOn i {
+  background: var(--primary);
+}
+
+.editSwitchOn i::after {
+  transform: translateX(11px);
+}
+
+/* 编辑态给指标清单让出右侧一栏；清单定宽，卡片区吃掉剩下的宽度。 */
+.boardArea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.boardAreaEditing {
+  grid-template-columns: minmax(0, 1fr) 232px;
+}
+
+/* 列数交给 auto-fit 自己算，不钉死列数：本页的卡片区在编辑态要让出右边一栏给指标清单，
+   钉死 4 列时每张小卡只剩一百多像素，八位数金额必然折行。
+   210px 是量出来的下限：再窄就装不下「14 个字符 + 单位」这种最长的一行数字。
+   dense 让后面的小卡回填被中卡 / 通栏卡挤出来的空位，不再出现「一行 3 张 + 空一格」。 */
+.board {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-auto-flow: row dense;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.boardEmpty {
+  padding: 34px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  text-align: center;
+  font-size: 13px;
+}
+
+/* ------------------------------------------------ 卡片 */
+
+/* 入场错峰：--i 由组件按序号传进来（已封顶），乘 28ms 得到本卡延迟。
+   backwards 让卡片在延迟期间保持 from 帧（透明），否则会先闪现再淡入。 */
+.card {
+  position: relative;
+  min-width: 0;
+  min-height: 186px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  animation: cardIn .34s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 28ms);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, opacity .15s ease;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 8px 20px rgba(23, 32, 51, .10);
+  transform: translateY(-2px);
+}
+
+/* 通栏卡按「第一条线到最后一条线」写：列数是 auto-fit 算出来的，
+   写死 span 4 在 3 列或 5 列的容器里就不是通栏了。 */
+.cardSmall { grid-column: span 1; }
+.cardMedium { grid-column: span 2; }
+.cardWide { grid-column: 1 / -1; }
+
+/* 编辑态给个抓手光标：卡片能拖这件事要在鼠标停上去的瞬间就说清楚。 */
+.cardEditing {
+  cursor: grab;
+}
+
+.cardDragging {
+  opacity: .5;
+  border-style: dashed;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* 指标名允许折两行再省略：截成「医院设备总…」会让三张卡长得一模一样，
+   分不清哪张是收入哪张是成本，比多占一行高度糟糕得多。 */
+.cardTitle {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.cardGrip {
+  margin-left: auto;
+  color: var(--muted-light);
+}
+
+.toneDot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
+}
+
+.toneBlue { background: var(--primary); }
+.toneGreen { background: var(--green); }
+.toneOrange { background: var(--orange); }
+.tonePurple { background: var(--violet); }
+.toneRed { background: var(--red); }
+.toneSlate { background: var(--slate); }
+
+/* ------------------------------------------------ 卡片操作角标（仅编辑态） */
+
+/* 角标平时藏着，悬停或键盘聚焦才浮出来，避免一屏角标把图表淹了。
+   钉在底部并用 left/right 双向约束：只写 right 的话七个按钮会比小卡还宽，溢到邻居卡上；
+   放底部是因为顶部压的是指标名——认不出这是哪张卡就没法操作。 */
+.cardActions {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+
+.card:hover .cardActions,
+.card:focus-within .cardActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.kindButton,
+.actionButton {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.kindButton:hover,
+.actionButton:hover {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.kindButtonActive {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.actionDivider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+}
+
+.actionDanger:hover {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: color-mix(in srgb, var(--red) 30%, var(--border));
+}
+
+/* ------------------------------------------------ 卡片内容：数据与空态 */
+
+.statBox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* tabular-nums 是滚动数字的刚需：比例字宽下每一帧数字宽度都在变，整块跟着抖。
+   nowrap 而不是 overflow-wrap: anywhere——anywhere 允许从任意字符断开，
+   「94,114,775 元」会被拦腰折成两行，读出来像两个数。单位是本元素的子节点，一起管住。
+   ellipsis 只是兜底：真遇到超预期的长数，宁可截断也不许溢出到邻居卡上。 */
+.statValue {
+  display: block;
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.statUnit {
+  margin-left: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.noDataHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.noData {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 未接入空态：灰、不显示任何数字——0 也是数字，绝不编。 */
+.unavailableBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 7px;
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.unavailableBadge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.unavailableReason {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* ------------------------------------------------ 图表绘制动画 */
+
+.chartSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* 柱子从 0 长到目标长度。transform-box: fill-box 让缩放基点落在柱子自己身上，
+   基点钉在 0 值那一端：正值从左/从下长，负值从右/从上长，不然柱子会从坐标原点飞过来。 */
+.barGrow {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: barGrow .46s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--b, 0) * 22ms);
+}
+
+.barGrowNegative {
+  transform-origin: right center;
+}
+
+@keyframes barGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.barRise {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: barRise .46s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--b, 0) * 18ms);
+}
+
+.barRiseNegative {
+  transform-origin: center top;
+}
+
+@keyframes barRise {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+/* 折线用 dashoffset 画出来：路径上写了 pathLength="1"，所以这里的 1 就是整条线长。 */
+.lineDraw {
+  animation: lineDraw .6s ease-out backwards;
+}
+
+@keyframes lineDraw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* 面积填充等线画到一半再淡进来，一起出现会糊成一块看不出线在走。 */
+.lineArea {
+  animation: softIn .5s ease-out .22s backwards;
+}
+
+.lineDot {
+  animation: softIn .3s ease-out backwards;
+  animation-delay: calc(.42s + var(--p, 0) * 12ms);
+}
+
+@keyframes softIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ------------------------------------------------ 环形图 */
+
+.pieBox {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pieSvg {
+  flex: 0 0 auto;
+  height: auto;
+}
+
+/* SVG 元素的 transform-origin 默认按 viewBox 解析，50% 50% 正好是圆心，不必额外算基点。 */
+.pieSweep {
+  transform-origin: 50% 50%;
+  animation: pieSweep .42s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--s, 0) * 55ms);
+}
+
+@keyframes pieSweep {
+  from { opacity: 0; transform: rotate(-14deg) scale(.9); }
+  to { opacity: 1; transform: none; }
+}
+
+.legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.legendRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.legendLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.legendValue {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------ 明细表 */
+
+/* 宽内容在自己的容器里横滚，页面主体不跟着横向滚。 */
+.tableWrap {
+  min-width: 0;
+  overflow: auto;
+  max-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+/* ------------------------------------------------ 指标清单（编辑态） */
+
+.picker {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.pickerHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pickerHead strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.pickerList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.pickerRow {
+  min-height: 32px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pickerRow:hover {
+  background: var(--surface);
+}
+
+.pickerName {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.pickerBadge {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.pickerBadgeOk {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: color-mix(in srgb, var(--green) 24%, var(--border));
+}
+
+/* 未接入的指标也允许上板：口径补齐后卡片自动点亮，在这里先标出来别让人白等。 */
+.pickerBadgeNone {
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.pickerHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* ------------------------------------------------ 响应式 */
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .deviceList {
+    max-height: 220px;
+  }
+
+  .boardAreaEditing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  /* 窄屏可能只排得下一列：中卡的 span 2 会凭空造出第二列，把页面撑到横向滚动。 */
+  .cardMedium {
+    grid-column: 1 / -1;
+  }
+
+  .pieBox {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ------------------------------------------------ 动效降级 */
+
+/* 系统开了「减少动效」就全部退化成静态终态：入场、柱子生长、折线绘制、扇区转入、
+   悬停抬起一个都不做。终态本来就是各元素的基态，关掉 animation / transform 画面依然完整。 */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .cardActions,
+  .deviceRow,
+  .editSwitch,
+  .editSwitch i,
+  .editSwitch i::after,
+  .barGrow,
+  .barRise,
+  .lineDraw,
+  .lineArea,
+  .lineDot,
+  .pieSweep {
+    animation: none;
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+}
