@@ -12,9 +12,26 @@ NAME="yonghong-platform-src-${VERSION}"
 OUT_DIR="${OUT_DIR:-release}"
 STAGE="${OUT_DIR}/${NAME}"
 
+# 依赖只在锁文件真的变了的时候才重装。
+# npm ci 会先把 node_modules 整个删掉再装一遍，在这台机器上比构建本身还慢好几倍；
+# 而打包绝大多数时候锁文件一个字没动，那一遍纯属白等。用锁文件哈希做戳记来判断。
+LOCK_STAMP="node_modules/.yh-lock-sha256"
+ensure_deps() {
+  local want have
+  want="$(sha256sum package-lock.json | cut -d' ' -f1)"
+  have="$([ -f "${LOCK_STAMP}" ] && cat "${LOCK_STAMP}" || echo "")"
+  if [ ! -d node_modules ] || [ "${want}" != "${have}" ]; then
+    echo "    依赖有变动（或首次安装），执行 npm ci"
+    npm ci
+    printf '%s' "${want}" > "${LOCK_STAMP}"
+  else
+    echo "    锁文件未变，复用现有 node_modules"
+  fi
+}
+
 echo "==> 构建产物（需要 Node >= 22.13）"
 if [ ! -d dist ] || [ "${FORCE_BUILD:-0}" = "1" ]; then
-  npm ci
+  ensure_deps
   npm run build
 else
   echo "    已存在 dist/，跳过构建（FORCE_BUILD=1 可强制重建）"
@@ -60,7 +77,13 @@ cat > "${STAGE}/如何部署.txt" <<'NOTE'
 NOTE
 
 echo "==> 打包 ${OUT_DIR}/${NAME}.tar.gz"
-tar -czf "${OUT_DIR}/${NAME}.tar.gz" -C "${OUT_DIR}" "${NAME}"
+# 有 pigz 就多核压，没有就退回 gzip。8MB 的包在单核 gzip 上要等好几秒，
+# 多核能压到一两秒；退路必须留着，院内打包机上不一定装了 pigz。
+if command -v pigz >/dev/null 2>&1; then
+  tar -cf - -C "${OUT_DIR}" "${NAME}" | pigz -p "$(nproc)" > "${OUT_DIR}/${NAME}.tar.gz"
+else
+  tar -czf "${OUT_DIR}/${NAME}.tar.gz" -C "${OUT_DIR}" "${NAME}"
+fi
 rm -rf "${STAGE}"
 
 echo ""
