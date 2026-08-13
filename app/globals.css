@@ -2100,3 +2100,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cockpit-kind-tabs button.active { border-color: color-mix(in srgb, var(--primary) 52%, var(--border)); color: var(--primary); background: var(--primary-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent); }
 .cockpit-kind-tabs button.active small { color: color-mix(in srgb, var(--primary) 72%, var(--text-soft)); }
 @media (max-width: 720px) { .cockpit-kind-tabs { grid-template-columns: 1fr; } }
+
+/* 驾驶舱页顶部的两套看板切换。做成紧凑分段控件而不是和右侧那排操作按钮同款，
+   是因为它切的是「看哪一套」而不是「做什么动作」，两类东西长一样会被误点。 */
+.cockpit-kind-switch { padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); display: inline-flex; gap: 2px; }
+.cockpit-kind-switch button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; transition: color .14s ease, background .14s ease; }
+.cockpit-kind-switch button:hover { color: var(--text-soft); }
+.cockpit-kind-switch button.active { color: var(--primary); background: var(--surface); font-weight: 650; box-shadow: var(--shadow); }
+@media (max-width: 720px) { .cockpit-kind-switch { width: 100%; } .cockpit-kind-switch button { flex: 1; justify-content: center; } }
+
+/* 字典看板在驾驶舱里占一整块面板：卡片自己带边框，外层再给一层就成了双框，
+   所以这里只留内边距和标题栏的分隔，不叠边框。 */
+.cockpit-dictionary-panel { margin-bottom: 14px; }
+.cockpit-dictionary-panel .panel-heading { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); align-items: center; }

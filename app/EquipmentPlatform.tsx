@@ -123,7 +123,7 @@ import DataWorkbench from "./DataWorkbench";
 import BenefitAnalysisCenter from "./BenefitAnalysisCenter";
 import DeviceReportCenter, { DeviceReportWorkload } from "./DeviceReportCenter";
 import LedgerFieldSettings from "./LedgerFieldSettings";
-import MetricCockpitConfig from "./MetricCockpitConfig";
+import MetricCockpitConfig, { MetricCockpitBoard } from "./MetricCockpitConfig";
 import MetricDictionarySettings from "./MetricDictionarySettings";
 import ReportFieldSettings from "./ReportFieldSettings";
 import { DATA_WORKBENCH_ENTRY_CLICKS } from "./data-workbench-model";
@@ -475,8 +475,13 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
   const [pendingFinding, setPendingFinding] = useState<{ deviceId: string; finding: Finding } | null>(null);
   // 分析页/改进中心点「送资本论证」带去资本计划的设备
   const [capitalFocusDeviceId, setCapitalFocusDeviceId] = useState("");
-  // 驾驶舱配置分两类：行业驾驶舱（现有模块编排）与指标字典驾驶舱（17 条口径成图）
-  const [cockpitConfigKind, setCockpitConfigKind] = useState<"industry" | "dictionary">("industry");
+  /**
+   * 驾驶舱分两套：行业驾驶舱（模块编排）与指标字典驾驶舱（17 条口径成图）。
+   *
+   * 配置页和展示页共用这一个状态——配完字典看板直接点左侧「效益驾驶舱」，
+   * 看到的就是刚配的那套。两边各存一份的话，会出现"配了半天没地方展示"。
+   */
+  const [cockpitKind, setCockpitKind] = useState<"industry" | "dictionary">("industry");
   const [equipmentStatus, setEquipmentStatus] = useState("全部状态");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
@@ -1462,6 +1467,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
   useEffect(() => {
     if (!projectionMode || projectionPaused) return;
+    // 字典看板不用模块网格，它自己带轮播（rotateMs），这里就不要再滚一遍页面
+    if (cockpitKind === "dictionary") return;
     const timer = window.setInterval(() => {
       const moduleNodes = document.querySelectorAll<HTMLElement>(".projection-mode .dashboard-grid > .module");
       if (!moduleNodes.length) return;
@@ -1469,7 +1476,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       moduleNodes[projectionIndexRef.current]?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [projectionMode, projectionPaused]);
+  }, [projectionMode, projectionPaused, cockpitKind]);
 
   function enterProjectionMode() {
     setProjectionMode(true);
@@ -1834,6 +1841,16 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
    * 字典驾驶舱的算数上下文：设备与填报记录都取当前医院的，期间默认取本年 12 个月，
    * 这样看板上的「科室相加 / 时间相加」和填报页看到的是同一批数
    */
+  /**
+   * 驾驶舱页顶部的「使用科室」筛选要真正驱动字典看板。
+   * 选了具体科室就按该科室算，选「全部科室」才回到看板自己配的维度——
+   * 否则页面上摆着个筛选器却对下面的图没有任何影响，等于骗人。
+   */
+  const cockpitBoardConfig = useMemo(() => {
+    if (department === "全部科室") return currentMetricCockpit;
+    return { ...currentMetricCockpit, dimension: "department" as const, department };
+  }, [currentMetricCockpit, department]);
+
   const cockpitComputeContext: ChartComputeContext = useMemo(() => ({
     devices: ledgerDevices.map((device) => ({ id: device.id, department: device.department, name: device.name })),
     records: currentDeviceReports,
@@ -2368,6 +2385,14 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                   <p>统一观察经济效益、使用效率、临床质量、患者体验和设备保障，并按角色呈现管理重点。</p>
                 </div>
                 <div className="heading-actions">
+                  <div className="cockpit-kind-switch" role="tablist" aria-label="驾驶舱看板">
+                    <button role="tab" aria-selected={cockpitKind === "industry"} className={cockpitKind === "industry" ? "active" : ""} onClick={() => setCockpitKind("industry")}>
+                      <LayoutDashboard size={15} />行业看板
+                    </button>
+                    <button role="tab" aria-selected={cockpitKind === "dictionary"} className={cockpitKind === "dictionary" ? "active" : ""} onClick={() => setCockpitKind("dictionary")}>
+                      <BookOpen size={15} />指标字典看板
+                    </button>
+                  </div>
                   <button className="secondary-button" onClick={enterProjectionMode}><MonitorPlay size={17} />投屏模式</button>
                   {hasPermission("member.manage") && (sessionState !== "verified" || publishedData.publication) && visibleModules.length ? (
                     <button className={layoutEditing ? "primary-button" : "secondary-button"} onClick={toggleLayoutEditing}>
@@ -2405,7 +2430,32 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                 <div className="role-summary-title"><span>{perspective}</span><small>{perspective === "管理层" ? "看价值与资源配置" : perspective === "设备科" ? "看流程与设备保障" : "看服务效率与设备可用"}</small></div>
                 {perspectiveItems[perspective].map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong><small>{item.note}</small></div>)}
               </section> : null}
-              {sessionState !== "verified" || publishedData.publication ? <div className="dashboard-grid">
+              {cockpitKind === "dictionary" ? (
+                <section className="panel cockpit-dictionary-panel" aria-label="指标字典看板">
+                  <div className="panel-heading">
+                    <div>
+                      <h3>指标字典看板</h3>
+                      <p>
+                        {department === "全部科室" ? "全院口径" : `已按「${department}」筛选`}
+                        {" · "}
+                        {currentMetricCockpit.onlyConfirmed ? "只统计已确认的填报数据" : "含填报中与已提交的草稿"}
+                        {" · "}共 {currentMetricCockpit.items.length} 张卡片
+                      </p>
+                    </div>
+                    {hasPermission("member.manage") ? (
+                      <button className="secondary-button compact-action" onClick={() => navigate("layout")}><Settings2 size={15} />配置看板</button>
+                    ) : null}
+                  </div>
+                  <MetricCockpitBoard
+                    config={cockpitBoardConfig}
+                    entries={activeMetrics(currentMetricEntries)}
+                    categories={currentMetricCategories}
+                    ctx={cockpitComputeContext}
+                    templates={currentChartTemplates}
+                  />
+                </section>
+              ) : null}
+              {cockpitKind === "industry" && (sessionState !== "verified" || publishedData.publication) ? <div className="dashboard-grid">
                 {visibleModules.map((module) => (
                   <div
                     className={`module module-${module.size} module-h-${module.height ?? "standard"}${layoutEditing ? " module-editing" : ""}${layoutEditing && draggingModule === module.id ? " dragging" : ""}`}
@@ -2434,9 +2484,9 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                     {renderModule(module)}
                   </div>
                 ))}
-              </div> : <div className="empty-dashboard"><Database size={30} /><h3>暂无已发布数据</h3><p>正式模式保持空态；完成文件映射、清洗、复核与发布后自动刷新。</p>{canOpenDataWorkbench && dataWorkbenchUnlocked ? <button className="primary-button" onClick={() => navigate("workbench")}>打开数据准备中心</button> : null}</div>}
-              {configuredPublishedCanvases.length ? <div className="dashboard-grid">{configuredPublishedCanvases.map((item) => <div className="module module-medium" key={item.visualization.code}><ConfigurableAnalyticsCanvas metric={item.metric} visualization={item.visualization} data={[...item.data]} metricDefinitionVersion={item.metric.version ?? 1} visualizationVersion={item.visualization.version} /></div>)}</div> : null}
-              {!visibleModules.length ? <div className="empty-dashboard"><EyeOff size={30} /><h3>驾驶舱暂未启用模块</h3><button className="primary-button" onClick={() => navigate("layout")}>立即配置</button></div> : null}
+              </div> : cockpitKind === "industry" ? <div className="empty-dashboard"><Database size={30} /><h3>暂无已发布数据</h3><p>正式模式保持空态；完成文件映射、清洗、复核与发布后自动刷新。</p>{canOpenDataWorkbench && dataWorkbenchUnlocked ? <button className="primary-button" onClick={() => navigate("workbench")}>打开数据准备中心</button> : null}</div> : null}
+              {cockpitKind === "industry" && configuredPublishedCanvases.length ? <div className="dashboard-grid">{configuredPublishedCanvases.map((item) => <div className="module module-medium" key={item.visualization.code}><ConfigurableAnalyticsCanvas metric={item.metric} visualization={item.visualization} data={[...item.data]} metricDefinitionVersion={item.metric.version ?? 1} visualizationVersion={item.visualization.version} /></div>)}</div> : null}
+              {cockpitKind === "industry" && !visibleModules.length ? <div className="empty-dashboard"><EyeOff size={30} /><h3>驾驶舱暂未启用模块</h3><button className="primary-button" onClick={() => navigate("layout")}>立即配置</button></div> : null}
             </>
           ) : null}
 
@@ -2604,16 +2654,16 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
 
           {view === "layout" ? (
             <div className="cockpit-kind-tabs" role="tablist" aria-label="驾驶舱类别">
-              <button role="tab" aria-selected={cockpitConfigKind === "industry"} className={cockpitConfigKind === "industry" ? "active" : ""} onClick={() => setCockpitConfigKind("industry")}>
+              <button role="tab" aria-selected={cockpitKind === "industry"} className={cockpitKind === "industry" ? "active" : ""} onClick={() => setCockpitKind("industry")}>
                 <LayoutDashboard size={16} />行业驾驶舱<small>通用效益模块编排</small>
               </button>
-              <button role="tab" aria-selected={cockpitConfigKind === "dictionary"} className={cockpitConfigKind === "dictionary" ? "active" : ""} onClick={() => setCockpitConfigKind("dictionary")}>
+              <button role="tab" aria-selected={cockpitKind === "dictionary"} className={cockpitKind === "dictionary" ? "active" : ""} onClick={() => setCockpitKind("dictionary")}>
                 <BookOpen size={16} />指标字典驾驶舱<small>按字典 {activeMetrics(currentMetricEntries).length} 条口径成图</small>
               </button>
             </div>
           ) : null}
 
-          {view === "layout" && cockpitConfigKind === "dictionary" ? (
+          {view === "layout" && cockpitKind === "dictionary" ? (
             <MetricCockpitConfig
               config={currentMetricCockpit}
               onConfigChange={setCurrentMetricCockpit}
@@ -2627,7 +2677,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
             />
           ) : null}
 
-          {view === "layout" && cockpitConfigKind === "industry" ? (
+          {view === "layout" && cockpitKind === "industry" ? (
             <LayoutConfiguration
               modules={modules}
               setModules={setModules}

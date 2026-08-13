@@ -126,8 +126,15 @@ test("ships the configurable dashboard and editable admin surfaces", async () =>
   assert.match(component, /function DataSourceManagement/);
   assert.match(component, /function MetricCockpitConfig|<MetricCockpitConfig/);
   assert.match(component, /<ReportFieldSettings/);
-  // 驾驶舱配置分两大类：行业驾驶舱与指标字典驾驶舱
-  assert.match(component, /cockpitConfigKind/);
+  // 驾驶舱分两套：行业看板与指标字典看板。
+  // 配置页和展示页共用同一个状态——各存一份就会出现"配了半天没地方展示"。
+  assert.match(component, /const \[cockpitKind, setCockpitKind\]/);
+  assert.match(component, /view === "layout" && cockpitKind === "dictionary"/);
+  assert.match(component, /cockpitKind === "dictionary" \? \(/);
+  assert.match(component, /<MetricCockpitBoard/);
+  // 驾驶舱顶部的科室筛选要真的驱动字典看板，否则筛选器只是摆设
+  assert.match(component, /const cockpitBoardConfig = useMemo/);
+  assert.match(component, /dimension: "department" as const, department/);
   assert.match(component, /dropModule/);
   assert.match(component, /const demoMode = !viewer\.authenticated/);
   assert.match(component, /function useDemoState/);
