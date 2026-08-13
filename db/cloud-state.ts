@@ -22,6 +22,7 @@ export const cloudResourceNames = [
   "reportFields",
   "chartTemplates",
   "metricCockpit",
+  "deviceCockpit",
 ] as const;
 
 export type CloudResourceName = (typeof cloudResourceNames)[number];
@@ -59,6 +60,8 @@ const resourcePermission: Record<CloudResourceName, string> = {
   // 图表模板与字典驾驶舱配置跟着驾驶舱配置权限走（与 modules 一致）
   chartTemplates: "member.manage",
   metricCockpit: "member.manage",
+  // 单机看板配置跟着驾驶舱配置的权限走
+  deviceCockpit: "member.manage",
 };
 
 const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
@@ -78,6 +81,7 @@ const resourceReadPermissions: Record<CloudResourceName, readonly string[]> = {
   reportFields: ["dashboard.view", "cost.manage", "improvement.manage", "report.manage", "report.review", "report.approve", "report.export"],
   chartTemplates: ["dashboard.view", "member.manage"],
   metricCockpit: ["dashboard.view", "member.manage"],
+  deviceCockpit: ["dashboard.view", "member.manage"],
 };
 
 export function emptySharedState(): CloudSharedState {
@@ -95,6 +99,7 @@ export function emptySharedState(): CloudSharedState {
     reportFields: [],
     chartTemplates: [],
     metricCockpit: [],
+    deviceCockpit: [],
   };
 }
 

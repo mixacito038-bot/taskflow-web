@@ -236,6 +236,7 @@ const cloudResourceLabels: Record<CloudResource, string> = {
   reportFields: "填报字段配置",
   chartTemplates: "图表模板",
   metricCockpit: "指标字典驾驶舱",
+  deviceCockpit: "单机效益看板",
   improvementActions: "改进任务",
   modules: "驾驶舱布局",
   dataSources: "文件口径配置",
@@ -697,6 +698,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       reportFields: [],
       chartTemplates: [],
       metricCockpit: [defaultMetricCockpitConfig()],
+      deviceCockpit: [defaultMetricCockpitConfig()],
     };
   }
 
@@ -2535,6 +2537,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
               notify={notify}
             />
           ) : null}
+
 
           {view === "analysis" && analysisTab !== "overview" ? (
             <BenefitAnalysisStudio

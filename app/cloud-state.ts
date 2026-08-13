@@ -19,7 +19,8 @@ export type CloudResource =
   | "deviceReports"
   | "reportFields"
   | "chartTemplates"
-  | "metricCockpit";
+  | "metricCockpit"
+  | "deviceCockpit";
 
 export type CloudSharedState = {
   devices: Device[];
@@ -36,6 +37,8 @@ export type CloudSharedState = {
   chartTemplates: ChartTemplate[];
   /** 驾驶舱配置只有一份，但云端资源统一按数组存，取第 0 条 */
   metricCockpit: MetricCockpitConfigState[];
+  /** 单机效益看板的卡片配置，同样只有一份 */
+  deviceCockpit: MetricCockpitConfigState[];
 };
 
 export type CloudResourceRevisions = Record<CloudResource, number>;

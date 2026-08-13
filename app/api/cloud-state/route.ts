@@ -59,6 +59,7 @@ const maxResourceItems: Record<CloudResourceName, number> = {
   reportFields: 200,
   chartTemplates: 200,
   metricCockpit: 5,
+  deviceCockpit: 5,
 };
 const maxResourceBytes = 1_500_000;
 // 填报记录量级远超其它资源，1.5MB 会在几千条时误拦；单独放宽
