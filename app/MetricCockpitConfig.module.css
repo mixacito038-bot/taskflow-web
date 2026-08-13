@@ -19,6 +19,23 @@
   gap: 16px;
 }
 
+/* 右栏（预览 + 模板库）整列 sticky。
+   左栏是「选什么指标」，天然比右栏长；不 sticky 的话，勾到指标清单下半截时预览已经滚出视口，
+   用户改一条要滚上去看一眼再滚回来——这正是「上上下下很奇怪」的来源。
+   为什么不给右栏加 min-height 撑高：那只是把空白挪个位置，滚下去照样看不见预览。
+   sticky 挂在整列而不是预览面板上：只钉预览的话，下面的模板库会从它身下滑过去，两块叠在一起。
+   travel 由栅格行高（= 左栏高度）决定，右栏比左栏长时自动退化成普通流，不会有「够不到底部」的死角。
+   top 取 78px：topbar 高 64px 且自身 sticky，贴上去会被压住。 */
+.previewColumn {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 78px;
+  align-self: start;
+}
+
 /* ------------------------------------------------ 左栏一：维度 */
 
 .presetGrid {
@@ -238,6 +255,8 @@
   transform: rotate(180deg);
 }
 
+/* 限高 + 内滚，和左边的指标清单一个规矩：模板库展开后有十几条，
+   不限高会把 sticky 的右栏顶得比视口还高，底下几条就再也滚不到了。 */
 .templateList {
   margin: 0;
   padding: 0;
@@ -245,6 +264,8 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
+  max-height: 340px;
+  overflow-y: auto;
 }
 
 .templateRow {
@@ -317,6 +338,11 @@
   min-width: 0;
 }
 
+/* 模板库跟着预览一起待在右栏，标题栏两端对齐时不能被「新增模板」按钮挤掉。 */
+.libraryPanel {
+  min-width: 0;
+}
+
 /* ------------------------------------------------ 抽屉补充 */
 
 .smallDrawer {
@@ -384,5 +410,10 @@
 @media (max-width: 1100px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  /* 单列之后左右栏首尾相接，再 sticky 就是把预览钉在屏幕上挡住下面的模板库。 */
+  .previewColumn {
+    position: static;
   }
 }

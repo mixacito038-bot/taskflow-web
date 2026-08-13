@@ -446,8 +446,44 @@ export default function MetricCockpitConfig({
             })}
           </ul>
         </section>
+      </div>
 
-        <section className="panel">
+      {/* 右栏：预览 + 它用的模板库。
+          「模板库」原来吊在左栏最底下，和上面两块的关系说不清，还把左栏拉到 1214px、
+          让右栏 652px 之下空出一大片。挪到预览下方之后，左栏是「选什么指标」，
+          右栏是「成图长什么样 + 这些图用的模板」，两栏各自成一条叙事，高度也就拉平了。 */}
+      <div className={styles.previewColumn}>
+        <section className={`panel ${styles.previewPanel}`}>
+          <div className="panel-heading">
+            <div>
+              <h3>当前布局预览</h3>
+              <p>预览用的就是正式看板的渲染器，所见即所得；拖拽卡片换位，悬停出操作角标可换图型（比如从饼状图换成柱状图）、切尺寸、换模板或移除。</p>
+            </div>
+            <span className="chart-note">{scopeLabel} · {config.onlyConfirmed ? "仅已确认" : "含草稿"}</span>
+          </div>
+          <MetricCockpitBoard
+            compact
+            config={config}
+            entries={entries}
+            categories={categories}
+            ctx={ctx}
+            templates={templates}
+            editor={{
+              selectedEntryId,
+              draggingEntryId,
+              onSelect: setSelectedEntryId,
+              onDragStart: setDraggingEntryId,
+              onDragEnd: () => setDraggingEntryId(null),
+              onDrop: dropOnItem,
+              onChartKind: (entryId, kind) => updateItem(entryId, { chartKind: kind }),
+              onCycleSize: cycleSize,
+              onEditItem: setEditingItemId,
+              onRemove: removeItem,
+            }}
+          />
+        </section>
+
+        <section className={`panel ${styles.libraryPanel}`}>
           <div className="panel-heading">
             <div>
               <h3>
@@ -456,7 +492,7 @@ export default function MetricCockpitConfig({
                   <ChevronDown size={15} className={libraryOpen ? styles.chevronOpen : styles.chevron} aria-hidden />
                 </button>
               </h3>
-              <p>计算规则和引用哪一个值都在模板里配好，卡片只负责选模板和挑图型。</p>
+              <p>上面每张卡片挑的就是这里的模板：计算规则和引用哪一个值都在模板里配好，卡片只负责选模板和挑图型。</p>
             </div>
             {canManage ? (
               <button type="button" className="secondary-button" onClick={() => { setLibraryOpen(true); setTemplateDraft(emptyTemplate()); }}>
@@ -494,36 +530,6 @@ export default function MetricCockpitConfig({
           ) : null}
         </section>
       </div>
-
-      <section className={`panel ${styles.previewPanel}`}>
-        <div className="panel-heading">
-          <div>
-            <h3>当前布局预览</h3>
-            <p>预览用的就是正式看板的渲染器，所见即所得；拖拽卡片换位，悬停出操作角标可换图型（比如从饼状图换成柱状图）、切尺寸、换模板或移除。</p>
-          </div>
-          <span className="chart-note">{scopeLabel} · {config.onlyConfirmed ? "仅已确认" : "含草稿"}</span>
-        </div>
-        <MetricCockpitBoard
-          compact
-          config={config}
-          entries={entries}
-          categories={categories}
-          ctx={ctx}
-          templates={templates}
-          editor={{
-            selectedEntryId,
-            draggingEntryId,
-            onSelect: setSelectedEntryId,
-            onDragStart: setDraggingEntryId,
-            onDragEnd: () => setDraggingEntryId(null),
-            onDrop: dropOnItem,
-            onChartKind: (entryId, kind) => updateItem(entryId, { chartKind: kind }),
-            onCycleSize: cycleSize,
-            onEditItem: setEditingItemId,
-            onRemove: removeItem,
-          }}
-        />
-      </section>
 
       {confirmPreset ? (
         <div className="modal-backdrop confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="cockpit-preset-confirm">

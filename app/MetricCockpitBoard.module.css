@@ -7,9 +7,16 @@
 
 /* ------------------------------------------------ 栅格 */
 
+/* 列数交给 auto-fit 自己算，不再钉死 4 列：配置页预览只有 ~700px 宽，钉死 4 列时
+   每张小卡只剩 150px，八位数金额在里面必然折行；同一份栅格在正式看板（~1100px）上
+   自然摊成 5 列，两边都不用各写一套。
+   200px 是量出来的下限：再窄就装不下「14 个字符 + 人次」这种最长的一行数字，
+   再宽则配置页预览只剩两列，小卡被撑成半页宽、卡里的图跟着放大变糊。
+   dense 让后面的小卡回填被中卡 / 通栏卡挤出来的空位，不再出现「一行 3 张 + 空一格」。 */
 .board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-auto-flow: row dense;
   gap: 12px;
   align-items: stretch;
 }
@@ -65,9 +72,17 @@
   padding: 10px 11px;
 }
 
+/* 配置页的卡片在底部预留出操作条的位置：操作条是绝对定位浮在卡片上的，不留位就正好压在
+   大数字上——小卡里数字垂直居中，被压掉下半截等于读不出数。正式看板不传 editor，不留这块。 */
+.cardEditable {
+  padding-bottom: 36px;
+}
+
+/* 通栏卡按「第一条线到最后一条线」写：列数是 auto-fit 算出来的，写死 span 4
+   在 3 列或 5 列的容器里就不是通栏了。 */
 .cardSmall { grid-column: span 1; }
 .cardMedium { grid-column: span 2; }
-.cardWide { grid-column: span 4; }
+.cardWide { grid-column: 1 / -1; }
 
 .cardSelected {
   border-color: var(--primary);
@@ -116,15 +131,16 @@
   gap: 7px;
 }
 
-/* 指标名允许折两行再省略：截成「医院设备总…」等于三张卡片长得一模一样，
-   看板上分不清哪张是收入哪张是成本，比多占一行高度糟糕得多。 */
+/* 指标名单行省略，全名挂在 title 上悬浮可见。
+   原来钳两行是怕「医院设备总…」认不出是哪张卡；但栅格改宽之后一行装得下十来个字，
+   两行钳制反而让同一行里「医院设备总收/入」两行、「台均服务人次」一行，卡片高度参差，
+   正是用户说的「上上下下很奇怪」。 */
 .cardTitle {
   min-width: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  flex: 1;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.35;
   font-size: 13px;
   font-weight: 650;
@@ -167,8 +183,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 2px;
-  padding: 3px 4px;
+  gap: 1px;
+  padding: 3px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface-raised);
@@ -185,10 +201,12 @@
   pointer-events: auto;
 }
 
+/* 20px 是量出来的：小卡最窄 ~200px，八个按钮 + 分隔线 + 间距刚好排成一行。
+   排不下就会折成两行，两行高的操作条压回大数字上，等于没留位。 */
 .kindButton,
 .actionButton {
-  min-width: 22px;
-  height: 22px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 3px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -235,20 +253,39 @@
   gap: 6px;
 }
 
-/* tabular-nums 是滚动数字的刚需：比例字宽下每一帧数字宽度都在变，整块跟着抖。 */
+/* tabular-nums 是滚动数字的刚需：比例字宽下每一帧数字宽度都在变，整块跟着抖。
+   nowrap 取代原来的 overflow-wrap: anywhere——anywhere 允许从任意字符断开，
+   于是「94,114,775 元」被拦腰折成「94,114,7 / 75 元」，正是用户最刺眼的那条。
+   单位是本元素的子节点，nowrap 一起管住，不会被甩到下一行。
+   ellipsis 只是最后一道兜底：字号分档已经保证放得下，真遇到超预期的长数也不许溢出到邻居卡上。 */
 .statValue {
+  display: block;
   color: var(--text);
   font-size: 30px;
   font-weight: 650;
   letter-spacing: -.02em;
   line-height: 1.15;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
 
+/* 字号档位：7~9 字符、10~11 字符、≥12 字符各降一档，最小 16px 仍在 12px 硬下限之上。
+   档位由 statSizeClass() 按终值的字符数挑，滚动中的中间值不参与，免得数字一边滚一边变大小。 */
+.statValueMd { font-size: 24px; }
+.statValueSm { font-size: 22px; }
+.statValueXs { font-size: 18px; }
+
+/* 预览（compact）整体小一档：预览卡片本来就比正式看板窄一截。
+   双类选择器压过上面的单类档位，不靠书写顺序碰运气。 */
 .statValueCompact {
   font-size: 24px;
 }
+
+.statValueCompact.statValueMd { font-size: 20px; }
+.statValueCompact.statValueSm { font-size: 18px; }
+.statValueCompact.statValueXs { font-size: 16px; }
 
 .statUnit {
   margin-left: 5px;

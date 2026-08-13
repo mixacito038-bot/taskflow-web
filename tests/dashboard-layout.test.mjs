@@ -60,3 +60,20 @@ test("configurable analytics canvas accepts an explicit pixel height", async () 
   assert.match(canvas, /height\?: number;/);
   assert.match(canvas, /style=\{typeof height === "number" \? \{ height \} : undefined\}/);
 });
+
+test("驾驶舱标题行按可用空间换行，而不是把标题压窄或把按钮顶出页面", async () => {
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  // 驾驶舱标题行比其它页多一个「行业看板 / 指标字典看板」切换，加上投屏、编辑布局、
+  // 配置驾驶舱、生成效益报告，操作区自身就要 800px 出头：1024px 实测把页面顶宽 140px。
+  // 全局 .heading-actions 带 flex-shrink: 0（否则中文按钮会被压成竖排），这条不能动。
+  assert.match(css, /\.heading-actions \{[^}]*flex-shrink: 0/, "全局操作区仍要禁止压缩，否则按钮文字会被挤变形");
+  const block = css.slice(css.indexOf("@media (min-width: 721px)"));
+  assert.ok(block.startsWith("@media (min-width: 721px)"), "缺少驾驶舱标题行的换行规则");
+  const body = block.slice(0, block.indexOf("\n}") + 2);
+  assert.match(body, /\.cockpit-heading \{[^}]*flex-wrap: wrap/);
+  // 关键是 basis 而不是断点：顶栏支持 110%/125% 缩放，媒体查询的 px 数对不上真实可用宽度
+  assert.match(body, /\.cockpit-heading > :first-child \{[^}]*flex: 1 1 420px/);
+  assert.match(body, /\.cockpit-heading \.heading-actions \{[^}]*flex-wrap: wrap/);
+  // 容器可以被压窄触发换行，按钮本身不压缩：是「换行」不是「压扁」
+  assert.match(body, /\.cockpit-heading \.heading-actions > \* \{[^}]*flex: 0 0 auto/);
+});

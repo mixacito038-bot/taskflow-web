@@ -169,11 +169,36 @@ function useCountUp(target: number | null): number {
 
 /* ------------------------------------------------------------------ 图表渲染（手写 SVG，不引库） */
 
+/**
+ * 大数字按字符数分档换字号。
+ * 医院收入动辄 8~11 位，带上千分位逗号就是 10~14 个字符，而最窄的一张小卡只剩 ~180px 能写字：
+ * 一个字号包不住这个跨度——短数字用小号没气势，长数字用大号必然折行（用户看到的
+ * 「94,114,7 / 75 元」就是这么来的）。
+ * 分档而不是 clamp() / 容器查询：字号下限（≥12px）是靠静态断言守的，断言只认 `NNpx` 字面量，
+ * clamp() 一上去这条线就没人守得住了；分档还能保证同一档里的卡片字号完全一致，不会一张一个大小。
+ * 每档的临界字号都按「最窄的一张卡 + 最长的单位（人次）」量过，末档 14 个字符也仍是一行。
+ */
+function statSizeClass(text: string): string {
+  if (text.length >= 12) return styles.statValueXs;
+  if (text.length >= 10) return styles.statValueSm;
+  if (text.length >= 7) return styles.statValueMd;
+  return "";
+}
+
 function StatChart({ series, unit, compact }: { series: ChartSeries; unit: string; compact?: boolean }) {
   const rolled = useCountUp(series.total);
+  // 分档看的是「终值」而不是滚动中的中间值：中间值从 1 位涨到 11 位，
+  // 跟着它换档的话数字会一边滚一边变大小，比折行还晃眼。
+  const finalText = series.total === null ? "—" : formatValue(series.total);
+  const valueClass = [
+    styles.statValue,
+    compact ? styles.statValueCompact : "",
+    statSizeClass(finalText),
+  ].filter(Boolean).join(" ");
   return (
     <div className={styles.statBox}>
-      <span className={compact ? `${styles.statValue} ${styles.statValueCompact}` : styles.statValue}>
+      {/* title 兜底：万一遇到比预估更长的数（外币、分位更多的口径），省略号之外还能悬浮看全。 */}
+      <span className={valueClass} title={series.total === null ? undefined : `${finalText}${unit}`}>
         {/* 缺数直接「—」：滚动动画绝不能在没有数的卡片上滚出一串看着像真数的中间值。 */}
         {series.total === null ? "—" : formatValue(rolled)}
         {series.total !== null && unit ? <small className={styles.statUnit}>{unit}</small> : null}
@@ -583,6 +608,8 @@ function BoardCard({
     styles.card,
     sizeClass,
     compact ? styles.cardCompact : "",
+    // 有 editor 才会渲染底部操作条，也才需要给它留位
+    editor ? styles.cardEditable : "",
     selected ? styles.cardSelected : "",
     spotlight ? styles.cardSpotlight : "",
     dimmed ? styles.cardDimmed : "",
@@ -623,7 +650,9 @@ function BoardCard({
       <span key={seriesSignature(series, item.chartKind)} className={styles.freshPulse} aria-hidden />
       <div className={styles.cardHead}>
         {category ? <i className={`${styles.toneDot} ${TONE_CLASS[category.tone]}`} aria-hidden /> : null}
-        <strong className={styles.cardTitle}>{name}</strong>
+        {/* 标题单行省略 + title 悬浮出全名：在 ~180px 的小卡里钳两行会让同一行的卡片
+            一张两行一张一行，高度参差；名字被截了还能悬浮看全，高度参差只能忍着。 */}
+        <strong className={styles.cardTitle} title={name}>{name}</strong>
         {editor ? <GripVertical size={14} className={styles.cardGrip} aria-hidden /> : null}
       </div>
       {body}

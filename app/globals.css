@@ -2109,6 +2109,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cockpit-kind-switch button.active { color: var(--primary); background: var(--surface); font-weight: 650; box-shadow: var(--shadow); }
 @media (max-width: 720px) { .cockpit-kind-switch { width: 100%; } .cockpit-kind-switch button { flex: 1; justify-content: center; } }
 
+/* 驾驶舱标题行比其它页多一个「行业看板 / 指标字典看板」切换，再加上投屏、编辑布局、
+   配置驾驶舱、生成效益报告，操作区自身就要 800px 出头。全局 .heading-actions 带
+   flex-shrink: 0（不然中文按钮会被挤成竖排），于是窄屏时压缩全落到左边标题上：
+   1440px 实测标题被压成两行、正文缩成一条 200px 的窄柱，再窄就直接顶穿页面。
+   这里改成按可用空间换行——标题留够 420px 才和操作区同排，放不下就整体换到第二行。
+   用 flex-basis 而不是固定断点，是因为顶栏支持 110%/125% 缩放，媒体查询的 px 数对不上实际可用宽度。
+   ≤720px 另有一套竖排规则（.page-heading 变 column），basis 会变成高度，所以这里从 721px 起生效。 */
+@media (min-width: 721px) {
+  .cockpit-heading { flex-wrap: wrap; }
+  .cockpit-heading > :first-child { flex: 1 1 420px; min-width: 0; }
+  .cockpit-heading .heading-actions { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+  /* 操作区整行可以被压窄触发换行，按钮本身不参与压缩：是「换行」不是「压扁」 */
+  .cockpit-heading .heading-actions > * { flex: 0 0 auto; }
+}
+
 /* 字典看板在驾驶舱里占一整块面板：卡片自己带边框，外层再给一层就成了双框，
    所以这里只留内边距和标题栏的分隔，不叠边框。 */
 .cockpit-dictionary-panel { margin-bottom: 14px; }
