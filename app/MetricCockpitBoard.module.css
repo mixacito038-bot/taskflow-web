@@ -1,0 +1,497 @@
+/* 指标字典看板（正式驾驶舱 + 配置页预览共用同一个渲染器）的自有样式。
+   页面骨架类（panel / data-table 等）沿用 globals.css，这里只放看板自己的部分；
+   颜色一律引用主题变量，深浅主题不各写一份，写死的色值在深色主题下不会跟着翻转。
+   字号下限 12px：驾驶舱经常投在会议室大屏或护士站的老显示器上，再小就是一团灰。
+   所有动效都在文件末尾的 prefers-reduced-motion 块里整体降级：
+   前庭功能障碍的用户看见满屏平移、缩放和脉冲会真的头晕。 */
+
+/* ------------------------------------------------ 栅格 */
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.boardCompact {
+  gap: 9px;
+}
+
+.boardEmpty {
+  padding: 34px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  text-align: center;
+  font-size: 13px;
+}
+
+/* ------------------------------------------------ 卡片 */
+
+/* 入场错峰：--i 由组件按序号传进来（已封顶），乘 28ms 得到本卡的延迟。
+   backwards 让卡片在延迟这段时间里保持 from 帧（透明），否则会先闪现再淡入。 */
+.card {
+  position: relative;
+  min-width: 0;
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  animation: cardIn .34s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 28ms);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, opacity .15s ease;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 悬停微交互：抬 2px、阴影加深，过渡 150ms——再慢就跟不上鼠标了。 */
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 8px 20px rgba(23, 32, 51, .10);
+  transform: translateY(-2px);
+}
+
+.cardCompact {
+  min-height: 150px;
+  padding: 10px 11px;
+}
+
+.cardSmall { grid-column: span 1; }
+.cardMedium { grid-column: span 2; }
+.cardWide { grid-column: span 4; }
+
+.cardSelected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.cardDragging {
+  opacity: .5;
+  border-style: dashed;
+}
+
+/* 轮播焦点。写成 .card.cardSpotlight 是为了压过 .card:hover：
+   鼠标停在焦点卡上时不该把放大态掉回悬停态，那看着像焦点跑了。 */
+.card.cardSpotlight {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 24%, transparent), 0 14px 30px rgba(23, 32, 51, .16);
+  transform: scale(1.035);
+  z-index: 1;
+}
+
+.cardDimmed {
+  opacity: .58;
+}
+
+/* 数据刷新脉冲：这一层只在数据指纹变化时重新挂载，重新挂载才会重播动画。
+   基态是完全透明的，所以关掉动效之后它就彻底隐身，不会留一圈描边。 */
+.freshPulse {
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  border: 1px solid var(--primary);
+  opacity: 0;
+  pointer-events: none;
+  animation: freshPulse 1s ease-out;
+}
+
+@keyframes freshPulse {
+  0% { opacity: 0; }
+  20% { opacity: .8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
+  100% { opacity: 0; box-shadow: 0 0 0 9px color-mix(in srgb, var(--primary) 0%, transparent); }
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* 指标名允许折两行再省略：截成「医院设备总…」等于三张卡片长得一模一样，
+   看板上分不清哪张是收入哪张是成本，比多占一行高度糟糕得多。 */
+.cardTitle {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.cardGrip {
+  margin-left: auto;
+  color: var(--muted-light);
+  cursor: grab;
+}
+
+.toneDot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
+}
+
+.toneBlue { background: var(--primary); }
+.toneGreen { background: var(--green); }
+.toneOrange { background: var(--orange); }
+.tonePurple { background: var(--violet); }
+.toneRed { background: var(--red); }
+.toneSlate { background: var(--slate); }
+
+/* ------------------------------------------------ 卡片操作角标（仅配置页） */
+
+/* 操作角标平时藏着，悬停或选中卡片时浮出来，避免一屏角标把图表淹了。 */
+/* 操作条钉在卡片底部并用 left/right 双向约束：只写 right 的话，
+   八个按钮排出来比「小卡」还宽，工具条会整条溢到左边邻居的卡片上。
+   放底部而不是顶部，是因为顶部压的是指标名——认不出这是哪张卡就没法操作。 */
+.cardActions {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+
+.card:hover .cardActions,
+.card:focus-within .cardActions,
+.cardSelected .cardActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.kindButton,
+.actionButton {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.kindButton:hover,
+.actionButton:hover {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.kindButtonActive {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.actionDivider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+}
+
+.actionDanger:hover {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: color-mix(in srgb, var(--red) 30%, var(--border));
+}
+
+/* ------------------------------------------------ 卡片内容：数据与空态 */
+
+.statBox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* tabular-nums 是滚动数字的刚需：比例字宽下每一帧数字宽度都在变，整块跟着抖。 */
+.statValue {
+  color: var(--text);
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.statValueCompact {
+  font-size: 24px;
+}
+
+.statUnit {
+  margin-left: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.noDataHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.noData {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 未接入空态：灰、不显示任何数字——0 也是数字，绝不编。 */
+.unavailableBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 7px;
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.unavailableBadge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.unavailableReason {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* ------------------------------------------------ 图表绘制动画 */
+
+.chartSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* 柱子从 0 长到目标长度。transform-box: fill-box 让缩放基点落在柱子自己身上，
+   基点钉在 0 值那一端：正值从左/从下长，负值从右/从上长，不然柱子会从坐标原点飞过来。 */
+.barGrow {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: barGrow .46s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--b, 0) * 22ms);
+}
+
+.barGrowNegative {
+  transform-origin: right center;
+}
+
+@keyframes barGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.barRise {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: barRise .46s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--b, 0) * 18ms);
+}
+
+.barRiseNegative {
+  transform-origin: center top;
+}
+
+@keyframes barRise {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+/* 折线用 dashoffset 画出来：路径上已经写了 pathLength="1"，所以这里的 1 就是整条线长。 */
+.lineDraw {
+  animation: lineDraw .6s ease-out backwards;
+}
+
+@keyframes lineDraw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* 面积填充等线画到一半再淡进来，一起出现会糊成一块看不出线在走。 */
+.lineArea {
+  animation: softIn .5s ease-out .22s backwards;
+}
+
+.lineDot {
+  animation: softIn .3s ease-out backwards;
+  animation-delay: calc(.42s + var(--p, 0) * 12ms);
+}
+
+@keyframes softIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ------------------------------------------------ 环形图 */
+
+.pieBox {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pieSvg {
+  flex: 0 0 auto;
+  height: auto;
+}
+
+/* 扇区逐段转进来：SVG 元素的 transform-origin 默认按 viewBox 解析，
+   50% 50% 正好是圆心，所以不必额外算基点。 */
+.pieSweep {
+  transform-origin: 50% 50%;
+  animation: pieSweep .42s cubic-bezier(.22, .61, .36, 1) backwards;
+  animation-delay: calc(var(--s, 0) * 55ms);
+}
+
+@keyframes pieSweep {
+  from { opacity: 0; transform: rotate(-14deg) scale(.9); }
+  to { opacity: 1; transform: none; }
+}
+
+.legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.legendRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.legendLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.legendValue {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------ 表格图型 */
+
+.tableWrap {
+  min-width: 0;
+  overflow: auto;
+  max-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+/* ------------------------------------------------ 响应式 */
+
+@media (max-width: 640px) {
+  .board {
+    grid-template-columns: 1fr;
+  }
+
+  .cardSmall,
+  .cardMedium,
+  .cardWide {
+    grid-column: span 1;
+  }
+
+  .pieBox {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ------------------------------------------------ 动效降级 */
+
+/* 系统开了「减少动效」就全部退化成静态终态：入场、柱子生长、折线绘制、扇区转入、
+   刷新脉冲、悬停抬起、轮播放大一个都不做。终态本来就是各元素的基态，
+   所以这里只要把 animation / transform 关掉，画面依然是完整的。 */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .cardActions,
+  .freshPulse,
+  .barGrow,
+  .barRise,
+  .lineDraw,
+  .lineArea,
+  .lineDot,
+  .pieSweep {
+    animation: none;
+    transition: none;
+  }
+
+  .card:hover,
+  .card.cardSpotlight {
+    transform: none;
+  }
+}

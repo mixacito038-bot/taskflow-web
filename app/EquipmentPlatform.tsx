@@ -2452,6 +2452,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
                     categories={currentMetricCategories}
                     ctx={cockpitComputeContext}
                     templates={currentChartTemplates}
+                    rotateMs={projectionMode && !projectionPaused ? 12000 : 0}
                   />
                 </section>
               ) : null}

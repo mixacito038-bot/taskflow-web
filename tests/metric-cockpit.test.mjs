@@ -4,8 +4,15 @@ import test from "node:test";
 
 // 全部为静态源码断言：chart-template-catalog.ts 可能正被并行编写，
 // import 组件会把「另一个人还没写完」变成本文件的失败，那是假红灯。
-const tsx = await readFile(new URL("../app/MetricCockpitConfig.tsx", import.meta.url), "utf8");
-const css = await readFile(new URL("../app/MetricCockpitConfig.module.css", import.meta.url), "utf8");
+// 看板渲染器已拆到 MetricCockpitBoard.tsx（配置页预览与正式驾驶舱共用同一个组件）。
+// 这里把两份源码拼起来一起断言：断言守的是「这些能力还在」，
+// 不是「它们必须住在哪个文件」——拆文件不该让一堆真断言变红。
+const configTsx = await readFile(new URL("../app/MetricCockpitConfig.tsx", import.meta.url), "utf8");
+const boardTsx = await readFile(new URL("../app/MetricCockpitBoard.tsx", import.meta.url), "utf8");
+const tsx = `${configTsx}\n${boardTsx}`;
+const configCss = await readFile(new URL("../app/MetricCockpitConfig.module.css", import.meta.url), "utf8");
+const boardCss = await readFile(new URL("../app/MetricCockpitBoard.module.css", import.meta.url), "utf8");
+const css = `${configCss}\n${boardCss}`;
 
 const between = (start, end) => {
   const from = tsx.indexOf(start);
@@ -269,13 +276,18 @@ test("每张图表 SVG 都带 role 与 aria-label", () => {
 });
 
 test("tsx 里引用的样式类在 module.css 里都有定义", () => {
-  // CSS Modules 找不到的类名会静默变成 undefined，页面不报错、只是排版塌掉，
-  // 这种漏改（改名了但漏了一处引用）只能靠这条断言兜住。
-  const used = [...new Set([...tsx.matchAll(/styles\.([A-Za-z0-9_]+)/g)].map((match) => match[1]))];
-  assert.ok(used.length >= 60, "样式类引用数量异常，正则可能没扫到");
-  const defined = new Set([...css.matchAll(/\.([A-Za-z_][A-Za-z0-9_-]*)/g)].map((match) => match[1]));
-  const missing = used.filter((name) => !defined.has(name));
-  assert.deepEqual(missing, [], `module.css 缺少这些类定义：${missing.join("、")}`);
+  // 按文件各自配对检查：拼起来查会出现「A 文件用的类定义在 B 的样式表里」
+  // 这种实际上不生效的情况被掩盖过去（CSS Module 是按文件局部作用域的）。
+  for (const [name, source, sheet] of [
+    ["MetricCockpitConfig", configTsx, configCss],
+    ["MetricCockpitBoard", boardTsx, boardCss],
+  ]) {
+    const used = [...new Set([...source.matchAll(/styles\.([A-Za-z0-9_]+)/g)].map((m) => m[1]))];
+    const defined = new Set([...sheet.matchAll(/\.([A-Za-z0-9_]+)/g)].map((m) => m[1]));
+    assert.ok(used.length > 0, `${name} 没扫到任何 styles.xxx，正则可能失效了`);
+    const missing = used.filter((cls) => !defined.has(cls));
+    assert.deepEqual(missing, [], `${name} 缺少样式定义：${missing.join(", ")}`);
+  }
 });
 
 test("图表口径目录（若已生成）导出计算入口、值绑定与维度预设", async () => {
