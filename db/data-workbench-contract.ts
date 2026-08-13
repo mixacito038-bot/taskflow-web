@@ -1,3 +1,7 @@
+/* connector.manage 保留在这里，但已从**用户可授予的权限清单**（app/access-control-data.ts）里删除：
+   数据准备中心没有任何连接管理界面，这条权限过去勾上勾不上界面完全一样。
+   服务端 create_connector/update_connector 的实现和凭据安全校验都还在，只是现在没人能拿到这条权限，
+   于是这两个 action 一律 403 —— fail-closed。将来真做出连接管理页面时，把它加回权限清单即可。 */
 export const dataWorkbenchPermissions = [
   "connector.manage",
   "data.ingest",

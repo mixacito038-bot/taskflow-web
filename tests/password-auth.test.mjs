@@ -12,7 +12,8 @@ import {
   validatePasswordStrength,
   validateUsername,
 } from "../db/password-auth.ts";
-import { canHideMenu, menuCatalog, menuVisibleForPermissions, togglePermissionsForMenu } from "../app/menu-catalog.ts";
+import * as menuCatalogModule from "../app/menu-catalog.ts";
+import { menuCatalog, menuVisibleForPermissions } from "../app/menu-catalog.ts";
 
 test("username and password policies reject weak or malformed input", () => {
   assert.deepEqual(validateUsername("zhang.san"), []);
@@ -40,56 +41,55 @@ test("password hashing is deterministic per salt and differs across salts", asyn
   assert.match(first, /^[0-9a-f]{64}$/);
 });
 
-test("menu catalog toggling grants and revokes permissions without breaking shared menus", () => {
-  const grantable = new Set(menuCatalog.flatMap((menu) => [...menu.permissions]));
-  const cockpit = menuCatalog.find((menu) => menu.id === "cockpit");
-  const analysis = menuCatalog.find((menu) => menu.id === "analysis");
-  const workbench = menuCatalog.find((menu) => menu.id === "workbench");
-  assert.ok(cockpit && analysis && workbench);
+/**
+ * 这一组原来测的是 togglePermissionsForMenu / canHideMenu：角色弹窗里「勾菜单」和「勾权限」
+ * 两套复选框互相驱动，于是必须保证勾一个菜单会连带授予权限、取消时又不能误删还被别的菜单
+ * 需要的权限，还得靠 canHideMenu 把「共享权限导致取消不掉」的死复选框标出来。
+ *
+ * 现在菜单侧的复选框整个删掉了，可勾的只剩权限一处，菜单是算出来的只读结果。上面那些真问题
+ * 没有消失，只是换了形式——它们全都归结成一句话：**左侧菜单可见性必须是权限集合的纯函数**。
+ * 下面按这个新契约重写，守的还是同一批退化。
+ */
+const visibleMenuIds = (codes) =>
+  menuCatalog.filter((menu) => menuVisibleForPermissions(menu, new Set(codes))).map((menu) => menu.id);
 
-  let permissions = togglePermissionsForMenu([], cockpit, true, grantable);
-  assert.deepEqual(permissions, ["dashboard.view"]);
-  permissions = togglePermissionsForMenu(permissions, analysis, true, grantable);
-  assert.ok(permissions.includes("source.manage"));
+test("左侧菜单可见性是权限集合的纯函数，不存在第二处菜单状态", () => {
+  // 一条权限都没勾 → 左侧一个菜单都不该有。防的是「菜单自己有默认开关、和权限无关地冒出来」。
+  assert.deepEqual(visibleMenuIds([]), []);
 
-  // 取消“效益分析”不应移除“效益驾驶舱”仍需要的 dashboard.view。
-  permissions = togglePermissionsForMenu(permissions, analysis, false, grantable);
-  assert.ok(permissions.includes("dashboard.view"));
-  assert.ok(menuVisibleForPermissions(cockpit, new Set(permissions)));
+  // 只勾 dashboard.view，效益驾驶舱和效益分析同时亮：这正是老 canHideMenu 描述的共享现象。
+  // 过去它被做成弹窗里一个勾了也取消不掉的死复选框，现在它只是权限算出来的连带结果，
+  // 断言在这里钉死：共享权限的连带可见性必须真实发生，而不是被某处「菜单开关」盖掉。
+  assert.deepEqual(visibleMenuIds(["dashboard.view"]), ["cockpit", "analysis"]);
 
-  permissions = togglePermissionsForMenu(permissions, workbench, true, grantable);
-  for (const code of ["connector.manage", "data.ingest", "data.clean", "data.review", "data.publish"]) {
-    assert.ok(permissions.includes(code), `workbench grants ${code}`);
+  // 同一权限集合算多次、换传入顺序算，结果必须完全一致。
+  // 防的是有人把可见性算法改回「依赖上一次勾选状态」的有状态实现。
+  assert.deepEqual(visibleMenuIds(["dashboard.view"]), visibleMenuIds(["dashboard.view"]));
+  assert.deepEqual(visibleMenuIds(["source.manage", "dashboard.view"]), visibleMenuIds(["dashboard.view", "source.manage"]));
+
+  // 撤掉 source.manage 只关掉「指标字典」，仍由 dashboard.view 撑着的驾驶舱/效益分析不受牵连。
+  // 这是老实现最容易出错的地方（反推权限时把共享权限一起删了），换成纯函数后必须自然成立。
+  assert.deepEqual(visibleMenuIds(["dashboard.view", "source.manage"]), ["cockpit", "analysis", "sources"]);
+  assert.deepEqual(visibleMenuIds(["dashboard.view"]), ["cockpit", "analysis"]);
+
+  // 数据准备中心是「任一 data.* 即可见」：四条职责分离的权限各自单独给也要能进得去，
+  // 否则数据导入岗拿到 data.ingest 却看不到入口。
+  for (const code of ["data.ingest", "data.clean", "data.review", "data.publish"]) {
+    assert.deepEqual(visibleMenuIds([code]), ["workbench"], `${code} 单独授予时应能看到数据准备中心`);
   }
-  permissions = togglePermissionsForMenu(permissions, workbench, false, grantable);
-  assert.ok(!permissions.includes("data.publish"));
 
-  // 无权授予的权限不能通过勾选获得。
-  const limited = togglePermissionsForMenu([], workbench, true, new Set(["data.ingest"]));
-  assert.deepEqual(limited, ["data.ingest"]);
+  // 不认识的权限编码不能凭空点亮任何菜单（打错字的自定义角色不该意外获得入口）。
+  assert.deepEqual(visibleMenuIds(["not.a.real.permission"]), []);
 });
 
-test("canHideMenu flags dead checkboxes when a menu's permissions are shared", () => {
-  const grantable = new Set(menuCatalog.flatMap((menu) => [...menu.permissions]));
-  const cockpit = menuCatalog.find((menu) => menu.id === "cockpit");
-  const analysis = menuCatalog.find((menu) => menu.id === "analysis");
-  const workbench = menuCatalog.find((menu) => menu.id === "workbench");
-  assert.ok(cockpit && analysis && workbench);
-
-  // 未勾选的菜单本就不可见，无需隐藏。
-  assert.equal(canHideMenu("cockpit", []), true);
-
-  // 独占权限的菜单，取消勾选确实能让它隐藏。
-  const workbenchOnly = togglePermissionsForMenu([], workbench, true, grantable);
-  assert.equal(canHideMenu("workbench", workbenchOnly), true);
-
-  // 效益驾驶舱与效益分析共享 dashboard.view：取消驾驶舱无法使其隐藏 → 受共享约束的死复选框。
-  let shared = togglePermissionsForMenu([], cockpit, true, grantable);
-  shared = togglePermissionsForMenu(shared, analysis, true, grantable);
-  assert.equal(canHideMenu("cockpit", shared), false);
-
-  // 未知菜单按可隐藏处理，避免阻断交互。
-  assert.equal(canHideMenu("does-not-exist", shared), true);
+test("菜单目录只导出可见性计算，勾菜单反推权限的那套已连根删除", () => {
+  // togglePermissionsForMenu / canHideMenu 只为「菜单复选框」而存在。留着它们等于给
+  // 第二套真相来源留了接口，早晚有人再把菜单复选框接回去。
+  for (const removed of ["togglePermissionsForMenu", "canHideMenu"]) {
+    assert.ok(!Object.keys(menuCatalogModule).includes(removed), `${removed} 应随菜单复选框一并删除，不留可复活的接口`);
+  }
+  assert.ok(Object.keys(menuCatalogModule).includes("menuCatalog"));
+  assert.ok(Object.keys(menuCatalogModule).includes("menuVisibleForPermissions"));
 });
 
 test("schema and migration cover self-hosted credential storage", async () => {
@@ -144,9 +144,16 @@ test("login screen and access console expose the password account surfaces", asy
   assert.match(login, /登录账号/);
   assert.match(login, /unlockWithPassword/);
   assert.match(access, /set_member_credential/);
+
+  // 角色配置弹窗只保留「功能权限」一处复选框，菜单由权限实时算出来只读展示。
+  // 防的是回到「勾菜单」和「勾权限」两套复选框互相驱动：一套控件两个真相来源，
+  // 用户先撞上的是自己点不动的死复选框（共享权限的菜单取消勾选也隐藏不掉）。
   assert.match(access, /menuCatalog/);
-  assert.match(access, /togglePermissionsForMenu/);
-  assert.match(access, /左侧菜单可见性/);
+  assert.match(access, /menuVisibleForPermissions/);
+  assert.doesNotMatch(access, /togglePermissionsForMenu|canHideMenu/, "菜单复选框已删除，不应再引用勾菜单反推权限的函数");
+  assert.equal((access.match(/type="checkbox"/g) ?? []).length, 1, "整个医院与权限控制台只应剩下「功能权限」这一处复选框");
+  // 只读结果区必须还在：否则勾权限的人看不到自己给出去的是哪些左侧入口。
+  assert.match(access, /勾选结果/);
 });
 
 test("credential failure lockout counts up, locks at the threshold and resets the counter", () => {

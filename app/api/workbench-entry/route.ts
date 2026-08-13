@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
  *
  * 入口口令只是操作捷径的“门铃”，不是安全边界：即使口令通过，
  * /api/data-workbench 仍会在服务端逐一校验登录身份、医院成员关系与
- * connector.manage / data.* 权限。口令可通过环境变量
+ * data.* 权限。口令可通过环境变量
  * DATA_WORKBENCH_ENTRY_PASSWORD 覆盖，未配置时使用默认值。
  */
 const DEFAULT_ENTRY_PASSWORD = "yonghong";

@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, inArray, isNull, or } from "drizzle-orm";
+import { permissionColumns } from "../../access-control-data";
 import { normalizeAssetCodePrefix } from "../../device-ledger-fields";
 import { appSessionError, assertSameOrigin, requireAppSession } from "../../../db/account-security";
 import { getBootstrapAdminEmail, getDb } from "../../../db";
@@ -22,34 +23,31 @@ const hospitalSeeds = [
   { id: "hosp-specialty", code: "HOSP-003", name: "勇虹示范专科医院", shortName: "专科医院", level: "三级（未定等）", category: "专科医院", assetCodePrefix: "YHZK", region: "专科院区" },
 ] as const;
 
-const permissionSeeds = [
-  ["dashboard.view", "驾驶舱", "查看效益驾驶舱", "low"],
-  ["equipment.manage", "设备台账", "维护设备主数据", "high"],
-  ["cost.manage", "成本填报", "维护财务成本", "high"],
-  ["improvement.manage", "运营改进", "维护改进行动", "medium"],
-  ["report.manage", "报告治理", "编制和提交效益报告", "medium"],
-  ["report.review", "报告治理", "复核报告数据和结论", "high"],
-  ["report.approve", "报告治理", "签发医院正式报告", "high"],
-  ["report.export", "报表导出", "导出医院经营数据", "high"],
-  ["source.manage", "数据治理", "维护来源文件与指标口径", "high"],
-  ["connector.manage", "数据治理", "维护文件来源配置", "high"],
-  ["data.ingest", "数据治理", "创建文件导入批次", "medium"],
-  ["data.clean", "数据治理", "执行字段映射、清洗与隔离修复", "medium"],
-  ["data.review", "数据治理", "复核数据质量与业务对账", "high"],
-  ["data.publish", "数据治理", "发布或更正正式数据版本", "high"],
-  ["hospital.manage", "医院配置", "创建和停用医院租户", "high"],
-  ["member.manage", "用户权限", "维护成员和角色", "high"],
-  ["audit.view", "审计日志", "查看授权与操作日志", "medium"],
-] as const;
+// 权限清单不再在这里抄第二遍，直接引用前端主表 app/access-control-data.ts。
+// 之前两边各写一套：同一个 improvement.manage，前端叫「改进闭环」、这里叫「运营改进」；
+// report.manage/review/approve 在这里被统一压成「报告治理」一个名字。
+// 管理员在界面上按 A 名字勾，库里落的是 B 名字，排查授权问题时对不上账。
+//
+// module 存分组、name 存权限名、risk 只分「高风险 / 一般」两档——前端角色卡片上的
+// 「含高风险权限」标记就是按这一个布尔来的，库里再分出 medium 也没有任何读取方，
+// 徒增两边对不齐的机会。
+const permissionSeeds = permissionColumns.map((permission) => [
+  permission.code,
+  permission.group,
+  permission.label,
+  permission.risk ? "high" : "low",
+] as const);
 
 const roleSeeds = [
-  { id: "role-platform-admin", code: "platform_admin", name: "平台超级管理员", description: "管理医院租户和平台安全", dataScope: "platform" as const },
+  // 平台管理员实际持有全部业务权限（EquipmentPlatform.tsx 还让它直接取全量权限、绕过角色表），
+  // 描述不能再说「不参与日常业务」——描述与实际权限不符会让审计误判这个角色的风险等级。
+  { id: "role-platform-admin", code: "platform_admin", name: "平台超级管理员", description: "平台侧最高权限，用于开通医院租户与排障，日常业务应由医院侧角色处理。", dataScope: "platform" as const },
   { id: "role-hospital-admin", code: "hospital_admin", name: "医院管理员", description: "管理本医院组织与权限", dataScope: "hospital" as const },
   { id: "role-leadership", code: "leadership", name: "院领导", description: "查看院级经营与改进结果", dataScope: "hospital" as const },
   { id: "role-equipment", code: "equipment_manager", name: "医学装备管理员", description: "管理设备和保障业务", dataScope: "hospital" as const },
   { id: "role-finance", code: "finance_manager", name: "财务成本管理员", description: "管理收入成本与效益口径", dataScope: "hospital" as const },
   { id: "role-clinical", code: "clinical_manager", name: "临床科室负责人", description: "管理授权科室设备", dataScope: "department" as const },
-  { id: "role-auditor", code: "auditor", name: "审计只读", description: "查看分析与审计记录", dataScope: "hospital" as const },
+  { id: "role-auditor", code: "auditor", name: "审计只读", description: "查看分析结果与效益报告，不改动任何配置。", dataScope: "hospital" as const },
 ] as const;
 
 const PLATFORM_ADMIN_ROLE_ID = "role-platform-admin";
@@ -58,11 +56,13 @@ const RESERVED_ROLE_CODES = new Set(roleSeeds.map((role) => role.code));
 const rolePermissionMap: Record<string, string[]> = {
   "role-platform-admin": permissionSeeds.map(([code]) => code),
   "role-hospital-admin": permissionSeeds.map(([code]) => code).filter((code) => code !== "hospital.manage"),
-  "role-leadership": ["dashboard.view", "improvement.manage", "report.approve", "report.export", "data.publish", "audit.view"],
-  "role-equipment": ["dashboard.view", "equipment.manage", "improvement.manage", "report.manage", "report.export", "source.manage", "connector.manage", "data.ingest", "data.clean", "data.review", "audit.view"],
-  "role-finance": ["dashboard.view", "cost.manage", "report.manage", "report.review", "report.export", "source.manage", "data.review", "audit.view"],
+  "role-leadership": ["dashboard.view", "improvement.manage", "report.approve", "report.export", "data.publish"],
+  "role-equipment": ["dashboard.view", "equipment.manage", "improvement.manage", "report.manage", "report.export", "source.manage", "data.ingest", "data.clean", "data.review"],
+  "role-finance": ["dashboard.view", "cost.manage", "report.manage", "report.review", "report.export", "source.manage", "data.review"],
   "role-clinical": ["dashboard.view", "improvement.manage"],
-  "role-auditor": ["dashboard.view", "report.export", "source.manage", "audit.view"],
+  // 审计只读不再带 source.manage：那是指标字典的写权限（db/cloud-state.ts 把 metricDictionary
+  // 与 dataSources 的写入绑在它身上），一个负责查账的角色能改口径就等于能改自己要审的依据。
+  "role-auditor": ["dashboard.view", "report.export"],
 };
 
 async function ensureBaseCatalog() {
@@ -91,7 +91,9 @@ const dataScopeLabels = {
   self: "本人负责设备",
 } as const;
 
-async function accessConfigurationCatalog(manageHospitalIds: string[], auditHospitalIds: string[], includePlatformAudit: boolean) {
+// audit.view 删除后，审计数据没有独立的可见性开关；权限中心是唯一会展示这些数据的入口，
+// 因此审计策略与事件跟着 member.manage 的医院范围走，不再单独传一份 auditHospitalIds。
+async function accessConfigurationCatalog(manageHospitalIds: string[], includePlatformAudit: boolean) {
   const db = await getDb();
   const roleRows = manageHospitalIds.length
     ? await db.select().from(roles).where(or(isNull(roles.hospitalId), inArray(roles.hospitalId, manageHospitalIds)))
@@ -123,8 +125,8 @@ async function accessConfigurationCatalog(manageHospitalIds: string[], auditHosp
     result[member.roleId] = (result[member.roleId] ?? 0) + 1;
     return result;
   }, {});
-  const policyRows = auditHospitalIds.length ? await db.select().from(auditPolicies).where(inArray(auditPolicies.hospitalId, auditHospitalIds)) : [];
-  const auditRows = auditHospitalIds.length ? await db
+  const policyRows = manageHospitalIds.length ? await db.select().from(auditPolicies).where(inArray(auditPolicies.hospitalId, manageHospitalIds)) : [];
+  const auditRows = manageHospitalIds.length ? await db
     .select({
       time: auditLogs.createdAt,
       actor: accounts.displayName,
@@ -136,7 +138,7 @@ async function accessConfigurationCatalog(manageHospitalIds: string[], auditHosp
     .from(auditLogs)
     .leftJoin(accounts, eq(auditLogs.actorAccountId, accounts.id))
     .leftJoin(hospitals, eq(auditLogs.hospitalId, hospitals.id))
-    .where(includePlatformAudit ? or(isNull(auditLogs.hospitalId), inArray(auditLogs.hospitalId, auditHospitalIds)) : inArray(auditLogs.hospitalId, auditHospitalIds))
+    .where(includePlatformAudit ? or(isNull(auditLogs.hospitalId), inArray(auditLogs.hospitalId, manageHospitalIds)) : inArray(auditLogs.hospitalId, manageHospitalIds))
     .orderBy(desc(auditLogs.createdAt))
     .limit(100) : [];
   return {
@@ -267,8 +269,7 @@ export async function GET(request: Request) {
     }
     const platformAdmin = context.memberships.some((membership) => membership.roleId === PLATFORM_ADMIN_ROLE_ID);
     const manageHospitalIds = context.memberships.filter((membership) => platformAdmin || membership.permissions.includes("member.manage")).map((membership) => membership.hospitalId);
-    const auditHospitalIds = context.memberships.filter((membership) => platformAdmin || membership.permissions.includes("audit.view") || membership.permissions.includes("member.manage")).map((membership) => membership.hospitalId);
-    const catalog = await accessConfigurationCatalog(manageHospitalIds, auditHospitalIds, platformAdmin);
+    const catalog = await accessConfigurationCatalog(manageHospitalIds, platformAdmin);
     return Response.json({ ...context, accessCatalog: catalog });
   } catch (error) {
     return routeError(error);

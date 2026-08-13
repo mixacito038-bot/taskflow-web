@@ -619,7 +619,8 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     ? permissionColumns.map((permission) => permission.code)
     : sessionState === "verified" ? activeMembership?.permissions ?? [] : []);
   const hasPermission = (permission: string) => activePermissions.has(permission);
-  const dataWorkbenchPermissions = ["connector.manage", "data.ingest", "data.clean", "data.review", "data.publish"];
+  // connector.manage 已从权限表删除（全平台没有任何界面用它），这里跟着去掉，否则永远是个恒假项。
+  const dataWorkbenchPermissions = ["data.ingest", "data.clean", "data.review", "data.publish"];
   const canOpenDataWorkbench = dataWorkbenchPermissions.some(hasPermission);
 
   function notify(message: string, tone: "info" | "error" = "info") {
@@ -1454,8 +1455,12 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
       } else if (viewParam && safeViews.includes(viewParam as View)) {
         // ?view 只能落到当前角色有权限的视图，避免深链绕过左侧菜单的权限过滤。
         // 权限取自与左侧菜单同源的菜单目录，避免前向引用尚未声明的 navItems。
-        const target = menuCatalog.find((item) => item.id === viewParam);
-        const allowed = !target || !target.permissions.length || target.permissions.some(hasPermission);
+        // detail 不是左侧菜单项，在目录里查不到。原来写成 `!target || ...`——查不到就放行，
+        // 于是 ?view=detail 完全绕过权限校验。单机详情展示的是收入/成本/回本，
+        // 和效益驾驶舱同一份口径，就按驾驶舱的权限收口；目录里查不到的其它 id 一律拒绝。
+        const gateId = viewParam === "detail" ? "cockpit" : viewParam;
+        const target = menuCatalog.find((item) => item.id === gateId);
+        const allowed = target ? !target.permissions.length || target.permissions.some(hasPermission) : false;
         if (allowed) setView(viewParam as View);
         else notify("当前角色没有该页面的访问权限", "error");
       }
@@ -1980,7 +1985,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
     { id: "analysis", label: "效益分析", icon: <Activity size={18} />, group: "show", permissions: ["dashboard.view", "source.manage"] },
     { id: "report", label: "效益分析报告", icon: <FileText size={18} />, group: "show", permissions: ["report.manage", "report.review", "report.approve", "report.export"] },
     { id: "improvement", label: "运营改进中心", icon: <Target size={18} />, group: "show", permissions: ["improvement.manage"] },
-    { id: "capital", label: "资本计划", icon: <Boxes size={18} />, group: "show", permissions: ["improvement.manage", "report.approve"] },
+    { id: "capital", label: "资本计划", icon: <Boxes size={18} />, group: "show", permissions: ["report.approve"] },
     { id: "equipment", label: "设备台账", icon: <FileSpreadsheet size={18} />, group: "manage", permissions: ["equipment.manage"] },
     { id: "costs", label: "设备数据填报", icon: <CircleDollarSign size={18} />, group: "manage", permissions: ["cost.manage"] },
     { id: "layout", label: "驾驶舱配置", icon: <SlidersHorizontal size={18} />, group: "manage", permissions: ["member.manage"] },
@@ -2843,7 +2848,7 @@ export default function EquipmentPlatform({ viewer }: { viewer: ViewerIdentity }
         <div className="modal-backdrop confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="reset-demo-title">
           <section className="confirmation-dialog">
             <span className="confirmation-icon"><RotateCcw size={22} /></span>
-            <div><small>演示环境操作</small><h2 id="reset-demo-title">恢复全部演示数据？</h2><p>设备台账、成本填报、驾驶舱布局、消息状态和医院切换将恢复到初始值。此操作不会影响服务端医院和账号权限。</p></div>
+            <div><small>演示环境操作</small><h2 id="reset-demo-title">恢复全部演示数据？</h2><p>设备台账、设备数据填报、驾驶舱布局、消息状态和医院切换将恢复到初始值。此操作不会影响服务端医院和账号权限。</p></div>
             <footer><button className="secondary-button" onClick={() => setResetConfirmOpen(false)}>取消</button><button className="danger-button" onClick={() => { resetDemo(); setResetConfirmOpen(false); }}>确认恢复</button></footer>
           </section>
         </div>
@@ -3237,7 +3242,7 @@ function DeviceEditor({
           <div className="form-row two"><FormInput label="年度服务量" type="number" value={draft.serviceVolume} onChange={(value) => field("serviceVolume", Number(value))} /><FormInput label="服务量单位" value={draft.serviceUnit} onChange={(value) => field("serviceUnit", value)} /></div>
           <div className="form-row two"><FormInput label="使用率" type="number" value={draft.utilization} onChange={(value) => field("utilization", Number(value))} suffix="%" /><FormInput label="预计回本年限" type="number" step="0.1" value={draft.forecastPayback} onChange={(value) => field("forecastPayback", Number(value))} suffix="年" /></div>
           <div className="form-row two"><FormInput label="原计划回本年限" type="number" step="0.1" value={draft.planPayback} onChange={(value) => field("planPayback", Number(value))} suffix="年" /><label className="form-field"><span>运行状态</span><select value={draft.status} onChange={(event) => field("status", event.target.value as DeviceStatus)}><option>运行良好</option><option>需要关注</option><option>效益预警</option></select></label></div>
-          <div className="editor-tip"><Activity size={16} />成本明细请在“成本填报”中维护，避免不同入口产生口径冲突。</div>
+          <div className="editor-tip"><Activity size={16} />成本明细请在“设备数据填报”中维护，避免不同入口产生口径冲突。</div>
         </div>
         <div className="editor-footer"><button className="secondary-button" type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit"><Save size={17} />保存并同步</button></div>
       </form>

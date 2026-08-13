@@ -6,7 +6,9 @@ test("platform exposes a permission-gated passworded brand-click data workbench 
   const source = await readFile(new URL("../app/EquipmentPlatform.tsx", import.meta.url), "utf8");
   assert.match(source, /DataWorkbench/);
   assert.match(source, /CapitalPlanningCenter/);
-  assert.match(source, /connector\.manage/);
+  // 隐藏入口靠 data.* 这组数据准备权限把关（connector.manage 已作为空壳权限删除，
+  // 它当年只出现在这张清单里，没有任何一处判定真的用它挡过什么）。
+  assert.match(source, /data\.ingest/);
   assert.match(source, /data\.publish/);
   assert.match(source, /brandClick/);
   assert.match(source, />= DATA_WORKBENCH_ENTRY_CLICKS/);
@@ -48,7 +50,9 @@ test("permission catalog includes the full data preparation separation of duties
     readFile(new URL("../app/access-control-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/tenant-context/route.ts", import.meta.url), "utf8"),
   ]);
-  for (const permission of ["connector.manage", "data.ingest", "data.clean", "data.review", "data.publish"]) {
+  // 导入 → 清洗 → 复核 → 发布 四段职责分离必须两处都在（前端主表和服务端种子）。
+  // connector.manage 不属于这条链路，它是本轮删掉的空壳权限，别再加回来充数。
+  for (const permission of ["data.ingest", "data.clean", "data.review", "data.publish"]) {
     assert.match(client, new RegExp(permission.replace(".", "\\.")));
     assert.match(server, new RegExp(permission.replace(".", "\\.")));
   }
