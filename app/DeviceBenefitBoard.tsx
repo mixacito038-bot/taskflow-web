@@ -237,11 +237,29 @@ function useCountUp(target: number | null): number {
 
 /* ------------------------------------------------------------------ 图表（手写 SVG，不引库） */
 
+/**
+ * 大数字按字符数分档换字号，和指标字典看板同一套规矩。
+ * 单机口径的金额虽然比全院小一个量级，但「8,381,400」也有 9 个字符，
+ * 而这张看板右边还挂着 232px 的指标清单，卡片比驾驶舱那边更窄。
+ * 分档而不是 clamp()：字号下限（≥12px）靠静态断言守，断言只认 `NNpx` 字面量。
+ */
+function statSizeClass(text: string): string {
+  if (text.length >= 12) return styles.statValueXs;
+  if (text.length >= 10) return styles.statValueSm;
+  if (text.length >= 7) return styles.statValueMd;
+  return "";
+}
+
 function StatChart({ series, unit }: { series: ChartSeries; unit: string }) {
   const rolled = useCountUp(series.total);
+  // 分档看终值不看滚动中的中间值：中间值从 1 位涨到 9 位，
+  // 跟着它换档的话数字会一边滚一边变大小，比折行还晃眼。
+  const finalText = series.total === null ? "—" : formatValue(series.total);
+  const valueClass = [styles.statValue, statSizeClass(finalText)].filter(Boolean).join(" ");
   return (
     <div className={styles.statBox}>
-      <span className={styles.statValue}>
+      {/* title 兜底：万一遇到比预估更长的数，省略号之外还能悬浮看全 */}
+      <span className={valueClass} title={series.total === null ? undefined : `${finalText}${unit}`}>
         {series.total === null ? "—" : formatValue(rolled)}
         {series.total !== null && unit ? <small className={styles.statUnit}>{unit}</small> : null}
       </span>
@@ -652,7 +670,9 @@ function BoardCard({
     >
       <div className={styles.cardHead}>
         {category ? <i className={`${styles.toneDot} ${TONE_CLASS[category.tone]}`} aria-hidden /> : null}
-        <strong className={styles.cardTitle}>{name}</strong>
+        {/* 标题单行省略 + title 悬浮出全名：钳两行会让「医院设备总结余（设备盈余）」占两行、
+            旁边「医院设备总使用率」占一行，同一行卡片高矮不齐，数字也跟着错位。 */}
+        <strong className={styles.cardTitle} title={name}>{name}</strong>
         {editor ? <GripVertical size={14} className={styles.cardGrip} aria-hidden /> : null}
       </div>
       {body}

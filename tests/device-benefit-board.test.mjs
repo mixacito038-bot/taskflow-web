@@ -268,3 +268,27 @@ test("每一处动画都有 prefers-reduced-motion 降级", () => {
   assert.match(tsx, /style=\{\{ "--i": Math\.min\(index, STAGGER_MAX_INDEX\) \}/);
   assert.match(cssNoComments, /animation-delay:\s*calc\(var\(--i, 0\) \* \d+ms\)/);
 });
+
+test("单机看板的卡片高度可比：标题单行省略、大数字按长度分档换字号", async () => {
+  const [tsx, css] = await Promise.all([
+    readFile(new URL("../app/DeviceBenefitBoard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/DeviceBenefitBoard.module.css", import.meta.url), "utf8"),
+  ]);
+  // 钳两行时「医院设备总结余（设备盈余）」占两行、旁边「医院设备总使用率」占一行，
+  // 同一行卡片一高一矮，卡里的大数字跟着上下错位。
+  assert.doesNotMatch(css, /line-clamp/, "指标名又钳成多行了，同一行卡片会高矮不齐");
+  assert.match(css, /\.cardTitle \{[^}]*white-space: nowrap/);
+  assert.match(css, /\.cardTitle \{[^}]*text-overflow: ellipsis/);
+  // 名字被截了要能悬浮看全，否则「医院设备总…」三张卡长得一样
+  assert.match(tsx, /className=\{styles\.cardTitle\} title=\{name\}/);
+
+  // 大数字：nowrap 防「8,381,4 / 00 元」这种拦腰折断
+  assert.match(css, /\.statValue \{[^}]*white-space: nowrap/);
+  // 分档字号必须写成 NNpx 字面量，下面这条 ≥12px 的硬下限才守得住
+  const sizes = [...css.matchAll(/\.statValue(?:Md|Sm|Xs) \{ font-size: (\d+)px; \}/g)].map((m) => Number(m[1]));
+  assert.equal(sizes.length, 3, "缺少 Md/Sm/Xs 三档字号");
+  for (const size of sizes) assert.ok(size >= 12, `字号 ${size}px 低于 12px 硬下限`);
+  // 档位依据必须是终值：跟着滚动中的中间值换档，数字会一边滚一边变大小
+  assert.match(tsx, /const finalText = series\.total === null \? "—" : formatValue\(series\.total\);/);
+  assert.match(tsx, /statSizeClass\(finalText\)/);
+});

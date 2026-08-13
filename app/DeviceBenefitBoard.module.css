@@ -479,15 +479,15 @@
   gap: 7px;
 }
 
-/* 指标名允许折两行再省略：截成「医院设备总…」会让三张卡长得一模一样，
-   分不清哪张是收入哪张是成本，比多占一行高度糟糕得多。 */
+/* 指标名单行省略，全名挂在 title 上悬浮可见。
+   钳两行会让「医院设备总结余（设备盈余）」占两行、旁边「医院设备总使用率」占一行，
+   同一行的卡片一高一矮，卡里的大数字跟着上下错位——正是用户说的「上上下下很奇怪」。 */
 .cardTitle {
   min-width: 0;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  flex: 1;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.35;
   font-size: 13px;
   font-weight: 650;
@@ -611,6 +611,12 @@
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
+
+/* 字号档位：7~9 字符、10~11 字符、≥12 字符各降一档，最小 16px 仍在 12px 硬下限之上。
+   档位由 statSizeClass() 按终值的字符数挑，滚动中的中间值不参与。 */
+.statValueMd { font-size: 22px; }
+.statValueSm { font-size: 20px; }
+.statValueXs { font-size: 16px; }
 
 .statUnit {
   margin-left: 5px;
