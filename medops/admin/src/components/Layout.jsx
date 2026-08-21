@@ -96,7 +96,7 @@ export default function Layout() {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white text-lg font-bold">巡</span>
           <div>
             <div className="text-sm font-semibold leading-tight">急救设备巡检</div>
-            <div className="text-xs text-slate-400">管理后台</div>
+            <div className="text-xs text-slate-500">管理后台</div>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-3">
@@ -105,7 +105,7 @@ export default function Layout() {
             if (!items.length) return null
             return (
               <div key={g.group} className="mb-4">
-                <div className="px-2 pb-1.5 text-xs text-slate-400">{g.group}</div>
+                <div className="px-2 pb-1.5 text-xs text-slate-500">{g.group}</div>
                 {items.map(i => (
                   <NavLink
                     key={i.to}
@@ -128,7 +128,7 @@ export default function Layout() {
         <div className="border-t border-slate-100 p-3">
           <div className="mb-2 px-2">
             <div className="text-sm font-medium text-slate-700">{user?.displayName || user?.username}</div>
-            <div className="text-xs text-slate-400">{ROLE_TEXT[user?.role] || user?.role}</div>
+            <div className="text-xs text-slate-500">{ROLE_TEXT[user?.role] || user?.role}</div>
           </div>
           <div className="flex gap-2">
             <button className="btn-ghost flex-1 !px-2 !py-1.5 text-xs" onClick={() => setPwdOpen(true)}>修改密码</button>
@@ -138,7 +138,7 @@ export default function Layout() {
       </aside>
 
       {/* 内容区 */}
-      <main className="ml-56 flex-1 p-6">
+      <main className="ml-56 min-w-0 flex-1 p-6">
         <Outlet />
       </main>
 

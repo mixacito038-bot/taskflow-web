@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 
 export function Spinner({ text = '加载中…' }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-sm">
+    <div className="flex items-center justify-center gap-2 py-10 text-slate-500 text-sm">
       <span className="h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
       {text}
     </div>
@@ -11,7 +11,7 @@ export function Spinner({ text = '加载中…' }) {
 }
 
 export function Empty({ text = '暂无数据' }) {
-  return <div className="py-10 text-center text-sm text-slate-400">{text}</div>
+  return <div className="py-10 text-center text-sm text-slate-500">{text}</div>
 }
 
 export function ErrorTip({ error, className = '' }) {
@@ -25,11 +25,11 @@ export function ErrorTip({ error, className = '' }) {
 
 export function Badge({ color = 'slate', children }) {
   const map = {
-    slate: 'bg-slate-100 text-slate-600',
+    slate: 'bg-slate-100 text-slate-700',
     blue: 'bg-primary-light text-primary',
-    green: 'bg-emerald-50 text-emerald-600',
-    red: 'bg-red-50 text-red-600',
-    amber: 'bg-amber-50 text-amber-600'
+    green: 'bg-emerald-50 text-emerald-700',
+    red: 'bg-red-50 text-red-700',
+    amber: 'bg-amber-50 text-amber-700'
   }
   return <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${map[color] || map.slate}`}>{children}</span>
 }
@@ -47,7 +47,7 @@ export function Modal({ open, title, onClose, children, width = 'max-w-lg' }) {
       <div className={`card w-full ${width} shadow-xl`}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <h3 className="text-base font-semibold">{title}</h3>
-          <button className="text-slate-400 hover:text-slate-600 text-xl leading-none" onClick={onClose} aria-label="关闭">×</button>
+          <button className="text-slate-500 hover:text-slate-600 text-xl leading-none" onClick={onClose} aria-label="关闭">×</button>
         </div>
         <div className="p-5">{children}</div>
       </div>
@@ -62,7 +62,7 @@ export function Field({ label, required, children, hint }) {
         {label}{required && <span className="text-red-500 ml-0.5">*</span>}
       </span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
     </label>
   )
 }
@@ -82,13 +82,13 @@ export function Bar({ value, total, color = 'bg-primary', showText = true }) {
 
 /** 签名展示：签名图 <img src=/api/files/...> 依赖 sid cookie 鉴权 */
 export function SignCard({ sign, title = '签名' }) {
-  if (!sign) return <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-400">未签字</div>
+  if (!sign) return <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">未签字</div>
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
       <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
         <span className="font-medium text-slate-700">{title}：{sign.name}</span>
         {sign.title && <span className="text-slate-500">{sign.title}</span>}
-        {sign.at && <span className="text-xs text-slate-400">{sign.at}</span>}
+        {sign.at && <span className="text-xs text-slate-500">{sign.at}</span>}
       </div>
       {sign.opinion && <div className="mb-2 text-sm text-slate-600">意见：{sign.opinion}</div>}
       {sign.url && (

@@ -36,7 +36,7 @@ function DeptMultiSelect({ value, onChange, depts, single }) {
           </button>
         )
       })}
-      {depts.length === 0 && <span className="text-xs text-slate-400">暂无科室，请先在「科室管理」中创建</span>}
+      {depts.length === 0 && <span className="text-xs text-slate-500">暂无科室，请先在「科室管理」中创建</span>}
     </div>
   )
 }
@@ -183,8 +183,8 @@ export default function Users() {
                   <td>{ROLE_TEXT[u.role] || u.role}</td>
                   <td className="max-w-[260px]">
                     {u.role === 'equip' || u.role === 'admin'
-                      ? <span className="text-slate-400">全院</span>
-                      : (u.deptIds.length ? u.deptIds.map(deptName).join('、') : <span className="text-slate-300">—</span>)}
+                      ? <span className="text-slate-500">全院</span>
+                      : (u.deptIds.length ? u.deptIds.map(deptName).join('、') : <span className="text-slate-400">—</span>)}
                   </td>
                   <td>{u.status === 'on' ? <Badge color="green">启用</Badge> : <Badge color="red">已停用</Badge>}</td>
                   <td className="whitespace-nowrap text-right">

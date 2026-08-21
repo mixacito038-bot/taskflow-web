@@ -90,7 +90,7 @@ export default function Login() {
         <div className="mb-6 text-center">
           <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-white text-2xl font-bold shadow-lg shadow-primary/30">巡</span>
           <h1 className="text-xl font-semibold">急救设备巡检 · 管理后台</h1>
-          <p className="mt-1 text-sm text-slate-400">设备科 / 管理员登录</p>
+          <p className="mt-1 text-sm text-slate-500">设备科 / 管理员登录</p>
         </div>
 
         <div className="card p-6">
@@ -123,7 +123,7 @@ export default function Login() {
           )}
         </div>
 
-        <p className="mt-4 text-center text-xs text-slate-400">巡检员 / 护士长请使用手机端（/xunjian/）</p>
+        <p className="mt-4 text-center text-xs text-slate-500">巡检员 / 护士长请使用手机端（/xunjian/）</p>
       </div>
     </div>
   )

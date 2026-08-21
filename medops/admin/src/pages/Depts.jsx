@@ -102,7 +102,7 @@ export default function Depts() {
             <tbody>
               {[...list].sort((a, b) => (a.sort - b.sort) || a.name.localeCompare(b.name)).map(d => (
                 <tr key={d.id}>
-                  <td className="text-slate-400 tabular-nums">{d.sort}</td>
+                  <td className="text-slate-500 tabular-nums">{d.sort}</td>
                   <td className="font-medium">{d.name}</td>
                   <td className="font-mono text-slate-500">{d.code || '—'}</td>
                   <td>{d.status === 'on' ? <Badge color="green">启用</Badge> : <Badge color="red">已停用</Badge>}</td>

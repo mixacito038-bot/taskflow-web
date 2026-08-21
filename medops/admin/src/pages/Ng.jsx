@@ -77,7 +77,7 @@ export default function Ng() {
           <input type="date" className="inp !w-40" value={to} onChange={e => setTo(e.target.value)} />
         </label>
         <button className="btn-primary" onClick={query} disabled={loading}>{loading ? '查询中…' : '查 询'}</button>
-        {list && <span className="pb-2 text-sm text-slate-400">共 {list.length} 条异常</span>}
+        {list && <span className="pb-2 text-sm text-slate-500">共 {list.length} 条异常</span>}
       </div>
       <ErrorTip error={err} className="mb-4" />
 

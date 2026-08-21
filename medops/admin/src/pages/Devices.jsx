@@ -216,7 +216,7 @@ export default function Devices() {
           {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
         </select>
         <input className="inp !w-64" placeholder="搜索编码 / 名称 / 品类 / 位置" value={kw} onChange={e => setKw(e.target.value)} />
-        <span className="self-center text-sm text-slate-400">共 {shown.length} 台</span>
+        <span className="self-center text-sm text-slate-500">共 {shown.length} 台</span>
       </div>
       <ErrorTip error={err} className="mb-4" />
 

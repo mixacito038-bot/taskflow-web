@@ -28,7 +28,7 @@ function UnsignedCard({ title, color, items, render }) {
         <Badge color={items.length ? color : 'green'}>{items.length ? `${items.length} 项` : '全部已签'}</Badge>
       </div>
       {items.length === 0 ? (
-        <div className="py-4 text-center text-sm text-slate-300">✓ 无待办</div>
+        <div className="py-4 text-center text-sm text-slate-600">✓ 无待办</div>
       ) : (
         <ul className="max-h-64 space-y-1.5 overflow-y-auto pr-1 text-sm">
           {items.map((it, i) => <li key={i} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5">{render(it)}</li>)}
@@ -64,9 +64,9 @@ export default function Dashboard() {
       <div className="mb-5 flex items-end justify-between">
         <div>
           <h2 className="text-lg font-semibold">未签提醒</h2>
-          <p className="mt-0.5 text-sm text-slate-400">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（上月）</p>
+          <p className="mt-0.5 text-sm text-slate-500">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（上月）</p>
         </div>
-        {time && <span className="text-sm text-slate-400">服务器时间 {time.now}</span>}
+        {time && <span className="text-sm text-slate-500">服务器时间 {time.now}</span>}
       </div>
 
       <ErrorTip error={err} className="mb-4" />
@@ -82,7 +82,7 @@ export default function Dashboard() {
       )}
 
       <div className="card mt-5 p-5">
-        <h3 className="mb-4 font-medium text-slate-700">本月完成率概览 {time?.month && <span className="text-sm font-normal text-slate-400">（{time.month}）</span>}</h3>
+        <h3 className="mb-4 font-medium text-slate-700">本月完成率概览 {time?.month && <span className="text-sm font-normal text-slate-500">（{time.month}）</span>}</h3>
         {!completion ? (err ? <Empty text="加载失败" /> : <Spinner />) : completion.length === 0 ? <Empty /> : (
           <div className="overflow-x-auto">
             <table className="tbl">
@@ -97,7 +97,7 @@ export default function Dashboard() {
                     <td className="font-medium">{r.deptName || deptName(r.deptId)}</td>
                     <td><Bar value={r.signedDays} total={r.dueDays} /></td>
                     <td className="tabular-nums">{r.checked}</td>
-                    <td>{r.ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{r.ng}</span> : <span className="text-slate-400">0</span>}</td>
+                    <td>{r.ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{r.ng}</span> : <span className="text-slate-500">0</span>}</td>
                     <td><Bar value={r.weekSigned} total={r.weekTotal} color="bg-amber-400" /></td>
                     <td>{r.monthSigned ? <Badge color="green">已签</Badge> : <Badge>未签</Badge>}</td>
                   </tr>

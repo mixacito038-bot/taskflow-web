@@ -79,7 +79,7 @@ export default function Stats() {
       <ErrorTip error={err} className="mb-4" />
 
       <div className="card mb-5 p-5">
-        <h3 className="mb-4 font-medium text-slate-700">巡检完成率 <span className="text-sm font-normal text-slate-400">（应巡天数 / 已日签天数 / 台次 / 周签 / 月签）</span></h3>
+        <h3 className="mb-4 font-medium text-slate-700">巡检完成率 <span className="text-sm font-normal text-slate-500">（应巡天数 / 已日签天数 / 台次 / 周签 / 月签）</span></h3>
         {!completion ? <Spinner /> : completion.length === 0 ? <Empty /> : (
           <div className="overflow-x-auto">
             <table className="tbl">
@@ -92,7 +92,7 @@ export default function Stats() {
                     <td className="font-medium">{r.deptName || deptName(r.deptId)}</td>
                     <td><Bar value={r.signedDays} total={r.dueDays} /></td>
                     <td className="tabular-nums">{r.checked}</td>
-                    <td>{r.ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{r.ng}</span> : <span className="text-slate-400">0</span>}</td>
+                    <td>{r.ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{r.ng}</span> : <span className="text-slate-500">0</span>}</td>
                     <td><Bar value={r.weekSigned} total={r.weekTotal} color="bg-amber-400" /></td>
                     <td>{r.monthSigned ? <Badge color="green">已签</Badge> : <Badge>未签</Badge>}</td>
                   </tr>
@@ -104,7 +104,7 @@ export default function Stats() {
       </div>
 
       <div className="card p-5">
-        <h3 className="mb-4 font-medium text-slate-700">签字人工作量 <span className="text-sm font-normal text-slate-400">（{month || '—'} 各签字人 × 日 / 周 / 月签次数）</span></h3>
+        <h3 className="mb-4 font-medium text-slate-700">签字人工作量 <span className="text-sm font-normal text-slate-500">（{month || '—'} 各签字人 × 日 / 周 / 月签次数）</span></h3>
         {!signatures ? <Spinner /> : shownSigs.length === 0 ? <Empty /> : (
           <div className="overflow-x-auto">
             <table className="tbl">
@@ -117,7 +117,7 @@ export default function Stats() {
                   return (
                     <tr key={i}>
                       <td>{s.deptName || deptName(s.deptId)}</td>
-                      <td className="font-medium">{s.name}{s.title && <span className="ml-1.5 text-xs text-slate-400">{s.title}</span>}</td>
+                      <td className="font-medium">{s.name}{s.title && <span className="ml-1.5 text-xs text-slate-500">{s.title}</span>}</td>
                       <td>
                         {/* 堆叠条：蓝=日签 琥珀=周签 绿=月签 */}
                         <div className="flex h-3 w-full max-w-[240px] overflow-hidden rounded-full bg-slate-100">
@@ -127,8 +127,8 @@ export default function Stats() {
                         </div>
                       </td>
                       <td className="tabular-nums text-primary">{s.day}</td>
-                      <td className="tabular-nums text-amber-500">{s.week}</td>
-                      <td className="tabular-nums text-emerald-500">{s.month}</td>
+                      <td className="tabular-nums text-amber-700">{s.week}</td>
+                      <td className="tabular-nums text-emerald-700">{s.month}</td>
                       <td className="font-medium tabular-nums">{total}</td>
                     </tr>
                   )

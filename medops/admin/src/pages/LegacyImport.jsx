@@ -52,7 +52,7 @@ export default function LegacyImport() {
   return (
     <div>
       <h2 className="mb-1 text-lg font-semibold">历史数据导入</h2>
-      <p className="mb-5 text-sm text-slate-400">将旧版 H5「导出数据」生成的 JSON 一次性导入服务端（含科室 / 设备 / 签字人 / 账号 / 巡检与签字记录）。</p>
+      <p className="mb-5 text-sm text-slate-500">将旧版 H5「导出数据」生成的 JSON 一次性导入服务端（含科室 / 设备 / 签字人 / 账号 / 巡检与签字记录）。</p>
 
       <div className="card max-w-3xl p-6">
         <div className="mb-3 flex items-center justify-between">
@@ -60,7 +60,7 @@ export default function LegacyImport() {
             <button className="ml-1 text-primary hover:underline" onClick={() => fileRef.current?.click()}>选择 .json 文件</button>
           </span>
           <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={onFile} />
-          {text && <button className="text-sm text-slate-400 hover:text-slate-600" onClick={() => { setText(''); setParsed(null); setErr(null); setResult(null) }}>清空</button>}
+          {text && <button className="text-sm text-slate-500 hover:text-slate-600" onClick={() => { setText(''); setParsed(null); setErr(null); setResult(null) }}>清空</button>}
         </div>
 
         <textarea
@@ -76,7 +76,7 @@ export default function LegacyImport() {
           <div className="mt-4">
             <div className="mb-3 flex flex-wrap gap-2">
               {KEYS.map(k => (
-                <span key={k} className={`rounded-full px-3 py-1 text-xs ${Array.isArray(parsed[k]) && parsed[k].length ? 'bg-primary-light text-primary' : 'bg-slate-100 text-slate-400'}`}>
+                <span key={k} className={`rounded-full px-3 py-1 text-xs ${Array.isArray(parsed[k]) && parsed[k].length ? 'bg-primary-light text-primary' : 'bg-slate-100 text-slate-500'}`}>
                   {KEY_TEXT[k]} {Array.isArray(parsed[k]) ? parsed[k].length : 0}
                 </span>
               ))}

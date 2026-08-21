@@ -109,7 +109,7 @@ export default function Members() {
           <option value="">全部科室</option>
           {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
         </select>
-        <span className="self-center text-sm text-slate-400">共 {shown.length} 人</span>
+        <span className="self-center text-sm text-slate-500">共 {shown.length} 人</span>
       </div>
       <ErrorTip error={err} className="mb-4" />
 

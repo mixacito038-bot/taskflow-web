@@ -51,7 +51,7 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
                     <td>
                       {v === 'ok' && <Badge color="green">✓ 正常</Badge>}
                       {v === 'ng' && <Badge color="red">✗ 异常</Badge>}
-                      {!v && <span className="text-slate-300">未查</span>}
+                      {!v && <span className="text-slate-400">未查</span>}
                     </td>
                     <td className="max-w-[200px] text-red-600">{notes[id] || ''}</td>
                   </tr>
@@ -59,7 +59,7 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
               })}
               {orphanIds.map(id => (
                 <tr key={id}>
-                  <td className="font-mono text-slate-400" colSpan={2}>设备#{id}（已移出台账）</td>
+                  <td className="font-mono text-slate-500" colSpan={2}>设备#{id}（已移出台账）</td>
                   <td />
                   <td>{checks[id] === 'ok' ? <Badge color="green">✓ 正常</Badge> : <Badge color="red">✗ 异常</Badge>}</td>
                   <td className="text-red-600">{notes[id] || ''}</td>
@@ -162,7 +162,7 @@ export default function Records() {
                     <td className="font-medium">{deptName(r.deptId)}</td>
                     <td>{r.inspectorName || '—'}</td>
                     <td className="tabular-nums">{Object.keys(checks).length}</td>
-                    <td>{ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{ng}</span> : <span className="text-slate-400">0</span>}</td>
+                    <td>{ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{ng}</span> : <span className="text-slate-500">0</span>}</td>
                     <td>{r.sign ? <Badge color="green">已签 · {r.sign.name}</Badge> : <Badge>未签</Badge>}</td>
                     <td className="text-right">
                       <button className="btn-ghost !px-2.5 !py-1 text-xs" onClick={() => openDetail(r)}>查看明细</button>

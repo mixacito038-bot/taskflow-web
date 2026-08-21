@@ -10,8 +10,8 @@ function StatChips({ stat, unit }) {
   if (!stat) return null
   return (
     <div className="flex gap-2 text-xs">
-      <span className="rounded-full bg-primary-light px-2 py-0.5 text-primary">巡检 {stat.checked ?? 0} 台次</span>
-      <span className={`rounded-full px-2 py-0.5 ${stat.ng > 0 ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'}`}>异常 {stat.ng ?? 0}</span>
+      <span className="rounded-full bg-primary-light px-2 py-0.5 text-primary-hover">巡检 {stat.checked ?? 0} 台次</span>
+      <span className={`rounded-full px-2 py-0.5 ${stat.ng > 0 ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-700'}`}>异常 {stat.ng ?? 0}</span>
       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">{unit === 'week' ? `覆盖 ${stat.days ?? 0} 天` : `覆盖 ${stat.weeks ?? 0} 周`}</span>
     </div>
   )
@@ -28,7 +28,7 @@ function SignItem({ title, stat, unit, sign, at, canVoid, onVoid }) {
         {canVoid && <button className="btn-danger !px-2.5 !py-1 text-xs" onClick={onVoid}>作废</button>}
       </div>
       <SignCard sign={sign} title={unit === 'week' ? '护士长签字' : '设备科签字'} />
-      {at && <div className="mt-2 text-xs text-slate-400">提交于 {at}</div>}
+      {at && <div className="mt-2 text-xs text-slate-500">提交于 {at}</div>}
     </div>
   )
 }
