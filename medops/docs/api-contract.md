@@ -54,7 +54,8 @@ H5 启动后所有 today()/wkOf(today())/moOf(today()) 用它（S.date/S.week/S.
 数据形状（与 H5 localStorage 结构一致，仅 sign.dataUrl → sign.url）：
 ```
 dept   {id,name,code,sort,status:'on'|'off'}
-device {id,deptId,catName,code,name,model,location,status:'in_use'|...}
+device {id,deptId,catName,code,name,model,location,status:'in_use'|...,
+        expiryDate:'YYYY-MM-DD'|'', expiryNote:'', remindDays:int(0=默认30)}
 member {id,deptId,name,title,status:'on'}
 record {id,deptId,date,checks:{[deviceId]:'ok'|'ng'},notes:{[deviceId]:string},
         sign:null|{name,title,url,opinion,at},inspectorId,inspectorName,createdAt,updatedAt}
@@ -89,8 +90,8 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET/POST /api/admin/users; PATCH /api/admin/users/:id | 建号/改 displayName/role/deptIds/status。**status→off 时吊销其全部 refreshToken**。POST body `{username,password,displayName,role,deptIds:[]}` |
 | POST /api/admin/users/:id/reset-password | → `{password:"一次性初始密码"}`，置 mustChange |
 | GET/POST/PATCH /api/admin/depts[/:id] | 有记录的科室禁删（改 status:off）；DELETE 仅无记录时 |
-| GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护 |
-| GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态） |
+| GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用），remindDays ∈ 0～365，非法→400 BAD_INPUT |
+| GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数） |
 | POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。→ `{created,updated,errors:[{row,message}]}` |
 | GET/POST/PATCH/DELETE /api/admin/members[/:id] | 签字人名单 |
 | POST /api/admin/signs/void (admin) | Body `{type:'day'|'week'|'month',deptId,key,reason}`。作废签字（记录退回未签态），写审计 |
@@ -105,6 +106,8 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET /api/stats/completion?month=&deptId= | 按科室：应巡天数/已日签天数/巡检台次/异常台次/周签进度/月签状态 |
 | GET /api/stats/ng?from=&to=&deptId= | 异常明细：[{date,deptId,deptName,deviceCode,deviceName,catName,note,inspectorName}] |
 | GET /api/stats/signatures?month= | 各科室签字人 × 日/周/月签次数 |
+| GET /api/stats/expiry?all=&deptId= | 有效期清单：`[{deviceId,deptId,deptName,code,name,catName,location,expiryDate,expiryNote,level,days,remindDays}]`。level ∈ expired/soon/ok；默认只回 expired+soon，`all=1` 回全部已设有效期的。按紧急度→剩余天数→科室→编码排序。全角色可访问（巡检员也要看到本科室），范围由 visibleDeptIds 收窄 |
+| GET /api/stats/expiry/summary | → `{expired,soon,total}`，首页角标用 |
 | GET /api/export/monthly.xlsx?deptId=&month= | exceljs 生成：设备×日期矩阵(✓/✗/空) + 异常清单 + 三级签名图(嵌图) 。Content-Disposition attachment |
 | GET /api/export/ng.xlsx?from=&to= | 异常清单表 |
 
