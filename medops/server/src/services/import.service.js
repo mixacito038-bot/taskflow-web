@@ -3,10 +3,23 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
 const { getDb } = require('../db/connection');
+const expirySvc = require('./expiry.service');
 const { E } = require('../plugins/error');
 const fileSvc = require('./file.service');
 
 const nowIso = () => new Date().toISOString();
+/* Excel 有效期单元格归一化：支持 2027-03-15 / 2027/3/15 / Excel 日期对象转出的 ISO 串。
+   返回 YYYY-MM-DD；无法解析返回 null；空返回空串 */
+function normExpiryCell(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return '';
+  let m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(v);
+  if (!m) { const d = new Date(v); if (isNaN(d)) return null;
+    m = [null, d.getFullYear(), d.getMonth() + 1, d.getDate()]; }
+  const iso = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  return expirySvc.isDate(iso) ? iso : null;
+}
+
 const STATUS_MAP = { '在用': 'in_use', '维修': 'repair', '停用': 'retired', '报废': 'scrapped' };
 
 function cellStr(row, i) {
@@ -31,23 +44,31 @@ async function importDevices(buffer) {
   ws.eachRow((row, n) => { if (n > 1) rows.push([row, n]); });
   db.transaction(() => {
     for (const [row, n] of rows) {
-      const [deptName, catName, code, name, model, location, statusRaw] =
-        [1, 2, 3, 4, 5, 6, 7].map(i => cellStr(row, i));
+      const [deptName, catName, code, name, model, location, statusRaw, expiryRaw, remindRaw] =
+        [1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => cellStr(row, i));
       if (!deptName && !code && !name) continue; // 空行
       if (!deptName || !catName || !code || !name) { errors.push({ row: n, message: '科室名称/设备品类/设备编码/设备名称不能为空' }); continue; }
       const deptId = deptByName.get(deptName);
       if (!deptId) { errors.push({ row: n, message: `科室「${deptName}」不存在` }); continue; }
       const status = STATUS_MAP[statusRaw] || statusRaw || 'in_use';
+      /* 有效期：Excel 里可能是日期格式(cellStr 已转文本)或手打字符串，统一归一到 YYYY-MM-DD */
+      const expiry = normExpiryCell(expiryRaw);
+      if (expiryRaw && expiry === null) { errors.push({ row: n, message: `有效期「${expiryRaw}」不是有效日期，应为 2027-03-15 这样的格式` }); continue; }
+      const remind = remindRaw ? Math.trunc(+remindRaw) : 0;
+      if (remindRaw && (!Number.isFinite(remind) || remind < 0 || remind > 365)) {
+        errors.push({ row: n, message: `提醒提前天数「${remindRaw}」应为 0～365 的整数` }); continue;
+      }
       const old = db.prepare('SELECT id FROM devices WHERE code = ?').get(code);
       if (old) {
         db.prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, name = ?, model = ?, location = ?,
-          status = ?, updated_at = ? WHERE id = ?`)
-          .run(deptId, catName, name, model, location, status, nowIso(), old.id);
+          status = ?, expiry_date = ?, remind_days = ?, updated_at = ? WHERE id = ?`)
+          .run(deptId, catName, name, model, location, status, expiry || '', remind, nowIso(), old.id);
         updated++;
       } else {
-        db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(deptId, catName, code, name, model, location, status, nowIso(), nowIso());
+        db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status,
+          expiry_date, remind_days, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(deptId, catName, code, name, model, location, status, expiry || '', remind, nowIso(), nowIso());
         created++;
       }
     }

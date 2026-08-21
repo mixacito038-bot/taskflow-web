@@ -1,7 +1,7 @@
 // 设备台账：增删改 + xlsx 导入（上传→逐行结果）+ 模板下载
 import { useEffect, useRef, useState } from 'react'
 import { api, download } from '../api/client'
-import { useDepts } from '../hooks'
+import { useDepts, useServerTime } from '../hooks'
 import { asList, nz, DEVICE_STATUS, devStatusText } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 
@@ -14,11 +14,25 @@ function normDevice(d) {
     name: d.name,
     model: nz(d.model, ''),
     location: nz(d.location, ''),
-    status: nz(d.status, 'in_use')
+    status: nz(d.status, 'in_use'),
+    expiryDate: nz(d.expiryDate, d.expiry_date, ''),
+    expiryNote: nz(d.expiryNote, d.expiry_note, ''),
+    remindDays: nz(d.remindDays, d.remind_days, 0)
   }
 }
 
-function DeviceModal({ open, onClose, editing, depts, onSaved }) {
+/* 有效期状态：与后端 expiry.service 判定一致（默认提前 30 天） */
+export function expiryState(expiryDate, remindDays, today) {
+  if (!expiryDate || !today) return null
+  const t = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), 12)
+  const days = Math.round((t(expiryDate) - t(today)) / 86400000)
+  const win = +remindDays > 0 ? +remindDays : 30
+  if (days < 0) return { level: 'expired', days, text: `已过期 ${-days} 天` }
+  if (days <= win) return { level: 'soon', days, text: days === 0 ? '今天到期' : `还剩 ${days} 天` }
+  return { level: 'ok', days, text: `还剩 ${days} 天` }
+}
+
+function DeviceModal({ open, onClose, editing, depts, onSaved, time }) {
   const isNew = !editing?.id
   const [form, setForm] = useState({})
   const [err, setErr] = useState(null)
@@ -29,7 +43,7 @@ function DeviceModal({ open, onClose, editing, depts, onSaved }) {
     if (open) {
       setErr(null)
       setForm(isNew
-        ? { deptId: depts[0]?.id ? String(depts[0].id) : '', catName: '', code: '', name: '', model: '', location: '', status: 'in_use' }
+        ? { deptId: depts[0]?.id ? String(depts[0].id) : '', catName: '', code: '', name: '', model: '', location: '', status: 'in_use', expiryDate: '', expiryNote: '', remindDays: 0 }
         : { ...editing })
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -40,7 +54,10 @@ function DeviceModal({ open, onClose, editing, depts, onSaved }) {
     setBusy(true)
     const body = {
       deptId: form.deptId, catName: form.catName.trim(), code: form.code.trim(),
-      name: form.name.trim(), model: (form.model || '').trim(), location: (form.location || '').trim(), status: form.status
+      name: form.name.trim(), model: (form.model || '').trim(), location: (form.location || '').trim(), status: form.status,
+      expiryDate: (form.expiryDate || '').trim(),
+      expiryNote: (form.expiryNote || '').trim(),
+      remindDays: +form.remindDays || 0
     }
     try {
       if (isNew) await api('/admin/devices', { method: 'POST', body })
@@ -82,6 +99,32 @@ function DeviceModal({ open, onClose, editing, depts, onSaved }) {
             {DEVICE_STATUS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
           </select>
         </Field>
+
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3.5">
+          <div className="mb-2.5 text-sm font-medium text-slate-700">有效期提醒
+            <span className="ml-1.5 text-xs font-normal text-slate-600">除颤电极片、急救药品等有保质期的填这里；设备本身没有有效期就留空</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="到期日">
+              <input type="date" className="inp" value={form.expiryDate || ''} onChange={e => set('expiryDate', e.target.value)} />
+            </Field>
+            <Field label="提前提醒" hint="留空按 30 天">
+              <input type="number" min="0" max="365" className="inp" placeholder="30"
+                value={form.remindDays || ''} onChange={e => set('remindDays', e.target.value)} />
+            </Field>
+            <Field label="说明" hint="如：电极片">
+              <input className="inp" maxLength={60} value={form.expiryNote || ''}
+                onChange={e => set('expiryNote', e.target.value)} />
+            </Field>
+          </div>
+          {form.expiryDate && time?.date && (() => {
+            const st = expiryState(form.expiryDate, form.remindDays, time.date)
+            if (!st) return null
+            const cls = st.level === 'expired' ? 'text-red-700' : st.level === 'soon' ? 'text-amber-700' : 'text-slate-600'
+            return <div className={`mt-2 text-xs ${cls}`}>按今天（{time.date}）算：{st.text}
+              {st.level !== 'ok' && '，会出现在首页提醒里'}</div>
+          })()}
+        </div>
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={onClose}>取消</button>
           <button className="btn-primary" disabled={busy}>{busy ? '保存中…' : '保存'}</button>
@@ -174,6 +217,7 @@ function ImportModal({ open, onClose, onDone }) {
 
 export default function Devices() {
   const { onDepts, deptName } = useDepts()
+  const time = useServerTime()
   const [list, setList] = useState(null)
   const [err, setErr] = useState(null)
   const [filterDept, setFilterDept] = useState('')
@@ -216,7 +260,7 @@ export default function Devices() {
           {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
         </select>
         <input className="inp !w-64" placeholder="搜索编码 / 名称 / 品类 / 位置" value={kw} onChange={e => setKw(e.target.value)} />
-        <span className="self-center text-sm text-slate-500">共 {shown.length} 台</span>
+        <span className="self-center text-sm text-slate-600">共 {shown.length} 台</span>
       </div>
       <ErrorTip error={err} className="mb-4" />
 
@@ -224,7 +268,7 @@ export default function Devices() {
         {!list ? <Spinner /> : shown.length === 0 ? <Empty /> : (
           <table className="tbl">
             <thead>
-              <tr><th>编码</th><th>名称</th><th>品类</th><th>科室</th><th>型号</th><th>位置</th><th>状态</th><th className="text-right">操作</th></tr>
+              <tr><th>编码</th><th>名称</th><th>品类</th><th>科室</th><th>位置</th><th>状态</th><th>有效期</th><th className="text-right">操作</th></tr>
             </thead>
             <tbody>
               {shown.map(d => (
@@ -233,9 +277,19 @@ export default function Devices() {
                   <td className="font-medium">{d.name}</td>
                   <td>{d.catName}</td>
                   <td>{deptName(d.deptId)}</td>
-                  <td className="text-slate-500">{d.model || '—'}</td>
                   <td className="text-slate-500">{d.location || '—'}</td>
                   <td>{d.status === 'in_use' ? <Badge color="green">在用</Badge> : <Badge color="amber">{devStatusText(d.status)}</Badge>}</td>
+                  <td className="whitespace-nowrap">{(() => {
+                    if (!d.expiryDate) return <span className="text-slate-500">—</span>
+                    const st = expiryState(d.expiryDate, d.remindDays, time?.date)
+                    const color = st?.level === 'expired' ? 'red' : st?.level === 'soon' ? 'amber' : 'slate'
+                    return (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="tabular-nums text-slate-600">{d.expiryDate}</span>
+                        {st && st.level !== 'ok' && <Badge color={color}>{st.text}</Badge>}
+                      </span>
+                    )
+                  })()}</td>
                   <td className="whitespace-nowrap text-right">
                     <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => setModal(d)}>编辑</button>
                     <button className="btn-danger !px-2.5 !py-1 text-xs" onClick={() => remove(d)}>删除</button>
@@ -247,7 +301,7 @@ export default function Devices() {
         )}
       </div>
 
-      <DeviceModal open={modal !== null} editing={modal} depts={onDepts} onClose={() => setModal(null)} onSaved={load} />
+      <DeviceModal open={modal !== null} editing={modal} depts={onDepts} onClose={() => setModal(null)} onSaved={load} time={time} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
     </div>
   )

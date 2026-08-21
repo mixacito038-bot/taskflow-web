@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useDepts, useServerTime } from '../hooks'
 import { asList, nz } from '../utils'
 import { Bar, Empty, ErrorTip, Spinner, Badge } from '../components/ui'
+import { Link } from 'react-router-dom'
 
 // 容忍字段命名差异（契约未定 completion 具体字段名）
 function normRow(r) {
@@ -42,11 +43,13 @@ export default function Dashboard() {
   const { deptName } = useDepts()
   const time = useServerTime()
   const [unsigned, setUnsigned] = useState(null)
+  const [expiry, setExpiry] = useState(null)
   const [completion, setCompletion] = useState(null)
   const [err, setErr] = useState(null)
 
   useEffect(() => {
     api('/stats/unsigned').then(setUnsigned).catch(setErr)
+    api('/stats/expiry').then(res => setExpiry(asList(res))).catch(() => setExpiry([]))
   }, [])
   useEffect(() => {
     if (!time?.month) return
@@ -78,6 +81,45 @@ export default function Dashboard() {
             render={it => (<><span className="font-medium text-slate-700">{deptName(it.deptId)}</span><span className="text-slate-500">{it.week} 起的一周</span></>)} />
           <UnsignedCard title="月签缺失" color="amber" items={months}
             render={it => (<><span className="font-medium text-slate-700">{deptName(it.deptId)}</span><span className="text-slate-500">{it.month}</span></>)} />
+        </div>
+      )}
+
+      {expiry && expiry.length > 0 && (
+        <div className="card mt-5 p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="font-medium text-slate-700">有效期提醒</h3>
+              <p className="mt-0.5 text-sm text-slate-600">除颤电极片、急救药品等已过期或即将到期的设备</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {expiry.filter(x => x.level === 'expired').length > 0 &&
+                <Badge color="red">已过期 {expiry.filter(x => x.level === 'expired').length}</Badge>}
+              {expiry.filter(x => x.level === 'soon').length > 0 &&
+                <Badge color="amber">即将到期 {expiry.filter(x => x.level === 'soon').length}</Badge>}
+              <Link to="/devices" className="text-sm text-primary hover:underline">去处理</Link>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="tbl">
+              <thead>
+                <tr><th>科室</th><th>设备编码</th><th>设备名称</th><th>说明</th><th>到期日</th><th>状态</th></tr>
+              </thead>
+              <tbody>
+                {expiry.map(x => (
+                  <tr key={x.deviceId}>
+                    <td className="font-medium">{x.deptName || deptName(x.deptId)}</td>
+                    <td className="font-mono text-slate-600">{x.code}</td>
+                    <td>{x.name}</td>
+                    <td className="text-slate-600">{x.expiryNote || x.catName}</td>
+                    <td className="tabular-nums text-slate-600">{x.expiryDate}</td>
+                    <td>{x.level === 'expired'
+                      ? <Badge color="red">已过期 {-x.days} 天</Badge>
+                      : <Badge color="amber">{x.days === 0 ? '今天到期' : `还剩 ${x.days} 天`}</Badge>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

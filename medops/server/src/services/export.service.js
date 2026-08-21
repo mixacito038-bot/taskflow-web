@@ -106,8 +106,8 @@ async function ngXlsx(deptIds, { from, to }) {
 
 /* 设备导入模板。示例行单独放第 2 张表：导入只读第 1 张表（import.service 取 worksheets[0]），
    用户忘删示例也不会凭空多出一台「JZ-CD-001」 */
-const TPL_HEADER = ['科室名称', '设备品类', '设备编码', '设备名称', '型号', '位置', '状态'];
-const TPL_WIDTHS = [14, 14, 16, 20, 16, 16, 10];
+const TPL_HEADER = ['科室名称', '设备品类', '设备编码', '设备名称', '型号', '位置', '状态', '有效期', '提醒提前天数'];
+const TPL_WIDTHS = [14, 14, 16, 20, 16, 16, 10, 14, 14];
 
 async function importTemplateXlsx() {
   const wb = new ExcelJS.Workbook();
@@ -118,12 +118,14 @@ async function importTemplateXlsx() {
   const demo = wb.addWorksheet('填写示例（勿改此表）');
   demo.addRow(TPL_HEADER).font = { bold: true };
   TPL_WIDTHS.forEach((w, i) => { demo.getColumn(i + 1).width = w; });
-  demo.addRow(['急诊科', '除颤仪', 'JZ-CD-001', '除颤监护仪', 'XD-100', '抢救室', '在用']);
-  demo.addRow(['重症医学科', '呼吸机', 'ICU-HX-001', '有创呼吸机', 'Savina300', '1 床', '在用']);
+  demo.addRow(['急诊科', '除颤仪', 'JZ-CD-001', '除颤监护仪', 'XD-100', '抢救室', '在用', '2027-03-15', 30]);
+  demo.addRow(['重症医学科', '呼吸机', 'ICU-HX-001', '有创呼吸机', 'Savina300', '1 床', '在用', '', '']);
   demo.addRow([]);
   demo.addRow(['说明：请把设备填进第 1 张表「设备导入」，本表仅供参照，导入时不会被读取。']);
   demo.addRow(['「科室名称」须与系统中已建科室完全一致；「设备编码」是唯一标识，重复导入会更新同编码设备。']);
-  demo.addRow(['「状态」可填：在用 / 停用 / 维修，留空默认为在用。']);
+  demo.addRow(['「状态」可填：在用 / 维修 / 停用 / 报废，留空默认为在用。']);
+  demo.addRow(['「有效期」填除颤电极片、急救药品等的到期日，格式 2027-03-15；设备本身没有有效期就留空。']);
+  demo.addRow(['「提醒提前天数」到期前多少天开始提醒，留空或 0 表示用默认 30 天。']);
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

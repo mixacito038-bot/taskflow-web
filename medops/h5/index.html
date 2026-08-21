@@ -198,6 +198,26 @@ select.in{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .demo b{color:var(--ink2)}
 .demo button{color:var(--brand);font-weight:600;font-size:12.5px}
 
+/* ===== 有效期提醒卡 ===== */
+.expcard{background:#fff;border-radius:16px;padding:13px 15px;margin-bottom:14px;
+  box-shadow:0 4px 18px -12px rgba(194,98,15,.34),inset 0 0 0 1.5px #F2D5B4}
+.expcard.bad{box-shadow:0 4px 18px -12px rgba(192,51,74,.34),inset 0 0 0 1.5px #F0C3CA}
+.expcard .ttl{display:flex;align-items:center;gap:7px;font-weight:700;font-size:14.5px;color:var(--warn)}
+.expcard.bad .ttl{color:var(--bad)}
+.expcard .ttl svg{width:17px;height:17px}
+.expcard .why{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.6}
+.expcard .its{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+.eitem{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:12px;
+  background:var(--warn-l);font-size:13.5px;text-align:left}
+.eitem.bad{background:var(--bad-l)}
+.eitem .grow{min-width:0;flex:1}
+.eitem .nm{font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eitem .sub{font-size:11.5px;color:var(--muted);margin-top:1px;display:block;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eitem .due{font-size:11.5px;color:var(--muted);margin-top:1px;display:block;white-space:nowrap}
+.eitem .tag{flex-shrink:0;font-size:11.5px;font-weight:700;color:var(--warn);white-space:nowrap}
+.eitem.bad .tag{color:var(--bad)}
+
 /* ===== 提醒条 ===== */
 .alert{background:#fff;border-radius:16px;padding:13px 15px;margin-bottom:14px;
   box-shadow:0 4px 18px -12px rgba(192,51,74,.34),inset 0 0 0 1.5px #F0C3CA}
@@ -564,6 +584,9 @@ const API={
   /* ---------- 时间源 ---------- */
   async time(){return req('/time')},
 
+  /* ---------- 有效期提醒（过期 + 临期，服务端已按科室范围过滤） ---------- */
+  async expiry(){try{return await req('/stats/expiry')}catch(e){return []}},
+
   /* ---------- 数据范围（服务端已按角色过滤，off 科室前端忽略） ---------- */
   async depts(){return (await req('/depts')).filter(d=>d.status!=='off')},
   async dept(id){try{return await req('/depts/'+encodeURIComponent(id))}catch(e){return null}},
@@ -753,6 +776,29 @@ function alertBar(p,warn){
     ${p.total>p.items.length?`<div class="why" style="text-align:center;margin-top:8px">还有 ${p.total-p.items.length} 项…</div>`:''}
   </div>`;
 }
+/* 有效期提醒卡：过期排前，最多列 6 条 */
+function expiryCard(list){
+  if(!list||!list.length) return '';
+  const bad=list.filter(x=>x.level==='expired').length;
+  const its=list.slice(0,6).map(x=>{
+    const isBad=x.level==='expired';
+    const tag=isBad?`已过期 ${-x.days} 天`:(x.days===0?'今天到期':`还剩 ${x.days} 天`);
+    const sub=[x.deptName,x.expiryNote||x.catName,x.location].filter(Boolean).join(' · ');
+    return `<div class="eitem ${isBad?'bad':''}">
+      <div class="grow"><span class="nm">${H(x.name)}</span><span class="sub">${H(sub)}</span>
+        <span class="due">到期 ${H(x.expiryDate)}</span></div>
+      <span class="tag">${tag}</span></div>`;
+  }).join('');
+  const title=bad?`有 ${bad} 项已过期`+(list.length>bad?`，${list.length-bad} 项即将到期`:'')
+                 :`有 ${list.length} 项即将到期`;
+  return `<div class="expcard ${bad?'bad':''}">
+    <div class="ttl">${svg('warn')} ${H(title)}</div>
+    <div class="why">除颤电极片、急救药品等有保质期的物品，过期请及时更换后告知设备科</div>
+    <div class="its">${its}</div>
+    ${list.length>6?`<div class="why" style="text-align:center;margin-top:8px">还有 ${list.length-6} 项…</div>`:''}
+  </div>`;
+}
+
 window.jump=(type,deptId,key)=>{
   if(type==='day'){S.deptId=deptId;S.date=key;S.view='dept'}
   else if(type==='week'){S.deptId=deptId||S.me.deptId;S.week=key;S.view='week'}
@@ -955,8 +1001,10 @@ async function viewInspector(){
     <div class="hfoot"><span>负责 <b>${depts.length}</b> 个科室</span>
       <span>待巡检 <b>${tAll-tDone}</b> 台</span></div>
     ${note}${btn}</div>`;
+  const expList=await API.expiry();
   return header('今日任务',`${dLab(S.date)} · 负责 ${depts.length} 个科室`,null,null,{icon:'home'})+`<main class="pad-tab">
     ${alertBar(p)}
+    ${expiryCard(expList)}
     ${hero}
     <div class="sec row2"><span>今日分发的任务</span><em>逐科室勾选后日签</em></div>
     <div class="list">${cards.join('')}</div>
@@ -1029,8 +1077,10 @@ async function viewDeptHome(){
     </button>`;
   }).join('');
 
+  const expList=await API.expiry();
   return header('周确认',d.name,null,null,{icon:'cal'})+`<main class="pad-tab">
     ${alertBar(p,true)}
+    ${expiryCard(expList)}
     ${hero}
     <div class="stat" style="margin-bottom:14px">
       <div><div class="n" style="color:${canSign.length?'var(--brand)':'inherit'}">${canSign.length}</div><div class="l">待签周数</div></div>
@@ -1087,10 +1137,12 @@ async function viewEquipHome(){
     <div class="hfoot"><span>巡检 <b>${tCk}</b> 台次</span>
       <span>异常 <b>${tNg}</b> 台次</span></div>
     ${note}${btn}</div>`;
+  const expList=await API.expiry();
   return header('月确认',`${moLab(m)} · 全院 ${depts.length} 个科室`,null,
     `<button class="btn gho" style="padding:7px 11px;font-size:13px" onclick="switchMonth('${isCur?prev:moOf(today())}')">${isCur?'看上月':'看本月'}</button>`,{icon:'chart'})+
   `<main class="pad-tab">
     ${alertBar(p,true)}
+    ${expiryCard(expList)}
     ${hero}
     <div class="sec row2"><span>分科室</span><em>科室周签齐了才能月签</em></div>
     <div class="list">${cards.join('')}</div>

@@ -6,6 +6,7 @@ const { E } = require('../plugins/error');
 const authSvc = require('../services/auth.service');
 const importSvc = require('../services/import.service');
 const exportSvc = require('../services/export.service');
+const expirySvc = require('../services/expiry.service');
 
 const nowIso = () => new Date().toISOString();
 const ROLES = ['inspector', 'dept', 'equip', 'admin'];
@@ -16,8 +17,21 @@ function userJsonRow(db, u) {
     status: u.status, deptIds, mustChange: !!u.must_change, createdAt: u.created_at };
 }
 const deptJson = d => ({ id: String(d.id), name: d.name, code: d.code, sort: d.sort, status: d.status });
+/* 有效期入参归一化：空串=不适用；日期非法直接报错，避免脏数据静默入库 */
+function normExpiry(b, old) {
+  const cur = old || {};
+  const date = b.expiryDate != null ? String(b.expiryDate).trim() : (cur.expiry_date || '');
+  if (date && !expirySvc.isDate(date)) throw E.badInput('有效期日期格式应为 YYYY-MM-DD 且必须是真实存在的日期');
+  const note = b.expiryNote != null ? String(b.expiryNote).trim().slice(0, 60) : (cur.expiry_note || '');
+  const days = b.remindDays != null ? Math.trunc(+b.remindDays) : (cur.remind_days || 0);
+  if (!Number.isFinite(days) || days < 0) throw E.badInput('提醒提前天数必须是 0 或正整数');
+  if (days > 365) throw E.badInput('提醒提前天数最多 365 天');
+  return { date, note, days };
+}
+
 const deviceJson = v => ({ id: String(v.id), deptId: String(v.dept_id), catName: v.cat_name,
-  code: v.code, name: v.name, model: v.model, location: v.location, status: v.status, sort: v.sort });
+  code: v.code, name: v.name, model: v.model, location: v.location, status: v.status, sort: v.sort,
+  expiryDate: v.expiry_date || '', expiryNote: v.expiry_note || '', remindDays: v.remind_days || 0 });
 const memberJson = m => ({ id: String(m.id), deptId: String(m.dept_id), name: m.name, title: m.title,
   status: m.status, sort: m.sort });
 
@@ -147,10 +161,13 @@ module.exports = async function adminRoutes(app) {
     if (!b.deptId || !b.code || !b.name || !b.catName) throw E.badInput('deptId/catName/code/name 必填');
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
     if (db().prepare('SELECT 1 FROM devices WHERE code = ?').get(String(b.code))) throw E.conflict('设备编码已存在');
-    const id = db().prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, sort, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    const exp = normExpiry(b);
+    const id = db().prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, sort,
+      expiry_date, expiry_note, remind_days, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(+b.deptId, String(b.catName), String(b.code), String(b.name), String(b.model || ''),
-        String(b.location || ''), String(b.status || 'in_use'), +b.sort || 0, nowIso(), nowIso()).lastInsertRowid;
+        String(b.location || ''), String(b.status || 'in_use'), +b.sort || 0,
+        exp.date, exp.note, exp.days, nowIso(), nowIso()).lastInsertRowid;
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(id));
   });
 
@@ -161,11 +178,13 @@ module.exports = async function adminRoutes(app) {
     if (b.code != null && b.code !== v.code &&
       db().prepare('SELECT 1 FROM devices WHERE code = ?').get(String(b.code))) throw E.conflict('设备编码已存在');
     if (b.deptId != null && !db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
+    const exp = normExpiry(b, v);
     db().prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, code = ?, name = ?, model = ?, location = ?,
-      status = ?, sort = ?, updated_at = ? WHERE id = ?`)
+      status = ?, sort = ?, expiry_date = ?, expiry_note = ?, remind_days = ?, updated_at = ? WHERE id = ?`)
       .run(+(b.deptId ?? v.dept_id), String(b.catName ?? v.cat_name), String(b.code ?? v.code),
         String(b.name ?? v.name), String(b.model ?? v.model), String(b.location ?? v.location),
-        String(b.status ?? v.status), +(b.sort ?? v.sort), nowIso(), v.id);
+        String(b.status ?? v.status), +(b.sort ?? v.sort),
+        exp.date, exp.note, exp.days, nowIso(), v.id);
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(v.id));
   });
 
