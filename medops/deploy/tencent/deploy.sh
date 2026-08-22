@@ -41,8 +41,39 @@ say "第 2 步：创建数据目录"
 mkdir -p "${DATA_DIR}"
 ok "$(cd "${DATA_DIR}" && pwd)  ← 备份就是把这个目录整个拷走"
 
-# ---------- 3. 放行端口 ----------
-say "第 3 步：放行服务器本机防火墙"
+# ---------- 3. 端口占用检查 + 放行 ----------
+say "第 3 步：检查端口并放行本机防火墙"
+# 这台机器上可能还跑着别的业务。端口被占的话 nginx 起不来，
+# docker 报的是一句很难懂的 bind 错误，不如在这里当场说清楚。
+port_used() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$" && return 0
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$" && return 0
+  fi
+  # 兜底：ss/netstat 都没有时，直接试连本机该端口，连得上说明有人在监听
+  (exec 3<>/dev/tcp/127.0.0.1/"$1") 2>/dev/null && { exec 3<&- 3>&-; return 0; }
+  return 1
+}
+if port_used "${WEB_PORT}"; then
+  # 已经是我们自己的容器在用就不算冲突（重复执行本脚本的场景）
+  if docker compose ps --status running 2>/dev/null | grep -q web; then
+    ok "端口 ${WEB_PORT} 正被本系统自己的容器使用，属正常"
+  else
+    echo
+    echo "  当前占用 ${WEB_PORT} 端口的进程："
+    # 末尾的 || true 不能少：grep 没匹配到会返回 1，在 set -e 下会让脚本
+    # 直接退出，下面那段真正有用的提示就永远打不出来（实测踩过）
+    { (ss -lntp 2>/dev/null || netstat -lntp 2>/dev/null || true) | grep -E "[:.]${WEB_PORT}\b" | sed 's/^/    /'; } || true
+    echo
+    fail "端口 ${WEB_PORT} 已被别的程序占用。换一个端口重来：
+       在 .env 里把 WEB_PORT 改成别的（如 8913），或直接执行  bash manage.sh 改端口 8913
+       改完记得在腾讯云安全组放行新端口。"
+  fi
+else
+  ok "端口 ${WEB_PORT} 空闲"
+fi
+
 if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
   firewall-cmd --permanent --add-port="${WEB_PORT}"/tcp >/dev/null && firewall-cmd --reload >/dev/null
   ok "firewalld 已放行 ${WEB_PORT}/tcp"
