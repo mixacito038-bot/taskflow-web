@@ -17,9 +17,18 @@ setenv() {  # setenv KEY VALUE —— 有则改、无则加
 if [ "${1:-}" = "--off" ]; then
   setenv NGINX_CONF nginx.conf
   setenv WEB_INNER_PORT 80
+  setenv COMPOSE_FILE docker-compose.yml     # 摘掉 80 跳转层，否则会和主端口抢 80
   docker compose up -d
   . ./.env
-  echo "已切回 HTTP： http://<服务器IP>:${WEB_PORT:-8912}/"
+  echo
+  echo "已切回 HTTP。"
+  if [ "${WEB_PORT:-8912}" = 443 ]; then
+    # 443 是给 https 用的，切回 http 后还留在 443 上会让人困惑（而且很多浏览器会试着用 https 打开）
+    echo "  ⚠ 当前对外端口还是 443，建议一并换回来："
+    echo "      bash manage.sh 改端口 8912"
+  else
+    echo "  访问地址：http://<服务器IP>:${WEB_PORT:-8912}/"
+  fi
   exit 0
 fi
 
@@ -35,6 +44,40 @@ install -m 600 "${KEY}" certs/server.key
 
 setenv NGINX_CONF nginx-https.conf
 setenv WEB_INNER_PORT 443
+
+# ---- 可选：80 端口做 http→https 跳转 ----
+# 不开的话，用户在浏览器里直接敲域名（不写 https://）会显示「无法访问此网站」，
+# 多半会以为系统坏了。开了就自动跳到 https。
+port_used() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$" && return 0
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$" && return 0
+  fi
+  (exec 3<>/dev/tcp/127.0.0.1/"$1") 2>/dev/null && { exec 3<&- 3>&-; return 0; }
+  return 1
+}
+if port_used 80; then
+  echo
+  echo "  ! 宿主机 80 端口已被别的程序占用，跳过 http→https 跳转的配置。"
+  echo "    影响：用户直接敲域名（不写 https://）时打不开，必须完整输入 https:// 或扫二维码。"
+  setenv COMPOSE_FILE docker-compose.yml
+else
+  echo
+  echo "  检测到 80 端口空闲。是否顺便配上 http→https 自动跳转？"
+  echo "  配上以后，用户在浏览器直接敲域名也能进（会自动跳到 https）。"
+  echo "  需要腾讯云安全组同时放行 80 端口。"
+  printf "  配置吗？输入 yes 启用，直接回车跳过："
+  read -r R80
+  if [ "${R80}" = yes ]; then
+    setenv COMPOSE_FILE docker-compose.yml:docker-compose.redirect80.yml
+    echo "  已启用（记得安全组放行 80）"
+  else
+    setenv COMPOSE_FILE docker-compose.yml
+    echo "  已跳过"
+  fi
+fi
+
 . ./.env
 
 docker compose up -d
@@ -52,6 +95,7 @@ else
   echo "!! nginx 配置校验失败，已自动回滚到 HTTP"
   setenv NGINX_CONF nginx.conf
   setenv WEB_INNER_PORT 80
+  setenv COMPOSE_FILE docker-compose.yml
   docker compose up -d
   echo "请检查证书文件是否是「Nginx 版」的 .crt / .key（不是 .pem/.jks）"
   exit 1

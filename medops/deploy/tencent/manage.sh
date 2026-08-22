@@ -6,6 +6,17 @@ cd "$(dirname "$0")"
 [ -f .env ] && . ./.env
 WEB_PORT="${WEB_PORT:-8912}"
 DATA_DIR="${DATA_DIR:-/opt/medops-data}"
+# 端口占用探测：优先 ss/netstat，都没有时用 bash 内建的 /dev/tcp 试连
+port_used() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$" && return 0
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -lnt 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$" && return 0
+  fi
+  (exec 3<>/dev/tcp/127.0.0.1/"$1") 2>/dev/null && { exec 3<&- 3>&-; return 0; }
+  return 1
+}
+
 # 启用 HTTPS 后自检要走 https，否则会全部报 000 让人以为服务挂了
 if [ "${WEB_INNER_PORT:-80}" = 443 ]; then SCHEME=https; CURL="curl -sk"; else SCHEME=http; CURL="curl -s"; fi
 BASE="${SCHEME}://127.0.0.1:${WEB_PORT}"
@@ -18,6 +29,23 @@ case "${1:-帮助}" in
     say "容器状态"; docker compose ps
     say "磁盘占用"; df -h / | tail -1
     echo "数据目录：$(du -sh "${DATA_DIR}" 2>/dev/null | cut -f1)  (${DATA_DIR})"
+    if [ "${WEB_INNER_PORT:-80}" = 443 ] && [ -f certs/server.crt ]; then
+      say "HTTPS 证书"
+      END=$(openssl x509 -enddate -noout -in certs/server.crt 2>/dev/null | cut -d= -f2)
+      if [ -n "${END}" ]; then
+        ENDS=$(date -d "${END}" +%s 2>/dev/null || echo 0)
+        NOWS=$(date +%s)
+        if [ "${ENDS}" -gt 0 ]; then
+          LEFT=$(( (ENDS - NOWS) / 86400 ))
+          echo "  到期：$(date -d "${END}" '+%Y-%m-%d' 2>/dev/null)  剩余 ${LEFT} 天"
+          [ "${LEFT}" -lt 0 ]  && echo "  ✗ 证书已过期！浏览器会报不安全，请立即重新申请并跑 enable-https.sh"
+          [ "${LEFT}" -ge 0 ] && [ "${LEFT}" -le 15 ] && echo "  ! 快到期了，请尽快重新申请证书（腾讯云免费证书 90 天一续）"
+        else
+          echo "  到期：${END}"
+        fi
+      fi
+    fi
+
     say "本机自检"
     echo "  （检查地址：${BASE}）"
     for u in /api/health / /xunjian/ /admin/ /pandian/; do
@@ -114,10 +142,31 @@ case "${1:-帮助}" in
 
   改端口|port)
     NEW="${2:-}"
-    [ -n "${NEW}" ] || { echo "用法：bash manage.sh 改端口 9000"; exit 1; }
+    [ -n "${NEW}" ] || { echo "用法：bash manage.sh 改端口 443"; exit 1; }
+    case "${NEW}" in ''|*[!0-9]*) echo "端口必须是数字"; exit 1;; esac
+    [ "${NEW}" -ge 1 ] && [ "${NEW}" -le 65535 ] || { echo "端口范围应在 1～65535"; exit 1; }
+
+    # 换端口前必须先查占用。不查的话 docker 会抛一句很难懂的 bind 错误，
+    # 而且此时旧容器已经停了 —— 等于把好好的站点弄挂了还不知道为什么。
+    if [ "${NEW}" != "${WEB_PORT}" ] && port_used "${NEW}"; then
+      echo
+      echo "  当前占用 ${NEW} 端口的进程："
+      { (ss -lntp 2>/dev/null || netstat -lntp 2>/dev/null || true) | grep -E "[:.]${NEW}\b" | sed 's/^/    /'; } || true
+      echo
+      echo "!! 端口 ${NEW} 已被别的程序占用，本次未做任何改动（站点仍在 ${WEB_PORT} 上正常运行）。" >&2
+      echo "   换一个空闲端口，或先停掉占用它的服务。" >&2
+      exit 1
+    fi
+
+    say "把对外端口从 ${WEB_PORT} 改为 ${NEW}"
     sed -i "s/^WEB_PORT=.*/WEB_PORT=${NEW}/" .env
     docker compose up -d
-    echo "已改为 ${NEW}。别忘了在腾讯云安全组放行新端口、并关掉旧端口。"
+    sleep 3
+    docker compose ps --format '{{.Name}}\t{{.Ports}}'
+    echo
+    echo "已改为 ${NEW}。还要做两件事："
+    echo "  1. 腾讯云安全组放行 ${NEW}（不放行的话外面打不开）"
+    echo "  2. 二维码里写死了地址，换端口后要重新生成打印"
     ;;
 
   *)
@@ -132,7 +181,7 @@ case "${1:-帮助}" in
   bash manage.sh 恢复 <备份文件>  用备份覆盖当前数据
   bash manage.sh 升级            上传新代码后重新构建启动
   bash manage.sh 重置管理员       忘记管理员密码时用
-  bash manage.sh 改端口 <新端口>  换对外端口
+  bash manage.sh 改端口 <新端口>  换对外端口（会先查端口是否被占用）
 
 系统每天凌晨 2:30 会自动备份到数据目录里，但仍建议每周用「备份」命令拉一份到院内电脑。
 EOF
