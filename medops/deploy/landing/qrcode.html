@@ -2362,7 +2362,12 @@ function gen(){
   const h=document.getElementById('host').value.trim().replace(/^https?:\/\//,'').replace(/\/.*$/,'');
   const p=document.getElementById('port').value.trim()||'8912';
   if(!h){alert('请先填服务器 IP 或域名');return}
-  const url=`http://${h}:${p}/xunjian/`;
+  /* 页面自己是 https（或端口填了 443）就用 https；协议默认端口不写进地址。
+     以前这里写死 http:// 且总是带端口，HTTPS 站点上会生成 http://域名:443/，
+     扫出来必定是 400「plain HTTP request was sent to HTTPS port」。*/
+  const sc=(location.protocol==='https:'||p==='443')?'https':'http';
+  const pp=((sc==='https'&&p==='443')||(sc==='http'&&p==='80'))?'':`:${p}`;
+  const url=`${sc}://${h}${pp}/xunjian/`;
 
   // typeNumber=0 自动选版本，纠错等级 M（约可容忍 15% 破损，贴墙上被蹭到也还能扫）
   const q=qrcode(0,'M'); q.addData(url); q.make();
