@@ -12,18 +12,39 @@ const { getDb } = require('../db/connection');
 const P = require('./period.service');
 
 const DEFAULT_REMIND_DAYS = 30;
+/* 有效期的合理年份区间。两个方向都要挡：
+   往前——浏览器 <input type="date"> 年份框里输 "26" 提交的是 0026-03-15，
+        Date.UTC 又会把 0~99 当成 1900+y，天数会算成一个荒唐的数；
+   往后——2026 手滑成 2062 时日期本身合法、level=ok，设备从此在所有提醒里消失，
+        这才是真正危险的方向（该提醒的不提醒了）。 */
+const MIN_YEAR = 1970;
+const MAX_AHEAD_YEARS = 30;
 /* 状态优先级：过期 > 临期 > 正常。数值大的更紧急，用于排序与汇总 */
 const LEVEL = { expired: 2, soon: 1, ok: 0, none: -1 };
 
 /* 两个 YYYY-MM-DD 相差天数（b - a）。用 UTC 正午避开夏令时/时区偏移 */
 function daysBetween(a, b) {
-  const t = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), 12);
+  /* setUTCFullYear 而不是 Date.UTC(y,...)：后者把 0~99 的年份当成 1900+y，
+     0026-03-15 会被按 1926 年算。用 UTC 正午同时避开夏令时与时区偏移。 */
+  const t = s => {
+    const d = new Date(0);
+    d.setUTCFullYear(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
+    d.setUTCHours(12, 0, 0, 0);
+    return d.getTime();
+  };
   return Math.round((t(b) - t(a)) / 86400000);
 }
 
 const isDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)
   && !isNaN(Date.parse(s + 'T00:00:00Z'))
   && String(new Date(s + 'T00:00:00Z').getUTCDate()).padStart(2, '0') === s.slice(8, 10);
+
+/* 日期合法 ≠ 录得对。inRange 拦的是明显录错年份的情况，today 由调用方给（便于单测） */
+function inRange(iso, today = P.today()) {
+  if (!isDate(iso)) return false;
+  const y = +iso.slice(0, 4);
+  return y >= MIN_YEAR && y <= +today.slice(0, 4) + MAX_AHEAD_YEARS;
+}
 
 /* 单台设备的有效期状态（纯函数，单测直接调用）
    返回 { level, days, remindDays }：
@@ -54,8 +75,12 @@ const deviceRow = (v, today) => {
 /* 有效期清单。deptIds=null 表示全院（设备科/管理员）
    onlyAlert=true 时只返回过期+临期（首页提醒用），false 返回全部已设有效期的（管理页用） */
 function list(deptIds, { onlyAlert = true, today = P.today() } = {}) {
+  /* deptIds 的语义来自 app.visibleDeptIds：null = 全院(equip/admin)，数组 = 限定这些科室。
+     空数组表示"这个人一个科室都没分配"，必须返回空，绝不能因为"没有 IN 条件"而退化成全院——
+     删科室、建号时漏填 deptIds 都会造出零科室账号，那样等于把全院设备清单泄露给他。 */
+  if (Array.isArray(deptIds) && !deptIds.length) return [];
   const db = getDb();
-  const scoped = Array.isArray(deptIds) && deptIds.length;
+  const scoped = Array.isArray(deptIds);
   const rows = db.prepare(`
     SELECT v.*, d.name AS dept_name FROM devices v JOIN depts d ON d.id = v.dept_id
     WHERE v.expiry_date <> '' AND v.status = 'in_use' AND d.status = 'on'
@@ -81,4 +106,5 @@ function summary(deptIds, today = P.today()) {
   };
 }
 
-module.exports = { statusOf, list, summary, daysBetween, isDate, DEFAULT_REMIND_DAYS, LEVEL };
+module.exports = { statusOf, list, summary, daysBetween, isDate, inRange,
+  DEFAULT_REMIND_DAYS, MIN_YEAR, MAX_AHEAD_YEARS, LEVEL };

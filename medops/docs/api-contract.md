@@ -54,8 +54,9 @@ H5 启动后所有 today()/wkOf(today())/moOf(today()) 用它（S.date/S.week/S.
 数据形状（与 H5 localStorage 结构一致，仅 sign.dataUrl → sign.url）：
 ```
 dept   {id,name,code,sort,status:'on'|'off'}
-device {id,deptId,catName,code,name,model,location,status:'in_use'|...,
-        expiryDate:'YYYY-MM-DD'|'', expiryNote:'', remindDays:int(0=默认30)}
+device {id,deptId,catName,code,name,model,location,status:'in_use'|...}
+        # 有效期三字段 expiryDate/expiryNote/remindDays 只由 /api/admin/devices 返回，
+        # H5 侧的 GET /api/devices 不含（H5 的有效期数据走 /api/stats/expiry）
 member {id,deptId,name,title,status:'on'}
 record {id,deptId,date,checks:{[deviceId]:'ok'|'ng'},notes:{[deviceId]:string},
         sign:null|{name,title,url,opinion,at},inspectorId,inspectorName,createdAt,updatedAt}
@@ -90,9 +91,9 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET/POST /api/admin/users; PATCH /api/admin/users/:id | 建号/改 displayName/role/deptIds/status。**status→off 时吊销其全部 refreshToken**。POST body `{username,password,displayName,role,deptIds:[]}` |
 | POST /api/admin/users/:id/reset-password | → `{password:"一次性初始密码"}`，置 mustChange |
 | GET/POST/PATCH /api/admin/depts[/:id] | 有记录的科室禁删（改 status:off）；DELETE 仅无记录时 |
-| GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用），remindDays ∈ 0～365，非法→400 BAD_INPUT |
+| GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records） |
 | GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数） |
-| POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。→ `{created,updated,errors:[{row,message}]}` |
+| POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。→ `{created,updated,errors:[{row,message}]}`。有效期两列的写入语义：**列不存在或该格留空 = 本次不改动**（老 7 列模板重导入不会清空已录到期日），填「无/-/清空」= 清空，填日期 = 覆盖。日期必须年月日填全（不做 `new Date()` 宽松兜底），状态须命中白名单否则整行报错 |
 | GET/POST/PATCH/DELETE /api/admin/members[/:id] | 签字人名单 |
 | POST /api/admin/signs/void (admin) | Body `{type:'day'|'week'|'month',deptId,key,reason}`。作废签字（记录退回未签态），写审计 |
 | POST /api/admin/import/legacy (admin) | Body = H5 导出的 `{depts,devices,members,users,records,weeksigns,monthsigns}` JSON，事务导入（users 密码重置为随机+mustChange） |

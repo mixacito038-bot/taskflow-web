@@ -18,7 +18,7 @@
   --bg:#F1F5F4; --card:#fff; --ink:#152220; --ink2:#3B4A47; --muted:#54635F; --faint:#63716C;
   --line:#DFE7E5; --line2:#F0F4F3;
   /* 语义：正常/注意/异常，明度与墨绿拉开，避免撞色 */
-  --ok:#0E7A50; --ok-l:#E8F7F0; --warn:#C2620F; --warn-l:#FDF3E7; --bad:#C0334A; --bad-l:#FCEDEF;
+  --ok:#0E7A50; --ok-l:#E8F7F0; --warn:#A6510C; --warn-l:#FDF3E7; --bad:#C0334A; --bad-l:#FCEDEF;
   --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -585,7 +585,10 @@ const API={
   async time(){return req('/time')},
 
   /* ---------- 有效期提醒（过期 + 临期，服务端已按科室范围过滤） ---------- */
-  async expiry(){try{return await req('/stats/expiry')}catch(e){return []}},
+  /* 失败时返回一个带 error 标记的空数组，而不是干净的 []。
+     这是安全类提醒：后端 502/超时/限流时如果静默返回空，界面表现和"全部在有效期内"
+     一模一样，护士长会以为设备都没过期。宁可显示"提醒加载失败"也不能假装正常。 */
+  async expiry(){try{return await req('/stats/expiry')}catch(e){const r=[];r.error=true;return r}},
 
   /* ---------- 数据范围（服务端已按角色过滤，off 科室前端忽略） ---------- */
   async depts(){return (await req('/depts')).filter(d=>d.status!=='off')},
@@ -753,7 +756,11 @@ function header(t,sub,back,act,x){
 function tabbar(){
   const m={inspector:[['home','任务','home'],['records','记录','list'],['me','我的','user']],
            dept:[['home','周确认','cal'],['records','记录','list'],['me','我的','user']],
-           equip:[['home','月确认','chart'],['records','记录','list'],['me','我的','user']]}[S.me.role];
+           equip:[['home','月确认','chart'],['records','记录','list'],['me','我的','user']],
+           /* admin（超管）后端允许登录，H5 没有专属视图，按设备科处理。
+              漏了这个分支时 m 会是 undefined，下一行 m.map 抛错 → render() 整个中断 → 白屏 */
+           admin:[['home','月确认','chart'],['records','记录','list'],['me','我的','user']]}[S.me.role];
+  if(!m) return '';
   return `<div class="tabs">${m.map(([k,l,i])=>
     `<button class="tab ${S.tab===k?'on':''}" onclick="go('${k}')">${svg(i)}<span>${l}</span></button>`).join('')}</div>`;
 }
@@ -778,6 +785,8 @@ function alertBar(p,warn){
 }
 /* 有效期提醒卡：过期排前，最多列 6 条 */
 function expiryCard(list){
+  if(list&&list.error) return `<div class="expcard bad"><div class="ttl">${svg('warn')} 有效期提醒加载失败</div>
+    <div class="why">没能取到到期设备清单，<b>这不代表没有设备过期</b>。请下拉刷新，仍失败请联系设备科。</div></div>`;
   if(!list||!list.length) return '';
   const bad=list.filter(x=>x.level==='expired').length;
   const its=list.slice(0,6).map(x=>{
@@ -821,13 +830,13 @@ async function viewLogin(){
       const st=await API.loginState(a.username);
       const stop=st.disabled||st.frozen;
       return `<div class="acct ${stop?'lk':''}">
-        <button class="grow" style="text-align:left;display:block;min-width:0" ${stop?'':`onclick="quickLogin('${a.username}')"`}>
+        <button class="grow" style="text-align:left;display:block;min-width:0" ${stop?'':`data-act="qlogin" data-arg="${H(a.username)}"`}>
           <div class="tt">${H(a.displayName)}${st.disabled?' <span class="pill p-bad" style="margin-left:4px">已禁用</span>':''}</div>
           <div class="st"><span class="mono">${H(a.username)}</span> · ${RN[a.role]||''}</div>
           ${st.disabled?`<div class="st" style="color:var(--bad)">账户已被禁用，请联系设备科</div>`
                :st.frozen?`<div class="st" style="color:var(--bad)">已冻结，${leftText(st.retryAfter)}后可用</div>`:''}
         </button>
-        <button class="xbtn" onclick="forget('${a.username}')" aria-label="移除">${svg('close')}</button>
+        <button class="xbtn" data-act="forget" data-arg="${H(a.username)}" aria-label="移除">${svg('close')}</button>
       </div>`;
     }));
     return `<div class="login">
@@ -1168,7 +1177,7 @@ async function viewDept(){
     const dn=c.devices.filter(x=>S.checks[x.id]).length;
     const cng=c.devices.filter(x=>S.checks[x.id]==='ng').length;
     const full=dn===c.devices.length;
-    return `<button class="card" style="display:block;width:100%;text-align:left" onclick="openCat('${H(c.name)}')">
+    return `<button class="card" style="display:block;width:100%;text-align:left" data-act="cat" data-arg="${H(c.name)}">
       <div class="row"><div class="grow"><div class="tt">${H(c.name)}</div>
         <div class="st">${dn}/${c.devices.length} 台${cng?` · <span style="color:var(--bad)">${cng} 台异常</span>`:''}</div></div>
       ${full?`<span class="pill ${cng?'p-bad':'p-ok'}">${cng?'有异常':'已完成'}</span>`:dn?`<span class="pill p-go">${dn}/${c.devices.length}</span>`:''}
@@ -1721,6 +1730,19 @@ window.go=async k=>{
   else if(k==='mysigns'){S.tab='me';S.view='mysigns'}else{S.tab=k;S.view=k}render()};
 window.openDept=id=>{S.deptId=id;S.view='dept';render()};
 window.openCat=n=>{S.catName=n;S.view='cat';render()};
+
+/* 事件委托：凡是数据由用户录入（品类名、用户名）的按钮，一律走 data-act/data-arg，
+   不再拼进 onclick="fn('...')"。
+   原因：内联事件属性的值会先做 HTML 实体解码、再交给 JS 解析器，
+   所以 H() 把 ' 转成 &#39; 在这里是**无效防护**——解码后又变回单引号，照样能闭合字符串。
+   放在 data-* 属性里则只经过 HTML 解码，永远只是一个字符串，不会被当代码执行。 */
+const DELEGATE={cat:n=>window.openCat(n),qlogin:u=>window.quickLogin(u),forget:u=>window.forget(u)};
+document.addEventListener('click',e=>{
+  const el=e.target&&e.target.closest&&e.target.closest('[data-act]');
+  if(!el) return;
+  const fn=DELEGATE[el.dataset.act];
+  if(fn){e.preventDefault();fn(el.dataset.arg||'');}
+});
 window.openWeek=w=>{S.week=w;S.deptId=S.me.deptId;S.view='week';render()};
 window.openMonth=id=>{S.deptId=id;S.view='month';render()};
 

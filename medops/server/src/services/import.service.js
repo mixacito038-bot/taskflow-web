@@ -8,29 +8,66 @@ const { E } = require('../plugins/error');
 const fileSvc = require('./file.service');
 
 const nowIso = () => new Date().toISOString();
-/* Excel 有效期单元格归一化：支持 2027-03-15 / 2027/3/15 / Excel 日期对象转出的 ISO 串。
-   返回 YYYY-MM-DD；无法解析返回 null；空返回空串 */
+
+/* Excel 有效期单元格归一化。
+   只接受完整年月日：2027-03-15 / 2027/3/15 / 2027.3.15（正则两端锚定，多打少打一位都算错）。
+   刻意不用 new Date(v) 兜底 —— V8 会把 '2027' 解析成 2027-01-01、把 '2027-03' 解析成 3 月 1 号，
+   药品有效期常只印到年月，静默编一个日期出来比报错危险得多。
+   返回 YYYY-MM-DD；空返回空串；无法解析返回 null（调用方据此报错）。 */
 function normExpiryCell(raw) {
-  const v = String(raw || '').trim();
+  const v = String(raw == null ? '' : raw).trim();
   if (!v) return '';
-  let m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(v);
-  if (!m) { const d = new Date(v); if (isNaN(d)) return null;
-    m = [null, d.getFullYear(), d.getMonth() + 1, d.getDate()]; }
+  const m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(v);
+  if (!m) return null;
   const iso = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
   return expirySvc.isDate(iso) ? iso : null;
 }
 
 const STATUS_MAP = { '在用': 'in_use', '维修': 'repair', '停用': 'retired', '报废': 'scrapped' };
+const STATUS_WORDS = Object.keys(STATUS_MAP).join(' / ');
+/* 明确表达"把这一格清空"，否则留空一律按"本次不改动"处理（见 importDevices 注释） */
+const CLEAR_WORDS = new Set(['无', '-', '—', '/', '清空', '不适用']);
 
-function cellStr(row, i) {
-  const v = row.getCell(i).value;
+/* ExcelJS 的 cell.value 有多种形态，逐一归一成字符串：
+     Date        —— 日期格式的单元格。ExcelJS 按 UTC 基准构造（(serial-25569)*86400000），
+                     所以必须用 getUTC* 取值；用本地取值器会在负偏移时区整体早一天。
+     {richText}  —— 单元格里有一部分字被加粗/改色（医院台账里很常见）
+     {formula}   —— 公式单元格，取 result
+     {text}      —— 超链接单元格
+   漏掉任何一种都会落到 String(v) 变成 "[object Object]" 并被当成合法编码/名称写进库。 */
+function cellVal(v) {
   if (v == null) return '';
-  if (typeof v === 'object' && v.text != null) return String(v.text).trim(); // 富文本
-  if (typeof v === 'object' && v.result != null) return String(v.result).trim(); // 公式
+  if (v instanceof Date) {
+    return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, '0')}-${String(v.getUTCDate()).padStart(2, '0')}`;
+  }
+  if (typeof v === 'object') {
+    if (Array.isArray(v.richText)) return v.richText.map(t => (t && t.text) || '').join('').trim();
+    if (v.result !== undefined) return cellVal(v.result);
+    if (v.text != null) return String(v.text).trim();
+    return '';
+  }
   return String(v).trim();
 }
+const cellStr = (row, i) => cellVal(row.getCell(i).value);
 
-/* 设备 xlsx 导入：按 code upsert；科室名不存在 → 该行报错不自动建 */
+/* 按表头文字找列号，找不到返回 0（= 该列不存在）。
+   位置兜底是为了兼容表头被改过的老文件；有效期两列一定要走表头判断，
+   因为"列不存在"和"列留空"必须区分开（见 importDevices）。 */
+function findCol(hdr, re, fallback) {
+  const n = Math.max(hdr.cellCount || 0, fallback || 0);
+  for (let i = 1; i <= n; i++) if (re.test(cellStr(hdr, i))) return i;
+  return 0;
+}
+
+/* 设备 xlsx 导入：按 code upsert；科室名不存在 → 该行报错不自动建。
+
+   有效期两列的写入语义（这里很容易出安全事故，故写死规则）：
+     · 文件里没有这两列（老的 7 列模板）  → 完全不碰库里已有的有效期，只更新其它字段
+     · 有这两列但该行留空                → 同样不碰（"我这次只想改位置"是最常见的重导入意图）
+     · 填了「无 / - / 清空」              → 明确清空
+     · 填了日期                          → 覆盖
+   反过来做（留空即清空）会让任何一次常规重导入静默抹掉全院的急救耗材到期日，
+   而界面只报"更新 N 台"，没人会发现。 */
 async function importDevices(buffer) {
   const db = getDb();
   const wb = new ExcelJS.Workbook();
@@ -40,35 +77,68 @@ async function importDevices(buffer) {
   let created = 0, updated = 0;
   const errors = [];
   const deptByName = new Map(db.prepare('SELECT id, name FROM depts').all().map(d => [d.name, d.id]));
+
+  const hdr = ws.getRow(1);
+  const iExpiry = findCol(hdr, /有效期|到期/, 8);
+  const iRemind = findCol(hdr, /提醒/, 9);
+
   const rows = [];
   ws.eachRow((row, n) => { if (n > 1) rows.push([row, n]); });
   db.transaction(() => {
     for (const [row, n] of rows) {
-      const [deptName, catName, code, name, model, location, statusRaw, expiryRaw, remindRaw] =
-        [1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => cellStr(row, i));
+      const [deptName, catName, code, name, model, location, statusRaw] =
+        [1, 2, 3, 4, 5, 6, 7].map(i => cellStr(row, i));
       if (!deptName && !code && !name) continue; // 空行
       if (!deptName || !catName || !code || !name) { errors.push({ row: n, message: '科室名称/设备品类/设备编码/设备名称不能为空' }); continue; }
       const deptId = deptByName.get(deptName);
       if (!deptId) { errors.push({ row: n, message: `科室「${deptName}」不存在` }); continue; }
-      const status = STATUS_MAP[statusRaw] || statusRaw || 'in_use';
-      /* 有效期：Excel 里可能是日期格式(cellStr 已转文本)或手打字符串，统一归一到 YYYY-MM-DD */
-      const expiry = normExpiryCell(expiryRaw);
-      if (expiryRaw && expiry === null) { errors.push({ row: n, message: `有效期「${expiryRaw}」不是有效日期，应为 2027-03-15 这样的格式` }); continue; }
-      const remind = remindRaw ? Math.trunc(+remindRaw) : 0;
-      if (remindRaw && (!Number.isFinite(remind) || remind < 0 || remind > 365)) {
-        errors.push({ row: n, message: `提醒提前天数「${remindRaw}」应为 0～365 的整数` }); continue;
+      /* 状态必须是模板列出的四个词之一。写成「正常」「使用中」这类同义词若原样入库，
+         设备会照常出现在台账里，却被有效期提醒和巡检清单永久排除，过期了没人知道 */
+      let status = 'in_use';
+      if (statusRaw) {
+        status = STATUS_MAP[statusRaw];
+        if (!status) { errors.push({ row: n, message: `状态「${statusRaw}」无法识别，只能填：${STATUS_WORDS}（留空默认在用）` }); continue; }
       }
+
+      /* undefined = 本次不改动该列 */
+      let expiry, remind;
+      if (iExpiry) {
+        const raw = cellStr(row, iExpiry);
+        if (CLEAR_WORDS.has(raw)) expiry = '';
+        else if (raw) {
+          expiry = normExpiryCell(raw);
+          if (expiry === null) { errors.push({ row: n, message: `有效期「${raw}」不是有效日期，应为 2027-03-15 这样的完整年月日；本行未导入` }); continue; }
+          if (!expirySvc.inRange(expiry)) { errors.push({ row: n, message: `有效期「${raw}」的年份不合常理（应在 ${expirySvc.MIN_YEAR} 年至今后 ${expirySvc.MAX_AHEAD_YEARS} 年之间），请检查是否录错年份` }); continue; }
+        }
+      }
+      if (iRemind) {
+        const raw = cellStr(row, iRemind);
+        if (CLEAR_WORDS.has(raw)) remind = 0;
+        else if (raw) {
+          const num = Number(raw);
+          remind = Math.trunc(num);
+          if (!Number.isFinite(num) || !Number.isInteger(num) || remind < 0 || remind > 365) {
+            errors.push({ row: n, message: `提醒提前天数「${raw}」应为 0～365 的整数；本行未导入` }); continue;
+          }
+        }
+      }
+
       const old = db.prepare('SELECT id FROM devices WHERE code = ?').get(code);
       if (old) {
+        /* COALESCE 的参数为 null 时保留原值 —— 对应上面 undefined = 不改动 */
         db.prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, name = ?, model = ?, location = ?,
-          status = ?, expiry_date = ?, remind_days = ?, updated_at = ? WHERE id = ?`)
-          .run(deptId, catName, name, model, location, status, expiry || '', remind, nowIso(), old.id);
+          status = ?, expiry_date = COALESCE(?, expiry_date), remind_days = COALESCE(?, remind_days),
+          updated_at = ? WHERE id = ?`)
+          .run(deptId, catName, name, model, location, status,
+            expiry === undefined ? null : expiry, remind === undefined ? null : remind,
+            nowIso(), old.id);
         updated++;
       } else {
         db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status,
           expiry_date, remind_days, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(deptId, catName, code, name, model, location, status, expiry || '', remind, nowIso(), nowIso());
+          .run(deptId, catName, code, name, model, location, status,
+            expiry || '', remind || 0, nowIso(), nowIso());
         created++;
       }
     }

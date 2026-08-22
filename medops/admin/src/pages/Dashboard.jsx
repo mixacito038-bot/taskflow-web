@@ -44,12 +44,16 @@ export default function Dashboard() {
   const time = useServerTime()
   const [unsigned, setUnsigned] = useState(null)
   const [expiry, setExpiry] = useState(null)
+  const [expiryErr, setExpiryErr] = useState(null)
   const [completion, setCompletion] = useState(null)
   const [err, setErr] = useState(null)
 
   useEffect(() => {
     api('/stats/unsigned').then(setUnsigned).catch(setErr)
-    api('/stats/expiry').then(res => setExpiry(asList(res))).catch(() => setExpiry([]))
+    /* 单独记失败原因：这是安全类提醒，加载失败时界面必须和"全院都在有效期内"区分开，
+       否则设备科看到一片干净就以为没事了 */
+    api('/stats/expiry').then(res => setExpiry(asList(res)))
+      .catch(e => setExpiryErr(e?.message || '加载失败'))
   }, [])
   useEffect(() => {
     if (!time?.month) return
@@ -67,9 +71,9 @@ export default function Dashboard() {
       <div className="mb-5 flex items-end justify-between">
         <div>
           <h2 className="text-lg font-semibold">未签提醒</h2>
-          <p className="mt-0.5 text-sm text-slate-500">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（上月）</p>
+          <p className="mt-0.5 text-sm text-slate-600">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（上月）</p>
         </div>
-        {time && <span className="text-sm text-slate-500">服务器时间 {time.now}</span>}
+        {time && <span className="text-sm text-slate-600">服务器时间 {time.now}</span>}
       </div>
 
       <ErrorTip error={err} className="mb-4" />
@@ -84,6 +88,14 @@ export default function Dashboard() {
         </div>
       )}
 
+      {expiryErr && (
+        <section className="card mb-5 border-red-200 bg-red-50">
+          <h2 className="text-sm font-semibold text-red-800">有效期提醒加载失败</h2>
+          <p className="mt-1 text-sm text-red-700">
+            {expiryErr}。<b>这不代表没有设备过期</b>，请刷新页面；仍失败请检查后端服务。
+          </p>
+        </section>
+      )}
       {expiry && expiry.length > 0 && (
         <div className="card mt-5 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

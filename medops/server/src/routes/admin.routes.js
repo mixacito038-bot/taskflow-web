@@ -22,9 +22,15 @@ function normExpiry(b, old) {
   const cur = old || {};
   const date = b.expiryDate != null ? String(b.expiryDate).trim() : (cur.expiry_date || '');
   if (date && !expirySvc.isDate(date)) throw E.badInput('有效期日期格式应为 YYYY-MM-DD 且必须是真实存在的日期');
+  /* 年份区间：往前挡 <input type="date"> 年份框只输两位（0026-03-15）这类误输入，
+     往后挡 2026 手滑成 2062 —— 后者日期合法但会让设备从所有提醒里彻底消失，更危险 */
+  if (date && !expirySvc.inRange(date)) {
+    throw E.badInput(`有效期年份不合常理（应在 ${expirySvc.MIN_YEAR} 年至今后 ${expirySvc.MAX_AHEAD_YEARS} 年之间），请检查是否录错年份`);
+  }
   const note = b.expiryNote != null ? String(b.expiryNote).trim().slice(0, 60) : (cur.expiry_note || '');
   const days = b.remindDays != null ? Math.trunc(+b.remindDays) : (cur.remind_days || 0);
   if (!Number.isFinite(days) || days < 0) throw E.badInput('提醒提前天数必须是 0 或正整数');
+  if (b.remindDays != null && !Number.isInteger(+b.remindDays)) throw E.badInput('提醒提前天数必须是整数');
   if (days > 365) throw E.badInput('提醒提前天数最多 365 天');
   return { date, note, days };
 }
@@ -136,6 +142,14 @@ module.exports = async function adminRoutes(app) {
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(id)) throw E.notFound('科室不存在');
     if (db().prepare('SELECT 1 FROM records WHERE dept_id = ? LIMIT 1').get(id)) {
       throw E.conflict('该科室已有巡检记录，禁止删除，请改为停用');
+    }
+    /* 设备可以在科室之间调拨，所以"本科室没有巡检记录"不等于"本科室的设备没被巡检过"。
+       漏了这一检查，下面 DELETE FROM devices 会撞 record_items 的外键约束，
+       事务回滚后用户只拿到一条没有信息量的 500。 */
+    const used = db().prepare(`SELECT v.code FROM devices v
+      WHERE v.dept_id = ? AND EXISTS (SELECT 1 FROM record_items i WHERE i.device_id = v.id) LIMIT 1`).get(id);
+    if (used) {
+      throw E.conflict(`该科室的设备「${used.code}」已有巡检记录（可能是从别的科室调拨过来的），禁止删除，请改为停用`);
     }
     db().transaction(() => {
       db().prepare('DELETE FROM members WHERE dept_id = ?').run(id);

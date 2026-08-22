@@ -24,7 +24,10 @@ function normDevice(d) {
 /* 有效期状态：与后端 expiry.service 判定一致（默认提前 30 天） */
 export function expiryState(expiryDate, remindDays, today) {
   if (!expiryDate || !today) return null
-  const t = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), 12)
+  /* setUTCFullYear 而非 Date.UTC(y,…)：后者把 0~99 的年份当成 1900+y。
+     必须和后端 expiry.service.js 的 daysBetween 逐字对应，否则会出现
+     「列表显示还剩 1 天、首页提醒里却没有」这种错位 */
+  const t = s => { const d = new Date(0); d.setUTCFullYear(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)); d.setUTCHours(12, 0, 0, 0); return d.getTime() }
   const days = Math.round((t(expiryDate) - t(today)) / 86400000)
   const win = +remindDays > 0 ? +remindDays : 30
   if (days < 0) return { level: 'expired', days, text: `已过期 ${-days} 天` }
@@ -121,8 +124,12 @@ function DeviceModal({ open, onClose, editing, depts, onSaved, time }) {
             const st = expiryState(form.expiryDate, form.remindDays, time.date)
             if (!st) return null
             const cls = st.level === 'expired' ? 'text-red-700' : st.level === 'soon' ? 'text-amber-700' : 'text-slate-600'
+            /* 后端 expiry.service 的清单只取 status='in_use' 的设备，
+               对停用/维修/报废设备说"会出现在首页提醒里"是假承诺，会让人真的不再管它 */
+            const alerts = form.status === 'in_use'
             return <div className={`mt-2 text-xs ${cls}`}>按今天（{time.date}）算：{st.text}
-              {st.level !== 'ok' && '，会出现在首页提醒里'}</div>
+              {st.level !== 'ok' && (alerts ? '，会出现在首页提醒里'
+                : `，但本设备状态是「${devStatusText(form.status)}」，不会进首页提醒`)}</div>
           })()}
         </div>
         <div className="mt-4 flex justify-end gap-2">
@@ -170,7 +177,12 @@ function ImportModal({ open, onClose, onDone }) {
               下载模板
             </button>
           </p>
-          <Field label="选择文件" required hint="xlsx，≤5MB。列：科室名称 / 设备品类 / 设备编码 / 设备名称 / 型号 / 位置 / 状态">
+          <Field label="选择文件" required
+            hint="xlsx，≤5MB。列：科室名称 / 设备品类 / 设备编码 / 设备名称 / 型号 / 位置 / 状态 / 有效期 / 提醒提前天数">
+            <p className="mb-1.5 text-xs text-slate-600">
+              「有效期」「提醒提前天数」留空表示<b>本次不改动</b>，不会清掉设备上已录的到期日；
+              要清空请在该格填「无」。
+            </p>
             <input ref={fileRef} type="file" accept=".xlsx" className="inp !py-1.5" required />
           </Field>
           <div className="mt-4 flex justify-end gap-2">
@@ -283,10 +295,13 @@ export default function Devices() {
                     if (!d.expiryDate) return <span className="text-slate-500">—</span>
                     const st = expiryState(d.expiryDate, d.remindDays, time?.date)
                     const color = st?.level === 'expired' ? 'red' : st?.level === 'soon' ? 'amber' : 'slate'
+                    /* 只有在用设备才进首页提醒，这里的角标口径必须一致 */
+                    const alerts = d.status === 'in_use'
                     return (
                       <span className="inline-flex items-center gap-1.5">
                         <span className="tabular-nums text-slate-600">{d.expiryDate}</span>
-                        {st && st.level !== 'ok' && <Badge color={color}>{st.text}</Badge>}
+                        {st && st.level !== 'ok' && alerts && <Badge color={color}>{st.text}</Badge>}
+                        {st && st.level !== 'ok' && !alerts && <span className="text-xs text-slate-500">（不提醒）</span>}
                       </span>
                     )
                   })()}</td>
