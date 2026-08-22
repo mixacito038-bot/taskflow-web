@@ -43,7 +43,11 @@ module.exports = fp(async function errorPlugin(app) {
       return reply.code(400).send({ error: { code: 'BAD_INPUT', message: err.message } });
     }
     if (err.statusCode === 429) { // @fastify/rate-limit
-      return reply.code(429).send({ error: { code: 'RATE_LIMITED', message: '请求过于频繁' } });
+      // errorResponseBuilder 已经把结构化 body 放在 err.error 里，原样透出（含 retryAfter）
+      const body = err.error && err.error.code
+        ? { error: err.error }
+        : { error: { code: 'RATE_LIMITED', message: '请求过于频繁' } };
+      return reply.code(429).send(body);
     }
     if (err.statusCode === 413) {
       return reply.code(413).send({ error: { code: 'BAD_INPUT', message: '请求体过大' } });

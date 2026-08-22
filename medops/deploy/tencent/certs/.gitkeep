@@ -1,0 +1,2 @@
+放 HTTPS 证书用。执行 enable-https.sh 后这里会出现 server.crt / server.key。
+未启用 HTTPS 时保持为空即可，不影响使用。

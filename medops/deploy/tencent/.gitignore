@@ -1,0 +1,7 @@
+# 部署时自动生成，含 JWT 签名密钥，绝不能进代码仓库
+.env
+# 证书私钥同理
+certs/*.crt
+certs/*.key
+# enable-https.sh 生成的备份
+nginx.conf.http.bak.*

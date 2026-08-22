@@ -28,7 +28,13 @@ async function build() {
   await app.register(require('./plugins/error'));
   await app.register(require('@fastify/rate-limit'), {
     global: true, max: cfg.rl.global, timeWindow: '1 minute',
-    errorResponseBuilder: () => ({ error: { code: 'RATE_LIMITED', message: '请求过于频繁' } })
+    /* 必须带上 statusCode：@fastify/rate-limit 会把这个对象当作 error 抛给 setErrorHandler，
+       不带 statusCode 的话 error 插件识别不出来，会当成未知异常返回 500——
+       实测触发限流时客户端收到的是「服务器内部错误」而不是「请求过于频繁」。 */
+    errorResponseBuilder: (req, ctx) => ({
+      statusCode: 429,
+      error: { code: 'RATE_LIMITED', message: '请求过于频繁', retryAfter: Math.ceil((ctx.ttl || 0) / 1000) }
+    })
   });
   await app.register(require('./plugins/auth'), { cfg });
 
