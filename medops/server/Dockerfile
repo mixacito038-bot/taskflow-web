@@ -2,6 +2,9 @@
 FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+# 可选的离线依赖包。目录为空时这一行也不会失败（vendor/README.md 一定存在）。
+# 服务器容器内上不了网 / npm 源不稳 / 内存不够编译时，把 node_modules.tar.gz 放进去即可。
+COPY vendor ./vendor
 
 # 国内服务器直连 registry.npmjs.org 经常超时或半途断流，
 # 腾讯云部署默认传入 https://registry.npmmirror.com（见 deploy/tencent/docker-compose.yml）。
@@ -14,13 +17,21 @@ ARG NPM_REGISTRY=
 #（顺带验证 better-sqlite3 的原生模块能否加载）——按结果重试，而不是按返回值重试。
 # 三轮都不成就让构建失败，绝不产出坏镜像。
 RUN set -u; \
-    npm config set fetch-retries 3; \
-    npm config set fetch-retry-maxtimeout 60000; \
-    FALLBACK=https://registry.npmjs.org; \
     VERIFY="const d=Object.keys(require('./package.json').dependencies); \
             for (const m of d) require(m); \
             console.log('依赖自检通过：' + d.length + ' 个');"; \
     ok=0; \
+    if [ -f vendor/node_modules.tar.gz ]; then \
+      echo "==== 发现离线依赖包，直接解压（不联网）===="; \
+      tar xzf vendor/node_modules.tar.gz; \
+      if node -e "$VERIFY"; then ok=1; \
+      else echo "离线包在本机不可用（架构或 node 版本不符），改走在线安装"; rm -rf node_modules; fi; \
+    fi; \
+    rm -rf vendor; \
+    if [ "$ok" = 1 ]; then exit 0; fi; \
+    npm config set fetch-retries 3; \
+    npm config set fetch-retry-maxtimeout 60000; \
+    FALLBACK=https://registry.npmjs.org; \
     for i in 1 2 3; do \
       if [ "$i" = 3 ] || [ -z "$NPM_REGISTRY" ]; then REG="$FALLBACK"; else REG="$NPM_REGISTRY"; fi; \
       echo "==== 第 $i 次安装依赖（源：$REG）===="; \

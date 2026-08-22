@@ -1,0 +1,2 @@
+# 离线依赖包体积大且与平台相关，不进代码仓库；按 README.md 说明单独放入
+node_modules.tar.gz
