@@ -17,6 +17,10 @@ services:
         # 想用官方源就在 .env 里设 NPM_REGISTRY=https://registry.npmjs.org
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
+    # 封住内存上限：这台机器还跑着 8910/8911 两套别人的服务，
+    # 不设限的话本容器一旦泄漏或被打，会把整机内存吃光、把邻居一起拖死。
+    # 768m 是留给导出含签名图月报时的峰值，平时只用 40m 上下。
+    mem_limit: 768m
     environment:
       TZ: Asia/Shanghai
       DATA_DIR: /data
@@ -42,6 +46,7 @@ services:
   web:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    mem_limit: 128m               # nginx 实测只用 5m，128m 绰绰有余
     depends_on:
       api:
         condition: service_healthy
