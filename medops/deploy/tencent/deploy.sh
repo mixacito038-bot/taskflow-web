@@ -95,7 +95,7 @@ if docker compose run --rm -T api node -e "
   initDb(process.env.DATA_DIR);
   const n=getDb().prepare(\"SELECT count(*) c FROM users WHERE role='admin'\").get().c;
   process.exit(n>0?0:1);
-" >/dev/null 2>&1; then
+" </dev/null >/dev/null 2>&1; then
   ok "已存在管理员账号，跳过创建（忘记密码请执行：bash manage.sh 重置管理员）"
 else
   echo "  这是第一次部署，现在创建管理员。密码至少 6 位，输入时屏幕不显示。"
@@ -105,7 +105,7 @@ else
   read -r -s -p "  再输一次确认: " AP2; echo
   [ "${AP1}" = "${AP2}" ] || fail "两次输入的密码不一致，请重跑本脚本"
   [ ${#AP1} -ge 6 ] || fail "密码至少 6 位"
-  docker compose run --rm -T api node src/scripts/create-admin.js "${AU}" "${AP1}" || fail "创建管理员失败"
+  docker compose run --rm -T api node src/scripts/create-admin.js "${AU}" "${AP1}" </dev/null || fail "创建管理员失败"
   ok "管理员 ${AU} 已创建"
 fi
 
