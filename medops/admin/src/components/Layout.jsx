@@ -1,5 +1,5 @@
 // 主框架：左侧固定侧栏 + 内容区；含修改密码与退出
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { api, clearSession, getUser } from '../api/client'
 import { ROLE_TEXT } from '../utils'
@@ -42,6 +42,11 @@ function ChangePwdModal({ open, onClose }) {
   const [busy, setBusy] = useState(false)
   const [ok, setOk] = useState(false)
 
+  /* 每次打开都是一张空表单。以前改成功一次后 ok 一直是 true，再打开只剩「修改成功」，必须刷新才能再改 */
+  useEffect(() => {
+    if (open) { setOldPwd(''); setPwd1(''); setPwd2(''); setErr(null); setOk(false); setBusy(false) }
+  }, [open])
+
   async function submit(e) {
     e.preventDefault()
     setErr(null)
@@ -51,13 +56,13 @@ function ChangePwdModal({ open, onClose }) {
     try {
       await api('/auth/change-password', { method: 'POST', body: { oldPassword: oldPwd, newPassword: pwd1 } })
       setOk(true)
-      setTimeout(onClose, 1200)
+      setTimeout(onClose, 1500)
     } catch (e2) { setErr(e2) } finally { setBusy(false) }
   }
 
   return (
     <Modal open={open} title="修改密码" onClose={onClose} width="max-w-sm">
-      {ok ? <div className="py-4 text-center text-emerald-600 text-sm">修改成功</div> : (
+      {ok ? <div className="py-4 text-center text-emerald-600 text-sm">修改成功。其他电脑、手机上用旧密码的登录已全部失效。</div> : (
         <form onSubmit={submit}>
           <ErrorTip error={err} className="mb-3" />
           <Field label="当前密码" required>

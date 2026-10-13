@@ -1,7 +1,7 @@
 // 登录页：账号密码 + mustChange 强制改密；FROZEN/PROBE_COOLDOWN/KICKED 友好文案（契约 §1）
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, setSession, setUser, clearSession } from '../api/client'
+import { api, setSession, setUser, clearSession, getToken, getUser } from '../api/client'
 import { fmtRetry } from '../utils'
 import { ErrorTip, Field } from '../components/ui'
 
@@ -21,8 +21,11 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
-  // mustChange 强制改密步骤
-  const [mustChange, setMustChange] = useState(false)
+  /* mustChange 强制改密步骤。刷新页面或从别的页面被送回来时，会话还在但不知道临时密码，
+     这时要让用户再输一次临时密码（needOld） */
+  const pending = !!(getToken() && getUser()?.mustChange)
+  const [mustChange, setMustChange] = useState(pending)
+  const [needOld, setNeedOld] = useState(pending)
   const [oldPwd, setOldPwd] = useState('')
   const [pwd1, setPwd1] = useState('')
   const [pwd2, setPwd2] = useState('')
@@ -48,6 +51,7 @@ export default function Login() {
       setSession(data)
       if (data.user.mustChange) {
         setOldPwd(password)
+        setNeedOld(false)
         setMustChange(true)
       } else {
         nav('/', { replace: true })
@@ -62,8 +66,10 @@ export default function Login() {
   async function doChangePwd(e) {
     e.preventDefault()
     setErr(null)
+    if (needOld && !oldPwd) return setErr({ message: '请输入管理员告诉你的临时密码' })
     if (pwd1.length < 6) return setErr({ message: '新密码至少 6 位' })
     if (pwd1 !== pwd2) return setErr({ message: '两次输入的新密码不一致' })
+    if (pwd1 === oldPwd) return setErr({ message: '新密码不能与临时密码相同' })
     setBusy(true)
     try {
       await api('/auth/change-password', { method: 'POST', body: { oldPassword: oldPwd, newPassword: pwd1 } })
@@ -78,8 +84,13 @@ export default function Login() {
   }
 
   function cancelChange() {
+    // 放弃改密 = 退出：把刚登录拿到的 refreshToken 也吊销掉，不留半截会话
+    const rt = localStorage.getItem('insp_admin_rt')
+    if (rt) fetch('/api/auth/logout', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: rt }) }).catch(() => {})
     clearSession()
     setMustChange(false)
+    setNeedOld(false)
+    setOldPwd('')
     setPassword('')
     setErr(null)
   }
@@ -111,8 +122,13 @@ export default function Login() {
                 首次登录（或密码已被重置），请先设置新密码
               </div>
               <ErrorTip error={err} className="mb-4" />
+              {needOld && (
+                <Field label="临时密码" required hint="管理员重置密码时告诉你的那个">
+                  <input type="password" className="inp" value={oldPwd} onChange={e => setOldPwd(e.target.value)} required autoComplete="current-password" autoFocus />
+                </Field>
+              )}
               <Field label="新密码" required hint="至少 6 位">
-                <input type="password" className="inp" value={pwd1} onChange={e => setPwd1(e.target.value)} required autoComplete="new-password" autoFocus />
+                <input type="password" className="inp" value={pwd1} onChange={e => setPwd1(e.target.value)} required autoComplete="new-password" autoFocus={!needOld} />
               </Field>
               <Field label="确认新密码" required>
                 <input type="password" className="inp" value={pwd2} onChange={e => setPwd2(e.target.value)} required autoComplete="new-password" />

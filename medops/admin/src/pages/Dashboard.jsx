@@ -18,7 +18,8 @@ function normRow(r) {
     ng: nz(r.ng, r.ngCount, r.stat_ng, 0),
     weekSigned: nz(r.weekSigned, r.weeksSigned, r.week_signed, 0),
     weekTotal: nz(r.weekTotal, r.weeks, r.week_total, 0),
-    monthSigned: nz(r.monthSigned, r.month_signed, false)
+    monthSigned: nz(r.monthSigned, r.month_signed, false),
+    off: r.deptStatus === 'off'
   }
 }
 
@@ -72,7 +73,7 @@ export default function Dashboard() {
       <div className="mb-5 flex items-end justify-between">
         <div>
           <h2 className="text-lg font-semibold">未签提醒</h2>
-          <p className="mt-0.5 text-sm text-slate-600">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（上月）</p>
+          <p className="mt-0.5 text-sm text-slate-600">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（最后一周已结束、还没月签的月份）</p>
         </div>
         <ServerClock className="text-sm text-slate-600" />
       </div>
@@ -149,7 +150,7 @@ export default function Dashboard() {
               <tbody>
                 {completion.map(r => (
                   <tr key={r.deptId}>
-                    <td className="font-medium">{r.deptName || deptName(r.deptId)}</td>
+                    <td className="font-medium">{r.deptName || deptName(r.deptId)}{r.off && <span className="ml-1 text-xs text-slate-500">（已停用）</span>}</td>
                     <td><Bar value={r.signedDays} total={r.dueDays} /></td>
                     <td className="tabular-nums">{r.checked}</td>
                     <td>{r.ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{r.ng}</span> : <span className="text-slate-500">0</span>}</td>

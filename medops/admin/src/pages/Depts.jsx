@@ -46,7 +46,7 @@ function DeptModal({ open, onClose, editing, onSaved }) {
             <input type="number" className="inp" value={form.sort ?? 0} onChange={e => set('sort', e.target.value)} />
           </Field>
         </div>
-        <Field label="状态">
+        <Field label="状态" hint={form.status === 'off' ? '停用后：不能再录入巡检；历史记录、统计、月报照常可查可导出；在用的过期设备仍会提醒' : undefined}>
           <select className="inp" value={form.status || 'on'} onChange={e => set('status', e.target.value)}>
             <option value="on">启用</option>
             <option value="off">停用</option>
@@ -74,14 +74,14 @@ export default function Depts() {
   useEffect(load, [])
 
   async function remove(d) {
-    if (!confirm(`确定删除科室「${d.name}」？仅无巡检记录的科室可删除。`)) return
+    if (!confirm(`确定删除科室「${d.name}」？只有从没用过的科室能删除，用过的请改为「停用」。`)) return
     setErr(null)
     try {
       await api(`/admin/depts/${d.id}`, { method: 'DELETE' })
       load()
     } catch (e) {
-      if (e.code === 'CONFLICT') setErr({ message: `「${d.name}」已有巡检记录，不能删除；请改为「停用」。` })
-      else setErr(e)
+      // 服务端会说清楚为什么不能删（有巡检/签字记录，或还有护士长账号属于它）
+      setErr({ message: `「${d.name}」不能删除：${e.message}` })
     }
   }
 

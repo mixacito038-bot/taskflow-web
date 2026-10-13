@@ -1,11 +1,11 @@
 // 月报导出：选科室 + 月份 → 下载 monthly.xlsx（设备×日期矩阵 + 异常清单 + 三级签名图）
 import { useEffect, useState } from 'react'
 import { download } from '../api/client'
-import { useDepts, useServerTime } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { ErrorTip } from '../components/ui'
 
 export default function ExportPage() {
-  const { onDepts, deptName } = useDepts()
+  const { filterDepts, deptName, error: deptErr } = useDepts()
   const time = useServerTime()
   const [deptId, setDeptId] = useState('')
   const [month, setMonth] = useState('')
@@ -37,13 +37,14 @@ export default function ExportPage() {
           导出指定科室的巡检月报（xlsx）：设备 × 日期巡检矩阵（✓/✗/空）、当月异常清单、日 / 周 / 月三级签名图。
         </p>
         <form onSubmit={doExport}>
-          <ErrorTip error={err} className="mb-4" />
+          <ErrorTip error={err || deptErr} className="mb-4" />
           {done && <div className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-600">{done}</div>}
           <label className="mb-3 block text-sm">
             <span className="mb-1 block text-slate-600">科室 <span className="text-red-500">*</span></span>
             <select className="inp" value={deptId} onChange={e => setDeptId(e.target.value)} required>
               <option value="" disabled>请选择科室</option>
-              {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+              {/* 停用科室也要能导出它以前的月报（已签好的月报以前在这里选不到） */}
+              {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
             </select>
           </label>
           <label className="mb-5 block text-sm">

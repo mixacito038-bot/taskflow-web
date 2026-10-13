@@ -1,7 +1,7 @@
 // 巡检记录：按科室+日期范围查询；详情看勾选明细/异常/签名图；admin 可作废日签
 import { useEffect, useState } from 'react'
 import { api, getUser } from '../api/client'
-import { useDepts, useServerTime } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, addDays } from '../utils'
 import { Badge, Empty, ErrorTip, Modal, SignCard, Spinner } from '../components/ui'
 import VoidSignModal from '../components/VoidSignModal'
@@ -11,19 +11,25 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
   const [devices, setDevices] = useState(null)
   const [err, setErr] = useState(null)
 
+  /* 取全院台账：记录里勾过、后来调拨到别的科室的设备也要显示出编码和名称。
+     以前只取本科室当前台账，调走的设备显示成「设备#4（已移出台账）」，看不出是哪台 */
   useEffect(() => {
     if (!rec) return
     setDevices(null)
-    api(`/devices?deptId=${rec.deptId}`).then(res => setDevices(asList(res))).catch(setErr)
+    api('/admin/devices').then(res => setDevices(asList(res).map(d => ({ ...d, id: String(d.id), deptId: String(d.deptId) })))).catch(setErr)
   }, [rec])
 
   if (!rec) return null
   const checks = rec.checks || {}
   const notes = rec.notes || {}
-  // 记录里出现但台账已删的设备也要能显示
-  const knownIds = new Set((devices || []).map(d => String(d.id)))
-  const orphanIds = Object.keys(checks).filter(id => !knownIds.has(String(id)))
   const ngCount = Object.values(checks).filter(v => v === 'ng').length
+  /* 明细行 = 这天实际勾过的设备 ∪ 本科室当前在用的设备（没勾的显示「未查」）；
+     停用/报废的设备没勾过就不列出来，不算漏查 */
+  const byId = new Map((devices || []).map(d => [d.id, d]))
+  const rows = devices ? [
+    ...Object.keys(checks).map(id => byId.get(String(id)) || { id: String(id), missing: true }),
+    ...devices.filter(d => d.deptId === String(rec.deptId) && d.status === 'in_use' && !checks[d.id])
+  ].sort((a, b) => (a.missing ? 1 : 0) - (b.missing ? 1 : 0) || String(a.code || '').localeCompare(String(b.code || ''))) : []
 
   return (
     <Modal open title={`巡检明细 · ${deptName(rec.deptId)} · ${rec.date}`} onClose={onClose} width="max-w-2xl">
@@ -40,14 +46,16 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
           <table className="tbl">
             <thead><tr><th>编码</th><th>设备</th><th>品类</th><th>结果</th><th>备注</th></tr></thead>
             <tbody>
-              {devices.map(d => {
+              {rows.map(d => {
                 const id = String(d.id)
                 const v = checks[id]
+                const moved = !d.missing && d.deptId !== String(rec.deptId)
                 return (
                   <tr key={id}>
-                    <td className="font-mono text-slate-500">{d.code}</td>
-                    <td>{d.name}</td>
-                    <td className="text-slate-500">{d.catName}</td>
+                    <td className="font-mono text-slate-500">{d.missing ? `设备#${id}` : d.code}</td>
+                    <td>{d.missing ? '（台账中已不存在）' : d.name}
+                      {moved && <span className="ml-1 text-xs text-slate-500">（现属{deptName(d.deptId)}）</span>}</td>
+                    <td className="text-slate-500">{d.catName || ''}</td>
                     <td>
                       {v === 'ok' && <Badge color="green">✓ 正常</Badge>}
                       {v === 'ng' && <Badge color="red">✗ 异常</Badge>}
@@ -57,14 +65,6 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
                   </tr>
                 )
               })}
-              {orphanIds.map(id => (
-                <tr key={id}>
-                  <td className="font-mono text-slate-500" colSpan={2}>设备#{id}（已移出台账）</td>
-                  <td />
-                  <td>{checks[id] === 'ok' ? <Badge color="green">✓ 正常</Badge> : <Badge color="red">✗ 异常</Badge>}</td>
-                  <td className="text-red-600">{notes[id] || ''}</td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
@@ -84,7 +84,7 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
 }
 
 export default function Records() {
-  const { onDepts, deptName } = useDepts()
+  const { filterDepts, deptLabel: deptName, error: deptErr } = useDepts()
   const time = useServerTime()
   const [deptId, setDeptId] = useState('')
   const [from, setFrom] = useState('')
@@ -112,7 +112,8 @@ export default function Records() {
       setList(asList(res).map(r => ({ ...r, deptId: String(r.deptId) })))
     } catch (e) { setErr(e) } finally { setLoading(false) }
   }
-  useEffect(() => { if (from && to) query() }, [from, to]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 科室、日期任一改动都自动查询（以前改科室不查，页面还显示旧数据）
+  useEffect(() => { if (from && to) query() }, [deptId, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function openDetail(r) {
     try {
@@ -120,7 +121,7 @@ export default function Records() {
     } catch (e) { setErr(e) }
   }
 
-  const sorted = [...(list || [])].sort((a, b) => b.date.localeCompare(a.date) || a.deptId.localeCompare(b.deptId))
+  const sorted = [...(list || [])].sort((a, b) => b.date.localeCompare(a.date) || (+a.deptId - +b.deptId))
 
   return (
     <div>
@@ -131,7 +132,7 @@ export default function Records() {
           <span className="mb-1 block text-slate-500">科室</span>
           <select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
             <option value="">全部科室</option>
-            {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
           </select>
         </label>
         <label className="text-sm">
@@ -144,10 +145,10 @@ export default function Records() {
         </label>
         <button className="btn-primary" onClick={query} disabled={loading}>{loading ? '查询中…' : '查 询'}</button>
       </div>
-      <ErrorTip error={err} className="mb-4" />
+      <ErrorTip error={err || deptErr} className="mb-4" />
 
       <div className="card overflow-x-auto">
-        {list === null ? <Spinner /> : sorted.length === 0 ? <Empty text="该条件下暂无巡检记录" /> : (
+        {list === null ? (err ? <Empty text="加载失败" /> : <Spinner />) : sorted.length === 0 ? <Empty text="该条件下暂无巡检记录" /> : (
           <table className="tbl">
             <thead>
               <tr><th>日期</th><th>科室</th><th>巡检人</th><th>勾选台数</th><th>异常台数</th><th>签字</th><th className="text-right">操作</th></tr>

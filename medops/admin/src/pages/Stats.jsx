@@ -1,7 +1,7 @@
 // 统计分析：completion（完成率）+ signatures（签字人×日/周/月签次数）；Tailwind div 条形，不用图表库
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { useDepts, useServerTime } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, nz } from '../utils'
 import { Badge, Bar, Empty, ErrorTip, Spinner } from '../components/ui'
 
@@ -15,7 +15,8 @@ function normCompletion(r) {
     ng: nz(r.ng, r.ngCount, r.stat_ng, 0),
     weekSigned: nz(r.weekSigned, r.weeksSigned, r.week_signed, 0),
     weekTotal: nz(r.weekTotal, r.weeks, r.week_total, 0),
-    monthSigned: nz(r.monthSigned, r.month_signed, false)
+    monthSigned: nz(r.monthSigned, r.month_signed, false),
+    off: r.deptStatus === 'off'
   }
 }
 
@@ -32,7 +33,7 @@ function normSignature(r) {
 }
 
 export default function Stats() {
-  const { onDepts, deptName } = useDepts()
+  const { filterDepts, deptLabel: deptName, error: deptErr } = useDepts()
   const time = useServerTime()
   const [month, setMonth] = useState('')
   const [deptId, setDeptId] = useState('')
@@ -42,18 +43,22 @@ export default function Stats() {
 
   useEffect(() => { if (time?.month && !month) setMonth(time.month) }, [time]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* alive：快速切换月份/科室时，先发出的请求可能后返回，不能让旧结果盖掉新结果。
+     失败时把表格置空并显示错误，以前会一直转圈 */
   useEffect(() => {
     if (!month) return
+    let alive = true
     setErr(null)
     setCompletion(null)
     setSignatures(null)
     const q = deptId ? `&deptId=${deptId}` : ''
     api(`/stats/completion?month=${month}${q}`)
-      .then(res => setCompletion(asList(res).map(normCompletion)))
-      .catch(setErr)
+      .then(res => { if (alive) setCompletion(asList(res).map(normCompletion)) })
+      .catch(e => { if (alive) { setErr(e); setCompletion([]) } })
     api(`/stats/signatures?month=${month}`)
-      .then(res => setSignatures(asList(res).map(normSignature)))
-      .catch(setErr)
+      .then(res => { if (alive) setSignatures(asList(res).map(normSignature)) })
+      .catch(e => { if (alive) { setErr(e); setSignatures([]) } })
+    return () => { alive = false }
   }, [month, deptId])
 
   const shownSigs = (signatures || []).filter(s => !deptId || s.deptId === deptId)
@@ -72,11 +77,11 @@ export default function Stats() {
           <span className="mb-1 block text-slate-500">科室</span>
           <select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
             <option value="">全部科室</option>
-            {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
           </select>
         </label>
       </div>
-      <ErrorTip error={err} className="mb-4" />
+      <ErrorTip error={err || deptErr} className="mb-4" />
 
       <div className="card mb-5 p-5">
         <h3 className="mb-4 font-medium text-slate-700">巡检完成率 <span className="text-sm font-normal text-slate-500">（应巡天数 / 已日签天数 / 台次 / 周签 / 月签）</span></h3>
@@ -89,7 +94,7 @@ export default function Stats() {
               <tbody>
                 {completion.map(r => (
                   <tr key={r.deptId}>
-                    <td className="font-medium">{r.deptName || deptName(r.deptId)}</td>
+                    <td className="font-medium">{r.deptName || deptName(r.deptId)}{r.off && <span className="ml-1 text-xs text-slate-500">（已停用）</span>}</td>
                     <td><Bar value={r.signedDays} total={r.dueDays} /></td>
                     <td className="tabular-nums">{r.checked}</td>
                     <td>{r.ng > 0 ? <span className="font-medium text-red-500 tabular-nums">{r.ng}</span> : <span className="text-slate-500">0</span>}</td>

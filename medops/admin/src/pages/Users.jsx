@@ -1,8 +1,8 @@
-// 账号管理：列表 / 新建 / 编辑（角色、科室多选、启停）/ 重置密码显示一次性密码
+// 账号管理：列表 / 新建 / 编辑（角色、科室多选、启停）/ 重置密码显示一次性密码 / 解冻
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
-import { useDepts } from '../hooks'
-import { asList, nz, ROLE_TEXT } from '../utils'
+import { api, getUser } from '../api/client'
+import { useDepts, deptOptLabel } from '../hooks'
+import { asList, nz, ROLE_TEXT, fmtRetry } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 
 const ROLES = ['inspector', 'dept', 'equip', 'admin']
@@ -15,7 +15,8 @@ function normUser(u) {
     role: u.role,
     deptIds: (nz(u.deptIds, u.dept_ids, []) || []).map(String),
     status: nz(u.status, 'on'),
-    mustChange: !!nz(u.mustChange, u.must_change, false)
+    mustChange: !!nz(u.mustChange, u.must_change, false),
+    frozenSec: nz(u.frozenSec, 0)
   }
 }
 
@@ -32,7 +33,7 @@ function DeptMultiSelect({ value, onChange, depts, single }) {
         return (
           <button key={d.id} type="button" onClick={() => toggle(d.id)}
             className={`rounded-full px-2.5 py-1 text-xs transition ${on ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-            {d.name}
+            {deptOptLabel(d)}
           </button>
         )
       })}
@@ -41,12 +42,21 @@ function DeptMultiSelect({ value, onChange, depts, single }) {
   )
 }
 
-function UserModal({ open, onClose, editing, depts, onSaved }) {
+function UserModal({ open, onClose, editing, depts, allDepts, onSaved }) {
   const isNew = !editing?.id
+  const me = getUser()
+  const isSelf = !isNew && String(editing?.id) === String(me?.id)
+  /* 只有管理员能授予「超级管理员」；设备科看到这个选项、选了也会被服务端拒绝 */
+  const roles = ROLES.filter(r => r !== 'admin' || me?.role === 'admin')
   const [form, setForm] = useState({})
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  /* 换成护士长时，原来多选的科室不能原样带过去（护士长只能管 1 个科室，以前会存成挂多个科室的护士长）：
+     只选了 1 个就保留，否则清空让人重新选 */
+  const setRole = role => setForm(f => ({ ...f, role, deptIds: role === 'dept' && (f.deptIds || []).length > 1 ? [] : (f.deptIds || []) }))
+  // 已分配的停用科室也要显示出来（标「已停用」），否则编辑时看不到、保存又会被悄悄带上
+  const choices = [...depts, ...allDepts.filter(d => d.status === 'off' && (form.deptIds || []).includes(String(d.id)))]
 
   useEffect(() => {
     if (open) {
@@ -63,6 +73,8 @@ function UserModal({ open, onClose, editing, depts, onSaved }) {
     e.preventDefault()
     setErr(null)
     if (needDept && !(form.deptIds || []).length) return setErr({ message: '该角色需要至少选择一个科室' })
+    if (form.role === 'dept' && form.deptIds.length !== 1) return setErr({ message: '护士长只能属于 1 个科室' })
+    if (!(form.displayName || '').trim()) return setErr({ message: '姓名不能为空' })
     setBusy(true)
     try {
       if (isNew) {
@@ -73,7 +85,9 @@ function UserModal({ open, onClose, editing, depts, onSaved }) {
       } else {
         await api(`/admin/users/${editing.id}`, {
           method: 'PATCH',
-          body: { displayName: form.displayName.trim(), role: form.role, deptIds: needDept ? form.deptIds : [], status: form.status }
+          body: isSelf
+            ? { displayName: form.displayName.trim(), deptIds: needDept ? form.deptIds : [] }
+            : { displayName: form.displayName.trim(), role: form.role, deptIds: needDept ? form.deptIds : [], status: form.status }
         })
       }
       onSaved()
@@ -98,17 +112,17 @@ function UserModal({ open, onClose, editing, depts, onSaved }) {
         <Field label="姓名" required>
           <input className="inp" value={form.displayName || ''} onChange={e => set('displayName', e.target.value)} required />
         </Field>
-        <Field label="角色" required hint="巡检员可多科室；护士长单科室；设备科/超管为全院">
-          <select className="inp" value={form.role || 'inspector'} onChange={e => set('role', e.target.value)}>
-            {ROLES.map(r => <option key={r} value={r}>{ROLE_TEXT[r]}</option>)}
+        <Field label="角色" required hint={isSelf ? '不能修改自己正在使用的账号的角色' : '巡检员可多科室；护士长单科室；设备科/超管为全院'}>
+          <select className="inp" value={form.role || 'inspector'} onChange={e => setRole(e.target.value)} disabled={isSelf}>
+            {(form.role && !roles.includes(form.role) ? [...roles, form.role] : roles).map(r => <option key={r} value={r}>{ROLE_TEXT[r]}</option>)}
           </select>
         </Field>
         {needDept && (
           <Field label={form.role === 'dept' ? '所属科室（单选）' : '负责科室（多选）'} required>
-            <DeptMultiSelect value={form.deptIds || []} onChange={v => set('deptIds', v)} depts={depts} single={form.role === 'dept'} />
+            <DeptMultiSelect value={form.deptIds || []} onChange={v => set('deptIds', v)} depts={choices} single={form.role === 'dept'} />
           </Field>
         )}
-        {!isNew && (
+        {!isNew && !isSelf && (
           <Field label="状态" hint="停用后该账号全部登录态立即失效">
             <select className="inp" value={form.status || 'on'} onChange={e => set('status', e.target.value)}>
               <option value="on">启用</option>
@@ -126,7 +140,9 @@ function UserModal({ open, onClose, editing, depts, onSaved }) {
 }
 
 export default function Users() {
-  const { onDepts, deptName } = useDepts()
+  const { onDepts, depts, deptLabel, error: deptErr } = useDepts()
+  const me = getUser()
+  const iAmAdmin = me?.role === 'admin'
   const [list, setList] = useState(null)
   const [err, setErr] = useState(null)
   const [modal, setModal] = useState(null)        // null | {} | user
@@ -143,6 +159,14 @@ export default function Users() {
     if (to === 'off' && !confirm(`确定停用「${u.displayName}」？其全部登录态将立即失效。`)) return
     try {
       await api(`/admin/users/${u.id}`, { method: 'PATCH', body: { status: to } })
+      load()
+    } catch (e) { setErr(e) }
+  }
+
+  async function unfreeze(u) {
+    if (!confirm(`确认是「${u.displayName}」本人输错了密码？解冻后可以立即用原密码登录。`)) return
+    try {
+      await api(`/admin/users/${u.id}/unfreeze`, { method: 'POST' })
       load()
     } catch (e) { setErr(e) }
   }
@@ -167,7 +191,7 @@ export default function Users() {
         <h2 className="text-lg font-semibold">账号管理</h2>
         <button className="btn-primary" onClick={() => setModal({})}>+ 新建账号</button>
       </div>
-      <ErrorTip error={err} className="mb-4" />
+      <ErrorTip error={err || deptErr} className="mb-4" />
 
       <div className="card overflow-x-auto">
         {!list ? <Spinner /> : list.length === 0 ? <Empty /> : (
@@ -176,32 +200,47 @@ export default function Users() {
               <tr><th>账号</th><th>姓名</th><th>角色</th><th>科室</th><th>状态</th><th className="text-right">操作</th></tr>
             </thead>
             <tbody>
-              {list.map(u => (
+              {list.map(u => {
+                /* 管理员账号只有管理员能动；自己的账号不能在这里停用（会把自己锁在门外） */
+                const locked = u.role === 'admin' && !iAmAdmin
+                const isSelf = String(u.id) === String(me?.id)
+                return (
                 <tr key={u.id}>
                   <td className="font-mono text-slate-600">{u.username}</td>
-                  <td className="font-medium">{u.displayName}{u.mustChange && <Badge color="amber">待改密</Badge>}</td>
+                  <td className="font-medium">
+                    {u.displayName}
+                    {isSelf && <span className="ml-1 text-xs text-slate-500">（我）</span>}
+                    {u.mustChange && <Badge color="amber">待改密</Badge>}
+                    {u.frozenSec > 0 && <span className="ml-1"><Badge color="red">冻结中 · 约 {fmtRetry(u.frozenSec)}后自动解除</Badge></span>}
+                  </td>
                   <td>{ROLE_TEXT[u.role] || u.role}</td>
                   <td className="max-w-[260px]">
                     {u.role === 'equip' || u.role === 'admin'
                       ? <span className="text-slate-500">全院</span>
-                      : (u.deptIds.length ? u.deptIds.map(deptName).join('、') : <span className="text-slate-400">—</span>)}
+                      : (u.deptIds.length ? u.deptIds.map(deptLabel).join('、') : <span className="text-red-500">未分配科室</span>)}
                   </td>
                   <td>{u.status === 'on' ? <Badge color="green">启用</Badge> : <Badge color="red">已停用</Badge>}</td>
                   <td className="whitespace-nowrap text-right">
-                    <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => setModal(u)}>编辑</button>
-                    <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => resetPwd(u)}>重置密码</button>
-                    <button className={`!px-2.5 !py-1 text-xs ${u.status === 'on' ? 'btn-danger' : 'btn-ghost'}`} onClick={() => toggleStatus(u)}>
-                      {u.status === 'on' ? '停用' : '启用'}
-                    </button>
+                    {locked ? <span className="text-xs text-slate-500">仅超级管理员可操作</span> : (<>
+                      {u.frozenSec > 0 && <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => unfreeze(u)}>解冻</button>}
+                      <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => setModal(u)}>编辑</button>
+                      {!isSelf && <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => resetPwd(u)}>重置密码</button>}
+                      {!isSelf && (
+                        <button className={`!px-2.5 !py-1 text-xs ${u.status === 'on' ? 'btn-danger' : 'btn-ghost'}`} onClick={() => toggleStatus(u)}>
+                          {u.status === 'on' ? '停用' : '启用'}
+                        </button>
+                      )}
+                    </>)}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         )}
       </div>
 
-      <UserModal open={modal !== null} editing={modal} depts={onDepts} onClose={() => setModal(null)} onSaved={load} />
+      <UserModal open={modal !== null} editing={modal} depts={onDepts} allDepts={depts} onClose={() => setModal(null)} onSaved={load} />
 
       <Modal open={!!resetInfo} title="密码已重置" onClose={() => setResetInfo(null)} width="max-w-sm">
         {resetInfo && (

@@ -1,7 +1,7 @@
 // 异常清单：GET /stats/ng + 导出 /export/ng.xlsx
 import { useEffect, useState } from 'react'
 import { api, download } from '../api/client'
-import { useDepts, useServerTime } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, addDays, nz } from '../utils'
 import { Empty, ErrorTip, Spinner } from '../components/ui'
 
@@ -19,7 +19,7 @@ function normNg(r) {
 }
 
 export default function Ng() {
-  const { onDepts, deptName } = useDepts()
+  const { filterDepts, deptLabel: deptName, error: deptErr } = useDepts()
   const time = useServerTime()
   const [deptId, setDeptId] = useState('')
   const [from, setFrom] = useState('')
@@ -44,13 +44,15 @@ export default function Ng() {
       setList(asList(res).map(normNg))
     } catch (e) { setErr(e) } finally { setLoading(false) }
   }
-  useEffect(() => { if (from && to) query() }, [from, to]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (from && to) query() }, [deptId, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* 导出与页面同一套筛选条件（以前漏了科室：页面筛出 3 条，导出却是全院） */
   function doExport() {
     const q = new URLSearchParams()
     if (from) q.set('from', from)
     if (to) q.set('to', to)
-    download(`/export/ng.xlsx?${q}`, `异常清单_${from}_${to}.xlsx`).catch(setErr)
+    if (deptId) q.set('deptId', deptId)
+    download(`/export/ng.xlsx?${q}`, `异常清单_${deptId ? deptName(deptId) + '_' : ''}${from}_${to}.xlsx`).catch(setErr)
   }
 
   return (
@@ -65,7 +67,7 @@ export default function Ng() {
           <span className="mb-1 block text-slate-500">科室</span>
           <select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
             <option value="">全部科室</option>
-            {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
           </select>
         </label>
         <label className="text-sm">
@@ -79,10 +81,10 @@ export default function Ng() {
         <button className="btn-primary" onClick={query} disabled={loading}>{loading ? '查询中…' : '查 询'}</button>
         {list && <span className="pb-2 text-sm text-slate-500">共 {list.length} 条异常</span>}
       </div>
-      <ErrorTip error={err} className="mb-4" />
+      <ErrorTip error={err || deptErr} className="mb-4" />
 
       <div className="card overflow-x-auto">
-        {list === null ? <Spinner /> : list.length === 0 ? <Empty text="该时段无异常记录" /> : (
+        {list === null ? (err ? <Empty text="加载失败" /> : <Spinner />) : list.length === 0 ? <Empty text="该时段无异常记录" /> : (
           <table className="tbl">
             <thead>
               <tr><th>日期</th><th>科室</th><th>设备编码</th><th>设备名称</th><th>品类</th><th>异常描述</th><th>巡检人</th></tr>

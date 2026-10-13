@@ -90,6 +90,14 @@ export async function api(path, { method = 'GET', body, headers = {}, raw = fals
     gotoLogin()
     throw new ApiError(err.code, err.message, err.retryAfter, res.status)
   }
+  // 密码已被重置、还没改：回登录页的改密步骤（服务端除改密外的接口都会拒绝）
+  if (err.code === 'MUST_CHANGE_PASSWORD' && at) {
+    const u = getUser()
+    if (u) setUser({ ...u, mustChange: true })
+    const login = import.meta.env.BASE_URL + 'login'
+    if (location.pathname !== login) location.assign(login)
+    throw new ApiError(err.code, err.message, err.retryAfter, res.status)
+  }
 
   // 401：refresh 后重试一次（auth 端点自身除外）
   if (res.status === 401 && !_retried && at && !path.startsWith('/auth/login') && !path.startsWith('/auth/refresh')) {
@@ -111,9 +119,11 @@ export async function download(path, fallbackName) {
   const res = await api(path, { raw: true })
   const blob = await res.blob()
   const cd = res.headers.get('Content-Disposition') || ''
-  const m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd)
-  let name = fallbackName || 'download'
-  if (m) { try { name = decodeURIComponent(m[1].replace(/"/g, '')) } catch { name = m[1] } }
+  // 优先用 filename*（UTF-8 中文名），其次前端给的中文名，最后才用 ASCII 的 filename
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)
+  const plain = /filename="?([^";]+)"?/i.exec(cd)
+  let name = fallbackName || (plain && plain[1]) || 'download'
+  if (star) { try { name = decodeURIComponent(star[1]) } catch { /* 保留上面的名字 */ } }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

@@ -1,7 +1,7 @@
 // 设备台账：增删改 + xlsx 导入（上传→逐行结果）+ 模板下载
 import { useEffect, useRef, useState } from 'react'
 import { api, download } from '../api/client'
-import { useDepts, useServerTime } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, nz, DEVICE_STATUS, devStatusText } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 
@@ -35,7 +35,7 @@ export function expiryState(expiryDate, remindDays, today) {
   return { level: 'ok', days, text: `还剩 ${days} 天` }
 }
 
-function DeviceModal({ open, onClose, editing, depts, onSaved, time }) {
+function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }) {
   const isNew = !editing?.id
   const [form, setForm] = useState({})
   const [err, setErr] = useState(null)
@@ -54,6 +54,9 @@ function DeviceModal({ open, onClose, editing, depts, onSaved, time }) {
   async function submit(e) {
     e.preventDefault()
     setErr(null)
+    /* 日期框只删了一部分（比如删掉「日」）时，浏览器给的值是空串，看起来像「不适用」——
+       直接保存会把已录的到期日悄悄清掉，所以先拦下来 */
+    if (form.expiryBad) return setErr({ message: '到期日没有填完整（年、月、日都要有），或点日期框右侧清空后再保存' })
     setBusy(true)
     const body = {
       deptId: form.deptId, catName: form.catName.trim(), code: form.code.trim(),
@@ -78,7 +81,8 @@ function DeviceModal({ open, onClose, editing, depts, onSaved, time }) {
           <Field label="所属科室" required>
             <select className="inp" value={form.deptId || ''} onChange={e => set('deptId', e.target.value)} required>
               <option value="" disabled>请选择</option>
-              {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+              {/* 当前所在科室已停用时也要列出来，否则下拉会错显成第一个科室 */}
+              {(formDepts ? formDepts(form.deptId) : depts).map(d => <option key={d.id} value={String(d.id)} disabled={d.status === 'off'}>{deptOptLabel(d)}</option>)}
             </select>
           </Field>
           <Field label="设备品类" required hint="如：除颤仪、心电监护仪">
@@ -109,7 +113,8 @@ function DeviceModal({ open, onClose, editing, depts, onSaved, time }) {
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="到期日">
-              <input type="date" className="inp" value={form.expiryDate || ''} onChange={e => set('expiryDate', e.target.value)} />
+              <input type="date" className="inp" value={form.expiryDate || ''}
+                onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value, expiryBad: e.target.validity.badInput }))} />
             </Field>
             <Field label="提前提醒" hint="留空按 30 天">
               <input type="number" min="0" max="365" className="inp" placeholder="30"
@@ -124,7 +129,7 @@ function DeviceModal({ open, onClose, editing, depts, onSaved, time }) {
             const st = expiryState(form.expiryDate, form.remindDays, time.date)
             if (!st) return null
             const cls = st.level === 'expired' ? 'text-red-700' : st.level === 'soon' ? 'text-amber-700' : 'text-slate-600'
-            /* 后端 expiry.service 的清单只取 status='in_use' 的设备，
+            /* 后端 expiry.service 的清单只取 status='in_use' 的设备（科室停用了也照样提醒），
                对停用/维修/报废设备说"会出现在首页提醒里"是假承诺，会让人真的不再管它 */
             const alerts = form.status === 'in_use'
             return <div className={`mt-2 text-xs ${cls}`}>按今天（{time.date}）算：{st.text}
@@ -228,7 +233,7 @@ function ImportModal({ open, onClose, onDone }) {
 }
 
 export default function Devices() {
-  const { onDepts, deptName } = useDepts()
+  const { onDepts, filterDepts, formDepts, deptLabel: deptName, error: deptErr } = useDepts()
   const time = useServerTime()
   const [list, setList] = useState(null)
   const [err, setErr] = useState(null)
@@ -269,12 +274,12 @@ export default function Devices() {
       <div className="mb-4 flex flex-wrap gap-2">
         <select className="inp !w-48" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
           <option value="">全部科室</option>
-          {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+          {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
         </select>
         <input className="inp !w-64" placeholder="搜索编码 / 名称 / 品类 / 位置" value={kw} onChange={e => setKw(e.target.value)} />
         <span className="self-center text-sm text-slate-600">共 {shown.length} 台</span>
       </div>
-      <ErrorTip error={err} className="mb-4" />
+      <ErrorTip error={err || deptErr} className="mb-4" />
 
       <div className="card overflow-x-auto">
         {!list ? <Spinner /> : shown.length === 0 ? <Empty /> : (
@@ -316,7 +321,7 @@ export default function Devices() {
         )}
       </div>
 
-      <DeviceModal open={modal !== null} editing={modal} depts={onDepts} onClose={() => setModal(null)} onSaved={load} time={time} />
+      <DeviceModal open={modal !== null} editing={modal} depts={onDepts} formDepts={formDepts} onClose={() => setModal(null)} onSaved={load} time={time} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
     </div>
   )

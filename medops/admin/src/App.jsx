@@ -17,6 +17,8 @@ import LegacyImport from './pages/LegacyImport'
 
 function RequireAuth({ children }) {
   if (!getToken()) return <Navigate to="/login" replace />
+  // 密码被重置后必须先改密：以前直接在地址栏打开 /admin/ 就能绕过改密页
+  if (getUser()?.mustChange) return <Navigate to="/login" replace />
   return children
 }
 

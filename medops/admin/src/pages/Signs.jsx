@@ -1,7 +1,7 @@
 // 周签 / 月签查看：签名图 + stat；admin 可作废（需填 reason）
 import { useEffect, useState } from 'react'
 import { api, getUser } from '../api/client'
-import { useDepts, useServerTime } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, addDays } from '../utils'
 import { Empty, ErrorTip, SignCard, Spinner } from '../components/ui'
 import VoidSignModal from '../components/VoidSignModal'
@@ -35,7 +35,7 @@ function SignItem({ title, stat, unit, sign, at, canVoid, onVoid }) {
 
 export default function Signs() {
   const isAdmin = getUser()?.role === 'admin'
-  const { onDepts, deptName } = useDepts()
+  const { filterDepts, deptLabel: deptName, error: deptErr } = useDepts()
   const time = useServerTime()
   const [tab, setTab] = useState('week')
   const [deptId, setDeptId] = useState('')
@@ -74,7 +74,7 @@ export default function Signs() {
   }
   useEffect(() => {
     if (tab === 'week' ? (from && to) : year) query()
-  }, [tab, from, to, year]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, deptId, from, to, year]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sorted = [...(list || [])].sort((a, b) => String(b.week || b.month).localeCompare(String(a.week || a.month)))
 
@@ -96,17 +96,17 @@ export default function Signs() {
           <span className="mb-1 block text-slate-500">科室</span>
           <select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
             <option value="">全部科室</option>
-            {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
           </select>
         </label>
         {tab === 'week' ? (
           <>
             <label className="text-sm">
-              <span className="mb-1 block text-slate-500">周一（起）</span>
+              <span className="mb-1 block text-slate-500">从这一周（起）</span>
               <input type="date" className="inp !w-40" value={from} onChange={e => setFrom(e.target.value)} />
             </label>
             <label className="text-sm">
-              <span className="mb-1 block text-slate-500">周一（止）</span>
+              <span className="mb-1 block text-slate-500">到这一周（止）</span>
               <input type="date" className="inp !w-40" value={to} onChange={e => setTo(e.target.value)} />
             </label>
           </>
@@ -118,7 +118,7 @@ export default function Signs() {
         )}
         <button className="btn-primary" onClick={query} disabled={loading}>{loading ? '查询中…' : '查 询'}</button>
       </div>
-      <ErrorTip error={err} className="mb-4" />
+      <ErrorTip error={err || deptErr} className="mb-4" />
 
       {list === null ? <Spinner /> : sorted.length === 0 ? (
         <div className="card"><Empty text={`该条件下暂无${tab === 'week' ? '周签' : '月签'}记录`} /></div>

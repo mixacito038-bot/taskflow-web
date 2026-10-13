@@ -1,7 +1,7 @@
 // 签字人名单：科室维度增删改（周签时护士长从中选人）
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { useDepts } from '../hooks'
+import { useDepts, deptOptLabel } from '../hooks'
 import { asList, nz } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 
@@ -15,7 +15,7 @@ function normMember(m) {
   }
 }
 
-function MemberModal({ open, onClose, editing, depts, defaultDeptId, onSaved }) {
+function MemberModal({ open, onClose, editing, depts, formDepts, defaultDeptId, onSaved }) {
   const isNew = !editing?.id
   const [form, setForm] = useState({})
   const [err, setErr] = useState(null)
@@ -36,9 +36,13 @@ function MemberModal({ open, onClose, editing, depts, defaultDeptId, onSaved }) 
     setErr(null)
     setBusy(true)
     const body = { deptId: form.deptId, name: form.name.trim(), title: (form.title || '').trim(), status: form.status }
+    if (!body.name) { setBusy(false); return setErr({ message: '姓名不能为空' }) }
     try {
       if (isNew) await api('/admin/members', { method: 'POST', body })
-      else await api(`/admin/members/${editing.id}`, { method: 'PATCH', body })
+      else {
+        delete body.deptId // 签字人不能改科室（服务端也会拒绝）
+        await api(`/admin/members/${editing.id}`, { method: 'PATCH', body })
+      }
       onSaved()
       onClose()
     } catch (e2) { setErr(e2) } finally { setBusy(false) }
@@ -48,10 +52,10 @@ function MemberModal({ open, onClose, editing, depts, defaultDeptId, onSaved }) 
     <Modal open={open} title={isNew ? '新增签字人' : `编辑签字人：${editing?.name}`} onClose={onClose} width="max-w-sm">
       <form onSubmit={submit}>
         <ErrorTip error={err} className="mb-3" />
-        <Field label="科室" required>
-          <select className="inp" value={form.deptId || ''} onChange={e => set('deptId', e.target.value)} required>
+        <Field label="科室" required hint={isNew ? undefined : '签字人不能改科室：他签过的周签都属于原科室。调到别的科室请在新科室新建，并把这里停用'}>
+          <select className="inp" value={form.deptId || ''} onChange={e => set('deptId', e.target.value)} required disabled={!isNew}>
             <option value="" disabled>请选择</option>
-            {depts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+            {(formDepts ? formDepts(form.deptId) : depts).map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
           </select>
         </Field>
         <Field label="姓名" required>
@@ -76,7 +80,7 @@ function MemberModal({ open, onClose, editing, depts, defaultDeptId, onSaved }) 
 }
 
 export default function Members() {
-  const { onDepts, deptName } = useDepts()
+  const { onDepts, filterDepts, formDepts, deptLabel: deptName, error: deptErr } = useDepts()
   const [list, setList] = useState(null)
   const [err, setErr] = useState(null)
   const [filterDept, setFilterDept] = useState('')
@@ -107,11 +111,11 @@ export default function Members() {
       <div className="mb-4 flex gap-2">
         <select className="inp !w-48" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
           <option value="">全部科室</option>
-          {onDepts.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+          {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
         </select>
         <span className="self-center text-sm text-slate-500">共 {shown.length} 人</span>
       </div>
-      <ErrorTip error={err} className="mb-4" />
+      <ErrorTip error={err || deptErr} className="mb-4" />
 
       <div className="card overflow-x-auto">
         {!list ? <Spinner /> : shown.length === 0 ? <Empty /> : (
@@ -137,7 +141,8 @@ export default function Members() {
         )}
       </div>
 
-      <MemberModal open={modal !== null} editing={modal} depts={onDepts} defaultDeptId={filterDept} onClose={() => setModal(null)} onSaved={load} />
+      <MemberModal open={modal !== null} editing={modal} depts={onDepts} formDepts={formDepts}
+        defaultDeptId={onDepts.some(d => String(d.id) === filterDept) ? filterDept : ''} onClose={() => setModal(null)} onSaved={load} />
     </div>
   )
 }
