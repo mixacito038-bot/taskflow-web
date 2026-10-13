@@ -14,8 +14,11 @@ const ROLES = ['inspector', 'dept', 'equip', 'admin'];
 
 function userJsonRow(db, u) {
   const deptIds = db.prepare('SELECT dept_id FROM user_depts WHERE user_id = ? ORDER BY dept_id').all(u.id).map(r => String(r.dept_id));
+  const frozenSec = authSvc.frozenRemain(u);
   return { id: String(u.id), username: u.username, displayName: u.display_name, role: u.role,
-    status: u.status, deptIds, mustChange: !!u.must_change, createdAt: u.created_at };
+    status: u.status, deptIds, mustChange: !!u.must_change, createdAt: u.created_at,
+    // 冻结状态要让管理员看得见、能解：以前列表里看不出谁被冻结了，只能干等或重置密码
+    frozenUntil: frozenSec > 0 ? u.frozen_until : null, frozenSec };
 }
 const deptJson = d => ({ id: String(d.id), name: d.name, code: d.code, sort: d.sort, status: d.status });
 /* 有效期入参归一化：空串=不适用；日期非法直接报错，避免脏数据静默入库 */
@@ -139,6 +142,17 @@ module.exports = async function adminRoutes(app) {
     authSvc.revokeAllTokens(u.id);
     authSvc.audit(req.user.id, 'user_reset_password', `id=${u.id}`, req.ip);
     return { password };
+  });
+
+  /* 解冻：密码连错被冻结的账号，确认是本人后直接解除（不改密码）；冻结轮次一并清零 */
+  app.post('/api/admin/users/:id/unfreeze', { preHandler: guard }, async req => {
+    const u = db().prepare('SELECT * FROM users WHERE id = ?').get(+req.params.id);
+    if (!u) throw E.notFound('用户不存在');
+    if (u.role === 'admin' && req.user.role !== 'admin') throw E.forbidden('管理员账号只能由管理员解冻');
+    db().prepare('UPDATE users SET fail_count = 0, freeze_level = 0, frozen_until = NULL, updated_at = ? WHERE id = ?')
+      .run(nowIso(), u.id);
+    authSvc.audit(req.user.id, 'user_unfreeze', `id=${u.id}`, req.ip);
+    return userJsonRow(db(), db().prepare('SELECT * FROM users WHERE id = ?').get(u.id));
   });
 
   /* ---------- 科室 ---------- */

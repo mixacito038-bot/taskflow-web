@@ -96,8 +96,10 @@ const web = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
 
   if (url.startsWith('/api/')) {                  // 反代到后端
+    // X-Forwarded-For 改写成真实来源地址（后端只信一层代理，客户端自带的不算数）
+    const headers = { ...req.headers, 'x-forwarded-for': req.socket.remoteAddress || '' };
     const p = http.request(
-      { host: '127.0.0.1', port: API_PORT, path: req.url, method: req.method, headers: req.headers },
+      { host: '127.0.0.1', port: API_PORT, path: req.url, method: req.method, headers },
       pr => { res.writeHead(pr.statusCode, pr.headers); pr.pipe(res); });
     p.on('error', () => { res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' }); res.end('后端未就绪'); });
     req.pipe(p);

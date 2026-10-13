@@ -17,6 +17,7 @@ const E = {
   frozen: retryAfter => new ApiErr(423, 'FROZEN', '密码连续错误，账号已临时冻结', retryAfter),
   probe: retryAfter => new ApiErr(429, 'PROBE_COOLDOWN', '尝试过于频繁，请稍后再试', retryAfter),
   forbidden: m => new ApiErr(403, 'FORBIDDEN', m || '无权访问'),
+  mustChange: () => new ApiErr(403, 'MUST_CHANGE_PASSWORD', '密码已被重置，请先修改密码后再使用'),
   notFound: m => new ApiErr(404, 'NOT_FOUND', m || '数据不存在'),
   locked: m => new ApiErr(409, 'LOCKED', m || '已签字锁定'),
   notReady: m => new ApiErr(409, 'NOT_READY', m || '上一级签字未完成'),

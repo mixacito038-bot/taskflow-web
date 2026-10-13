@@ -332,6 +332,130 @@ async function main() {
   assert.equal(compK.dueDays, 1, '今天新建的科室本月应巡天数应为 1（今天）');
   ok('今天新建的科室：不追溯前 7 天缺签；本月应巡天数从建科室当天算');
 
+  /* ======================= 登录与会话安全 ======================= */
+  const raw = async (method, url, { device = 'regress-dev', headers = {}, body } = {}) => {
+    const h = device ? { 'x-device-id': device, ...headers } : { ...headers };
+    if (body !== undefined) h['content-type'] = 'application/json';
+    const r = await fetch(BASE + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch { /* 非 JSON */ }
+    return { status: r.status, json, text, headers: r.headers };
+  };
+  const loginAs = (u, p, device, headers) => raw('POST', '/api/auth/login', { device, headers, body: { username: u, password: p } });
+  const sidOf = r => (/(?:^|, )sid=([^;]+)/.exec(r.headers.get('set-cookie') || '') || [])[1];
+  const Database = require('better-sqlite3');
+  const sql = new Database(path.join(DATA_DIR, 'app.db'));
+  sql.pragma('busy_timeout = 5000');
+
+  step = '登录冷却按「设备+IP」：全院共用出口 IP 时不连坐';
+  okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'nurseB', password: 'Pass@123', displayName: '护士B', role: 'inspector', deptIds: [k3.id] } }));
+  const NAT = { 'x-forwarded-for': '203.0.113.7' };
+  for (const [dev, n] of [['phone-A', 3], ['phone-C', 3], ['phone-D', 2]]) {
+    for (let i = 0; i < n; i++) errj(await loginAs('insp3', 'wrong-pw', dev, NAT), 401, 'UNAUTHORIZED', `${dev} 输错`);
+    // 每台设备各自输错几次后，换回正确密码登录，避免把 insp3 冻结
+    if (dev !== 'phone-D') okj(await loginAs('insp3', 'Pass@123', dev, NAT), `${dev} 正确登录`);
+  }
+  okj(await loginAs('nurseB', 'Pass@123', 'phone-B', NAT), '同一出口 IP 下另一台手机正常登录');
+  okj(await loginAs('admin', 'Admin@123', 'office-pc', NAT), '同一出口 IP 下管理员正常登录');
+  ok('同一出口 IP 下 3 台手机共输错 8 次，其他手机和管理员照常登录（旧版全院 429）');
+
+  step = '登录成功不清空本设备的失败计数';
+  for (let i = 0; i < 7; i++) errj(await loginAs(`ghost${i}`, 'x', 'probe-pc', NAT), 401, 'UNAUTHORIZED', '不存在的账号');
+  okj(await loginAs('nurseB', 'Pass@123', 'probe-pc', NAT), '中途用自己的账号登录一次');
+  errj(await loginAs('ghost7', 'x', 'probe-pc', NAT), 401, 'UNAUTHORIZED', '第 8 次失败');
+  errj(await loginAs('ghost8', 'x', 'probe-pc', NAT), 429, 'PROBE_COOLDOWN', '第 9 次应被冷却');
+  ok('同一设备失败 7 次 → 登一次自己的号 → 再失败 1 次即冷却（旧版登录成功就清零，可无限试）');
+
+  step = '只信一层代理：伪造的 X-Forwarded-For 前缀不算数';
+  okj(await loginAs('nurseB', 'Pass@123', 'xff-pc', { 'x-forwarded-for': '6.6.6.6, 198.51.100.9' }));
+  const lastLogin = okj(await api('GET', '/api/admin/audit', { token: A })).find(a => a.action === 'login');
+  assert.equal(lastLogin.ip, '198.51.100.9', '应取代理追加的最后一项，实际：' + lastLogin.ip);
+  ok('X-Forwarded-For「伪造, 真实」→ 记录的是代理追加的真实地址');
+
+  step = 'refreshToken 被盗用';
+  let L1 = okj(await loginAs('nurseB', 'Pass@123', 'legit-phone'));
+  errj(await raw('POST', '/api/auth/refresh', { device: 'thief-pc', body: { refreshToken: L1.refreshToken } }), 401, 'UNAUTHORIZED', '换设备号来换 token');
+  errj(await raw('POST', '/api/auth/refresh', { device: 'legit-phone', body: { refreshToken: L1.refreshToken } }), 401, 'UNAUTHORIZED', '被盗用后这组 token 已吊销');
+  L1 = okj(await loginAs('nurseB', 'Pass@123', 'legit-phone'));
+  const stolen = okj(await raw('POST', '/api/auth/refresh', { device: 'legit-phone', body: { refreshToken: L1.refreshToken } }), '盗用者伪造同一设备号先换走');
+  errj(await raw('POST', '/api/auth/refresh', { device: 'legit-phone', body: { refreshToken: L1.refreshToken } }), 401, 'UNAUTHORIZED', '正主重放旧 token');
+  errj(await raw('POST', '/api/auth/refresh', { device: 'legit-phone', body: { refreshToken: stolen.refreshToken } }), 401, 'UNAUTHORIZED', '盗用者换出来的新 token 应一并作废');
+  // 登录时没带设备号的会话：轮换出来的新 token 也必须留在原来那一组里，重放时才能一起作废
+  const L0 = okj(await loginAs('nurseB', 'Pass@123', ''));
+  const L0b = okj(await raw('POST', '/api/auth/refresh', { device: 'some-pc', body: { refreshToken: L0.refreshToken } }));
+  errj(await raw('POST', '/api/auth/refresh', { device: '', body: { refreshToken: L0.refreshToken } }), 401, 'UNAUTHORIZED', '重放');
+  errj(await raw('POST', '/api/auth/refresh', { device: 'some-pc', body: { refreshToken: L0b.refreshToken } }), 401, 'UNAUTHORIZED', '同组新 token 应一并作废');
+  ok('换设备号续期 → 拒绝并吊销；正主重放旧 token → 盗用者换出的新 token 一并作废（旧版盗用者会话一直有效）');
+
+  step = 'sid Cookie 退出后失效';
+  const L2 = await loginAs('insp3', 'Pass@123', 'sid-phone');
+  const sid3 = sidOf(L2);
+  const k3rec = okj(await api('GET', `/api/records/${k3.id}/${wksX[0]}`, { token: A }));
+  assert.equal((await raw('GET', k3rec.sign.url, { device: 'sid-phone', headers: { cookie: `sid=${sid3}` } })).status, 200, '登录中 sid 可看签名图');
+  errj(await raw('PUT', `/api/records/${k3.id}/${today}`, { device: 'sid-phone', headers: { authorization: `Bearer ${sid3}` }, body: { checks: {} } }), 401, 'UNAUTHORIZED', 'sid 当 Bearer 写记录');
+  okj(await raw('POST', '/api/auth/logout', { device: 'sid-phone', body: { refreshToken: L2.json.refreshToken } }), '退出（不带 access token 也能退出）');
+  assert.equal((await raw('GET', k3rec.sign.url, { device: 'sid-phone', headers: { cookie: `sid=${sid3}` } })).status, 401, '退出后 sid 应失效');
+  ok('sid 不能当 Bearer 写数据；退出登录后 sid 立即失效（旧版 30 天内一直可用）');
+
+  step = '自己改密码：其他设备的登录失效，当前设备保持登录';
+  const onA = okj(await loginAs('nurseB', 'Pass@123', 'pw-phone-A'));
+  const onB = okj(await loginAs('nurseB', 'Pass@123', 'pw-phone-B'));
+  errj(await raw('POST', '/api/auth/change-password', { device: 'pw-phone-A', headers: { authorization: `Bearer ${onA.accessToken}` }, body: { oldPassword: 'Pass@123', newPassword: 'Pass@123' } }), 400, 'BAD_INPUT', '新旧密码相同');
+  okj(await raw('POST', '/api/auth/change-password', { device: 'pw-phone-A', headers: { authorization: `Bearer ${onA.accessToken}` }, body: { oldPassword: 'Pass@123', newPassword: 'New@1234' } }), '在 A 上改密');
+  errj(await raw('POST', '/api/auth/refresh', { device: 'pw-phone-B', body: { refreshToken: onB.refreshToken } }), 401, 'UNAUTHORIZED', 'B 的旧登录续期');
+  okj(await raw('POST', '/api/auth/refresh', { device: 'pw-phone-A', body: { refreshToken: onA.refreshToken } }), 'A 继续使用');
+  ok('改密后其他设备的旧登录不能再续期，改密的这台设备不用重新登录');
+
+  step = '重置密码后必须先改密（服务端强制）';
+  const nb = okj(await api('GET', '/api/admin/users', { token: A })).find(u => u.username === 'nurseB');
+  const tmp = okj(await api('POST', `/api/admin/users/${nb.id}/reset-password`, { token: A })).password;
+  const T = okj(await loginAs('nurseB', tmp, 'mc-phone'));
+  assert.equal(T.user.mustChange, true);
+  const auth = { authorization: `Bearer ${T.accessToken}` };
+  errj(await raw('PUT', `/api/records/${k3.id}/${today}`, { device: 'mc-phone', headers: auth, body: { checks: {} } }), 403, 'MUST_CHANGE_PASSWORD', '未改密就录入');
+  errj(await raw('GET', '/api/depts', { device: 'mc-phone', headers: auth }), 403, 'MUST_CHANGE_PASSWORD', '未改密就查科室');
+  okj(await raw('GET', '/api/auth/me', { device: 'mc-phone', headers: auth }), '未改密可以取自己的信息');
+  okj(await raw('GET', '/api/time', { device: 'mc-phone', headers: auth }), '未改密可以取服务器时间');
+  okj(await raw('POST', '/api/auth/change-password', { device: 'mc-phone', headers: auth, body: { oldPassword: tmp, newPassword: 'Mine@2026' } }), '改密');
+  okj(await raw('GET', '/api/depts', { device: 'mc-phone', headers: auth }), '改密后照常使用');
+  ok('临时密码登录后：除「我的信息/改密/时间/退出」外一律 403，改完密码立即恢复（旧版前端可绕过）');
+
+  step = '停用账号续期提示「已禁用」，不记虚假重放';
+  const D1 = okj(await loginAs('nurseB', 'Mine@2026', 'off-phone'));
+  okj(await api('PATCH', `/api/admin/users/${nb.id}`, { token: A, body: { status: 'off' } }));
+  const lastAudit = Math.max(...okj(await api('GET', '/api/admin/audit', { token: A })).map(a => +a.id));
+  errj(await raw('POST', '/api/auth/refresh', { device: 'off-phone', body: { refreshToken: D1.refreshToken } }), 401, 'KICKED', '停用后续期');
+  assert.ok(!okj(await api('GET', '/api/admin/audit', { token: A })).some(a => +a.id > lastAudit && a.action === 'refresh_replay'), '不应记重放');
+  okj(await api('PATCH', `/api/admin/users/${nb.id}`, { token: A, body: { status: 'on' } }));
+  ok('停用账号续期 → 401 KICKED（提示已禁用），不再写一条虚假的重放审计');
+
+  step = '冻结：可见、可解冻、登录成功后轮次清零';
+  for (let i = 0; i < 4; i++) errj(await loginAs('nurseB', 'bad', 'fz-phone'), 401, 'UNAUTHORIZED');
+  let fz = await loginAs('nurseB', 'bad', 'fz-phone');
+  errj(fz, 423, 'FROZEN'); assert.equal(fz.json.error.retryAfter, 300);
+  let row = okj(await api('GET', '/api/admin/users', { token: Q })).find(u => u.username === 'nurseB');
+  assert.ok(row.frozenUntil && row.frozenSec > 0, '账号列表应显示冻结状态');
+  errj(await api('POST', `/api/admin/users/${adminRow.id}/unfreeze`, { token: Q }), 403, 'FORBIDDEN', '设备科解冻管理员');
+  row = okj(await api('POST', `/api/admin/users/${nb.id}/unfreeze`, { token: Q }), '设备科解冻巡检员');
+  assert.equal(row.frozenUntil, null);
+  okj(await loginAs('nurseB', 'Mine@2026', 'fz-phone'), '解冻后用原密码登录');
+  // 模拟「冻结自然到期」：把冻结时间改到过去，但保留冻结轮次
+  for (let i = 0; i < 5; i++) await loginAs('nurseB', 'bad', 'fz-phone2');
+  sql.prepare("UPDATE users SET frozen_until = '2000-01-01T00:00:00.000Z' WHERE username = 'nurseB'").run();
+  assert.equal(sql.prepare("SELECT freeze_level FROM users WHERE username = 'nurseB'").get().freeze_level, 1);
+  okj(await loginAs('nurseB', 'Mine@2026', 'fz-phone3'), '冻结到期后正确登录');
+  for (let i = 0; i < 4; i++) await loginAs('nurseB', 'bad', 'fz-phone4');
+  fz = await loginAs('nurseB', 'bad', 'fz-phone4');
+  assert.equal(fz.json.error.retryAfter, 300, '登录成功后再冻结应从 5 分钟重新算，实际 ' + fz.json.error.retryAfter);
+  ok('账号列表显示冻结；设备科可解冻巡检员、不能解冻管理员；本人登录成功后冻结时长从 5 分钟重新算');
+
+  step = '服务器上重置管理员密码：旧登录全部失效';
+  const adm = okj(await loginAs('admin', 'Admin@123', 'adm-pc'));
+  require('child_process').execFileSync('node', ['src/scripts/create-admin.js', 'admin', 'Reset@2026'], { cwd: ROOT, env: ENV, stdio: 'ignore' });
+  errj(await raw('POST', '/api/auth/refresh', { device: 'adm-pc', body: { refreshToken: adm.refreshToken } }), 401, 'UNAUTHORIZED', '重置前的登录续期');
+  okj(await loginAs('admin', 'Reset@2026', 'adm-pc'), '新密码登录');
+  ok('manage.sh 重置管理员 → 之前的登录全部失效，新密码可登录');
+  sql.close();
+
   console.log('\nREGRESS PASS');
 }
 

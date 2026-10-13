@@ -135,8 +135,11 @@ const server = http.createServer((req, res) => {
       res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'retry-after': '5' });
       return res.end(JSON.stringify({ error: { code: 'STARTING', message: '服务正在启动，请几秒后重试' } }));
     }
+    /* X-Forwarded-For 改写成真实来源地址（覆盖客户端自带的）：后端只信一层代理，
+       登录冷却、限流都按它算；照原样转发的话客户端带个假 IP 就能绕过 */
+    const headers = { ...req.headers, 'x-forwarded-for': req.socket.remoteAddress || '' };
     const p = http.request(
-      { host: '127.0.0.1', port: API_PORT, path: req.url, method: req.method, headers: req.headers },
+      { host: '127.0.0.1', port: API_PORT, path: req.url, method: req.method, headers },
       pr => { res.writeHead(pr.statusCode, pr.headers); pr.pipe(res); });
     p.on('error', e => {
       log('WARN', `反代失败 ${req.method} ${req.url}：${e.message}`);

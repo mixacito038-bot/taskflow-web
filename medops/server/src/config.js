@@ -12,6 +12,17 @@ module.exports = {
   accessTtl: '30m',
   refreshDays: 30,
   cookieName: 'sid',
+  /* 信任几层反向代理（nginx / serve.js / start.js 都是一层）。req.ip 取 X-Forwarded-For 里
+     由代理追加的那一项，客户端自己伪造的前几项不算数。
+     ⚠ 旧版 trustProxy=true 信任整条 X-Forwarded-For：客户端带一个假 IP 就能绕过登录冷却和限流。
+     前面再加了一层代理（如 CDN、另一台 nginx）时，用 TRUST_PROXY=2 之类调整。 */
+  trustProxy: (() => {
+    const v = process.env.TRUST_PROXY;
+    if (v == null || v === '') return 1;
+    if (/^\d+$/.test(v)) return +v;
+    if (v === 'true' || v === 'false') return v === 'true';
+    return v; // 逗号分隔的代理 IP / 网段
+  })(),
   /* 网络层限流（按 IP，每分钟）。
      ⚠ 医院整栋楼通常共用一个出口 IP，在服务端看来全院就是"一个人"，
      所以阈值必须按"全院同时在线"来定，不能按单人。

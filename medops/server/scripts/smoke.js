@@ -103,9 +103,11 @@ async function main() {
   ok('科室/2 设备/签字人/3 账号');
 
   step = '三种角色登录';
+  const sids = {};
   const login = async u => {
     const x = await api('POST', '/api/auth/login', { body: { username: u, password: 'pass123' } });
     expectOk(x);
+    sids[u] = (/(?:^|, )sid=([^;]+)/.exec(x.headers.get('set-cookie') || '') || [])[1];
     return x.json.accessToken;
   };
   const insp = await login('insp01');
@@ -147,11 +149,16 @@ async function main() {
   assert.equal(r.status, 200);
   const png = Buffer.from(await r.arrayBuffer());
   assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
-  r = await api('GET', signUrl, { headers: { cookie: `sid=${sid[1]}` }, raw: true });
+  r = await api('GET', signUrl, { headers: { cookie: `sid=${sids.insp01}` }, raw: true });
   assert.equal(r.status, 200, 'Cookie sid 应可下载签名图');
   r = await api('GET', signUrl, { raw: true });
   assert.equal(r.status, 401, '无凭证应 401');
-  ok('签名图 Bearer/Cookie 双通道，PNG 魔数正确');
+  // admin 最早那次登录的会话已在「重放吊销」一步被整组吊销，它的 sid 也必须跟着失效
+  r = await api('GET', signUrl, { headers: { cookie: `sid=${sid[1]}` }, raw: true });
+  assert.equal(r.status, 401, '会话已吊销，旧 sid 应失效');
+  r = await api('GET', signUrl, { token: sids.insp01, raw: true });
+  assert.equal(r.status, 401, 'sid 不能当 Bearer 用');
+  ok('签名图 Bearer/Cookie 双通道，PNG 魔数正确；会话吊销后 sid 失效；sid 不能当 Bearer');
 
   /* 业务规则：周签需该周「周一到周日 7 天」日签齐；月签需归属该月的「全部」周都已周签。
      旧版断言「补齐本周已过日期就能周签本周」——那正是允许提前签的 bug，已改为必须被拒绝。 */
@@ -301,14 +308,16 @@ async function main() {
   assert.equal(r.json.frozen, true);
   ok('第 5 次错误密码触发 FROZEN，login-state.frozen=true');
 
-  step = '枚举冷却（不存在账号连打 → 429）';
-  let last = null;
+  step = '枚举冷却（同一设备+IP 连错 8 次 → 第 9 次 429）';
   for (let i = 0; i < 8; i++) {
-    last = await api('POST', '/api/auth/login', { body: { username: `ghost${i}`, password: 'x' }, device: 'smoke-probe' });
+    expectErr(await api('POST', '/api/auth/login', { body: { username: `ghost${i}`, password: 'x' }, device: 'smoke-probe' }), 401, 'UNAUTHORIZED');
   }
+  const last = await api('POST', '/api/auth/login', { body: { username: 'ghost8', password: 'x' }, device: 'smoke-probe' });
   expectErr(last, 429, 'PROBE_COOLDOWN');
   assert.ok(last.json.error.retryAfter > 0);
-  ok('枚举冷却 PROBE_COOLDOWN 429');
+  // 全院共用一个出口 IP：一台设备被冷却，不能连累同一 IP 下的其他设备（旧版按 IP 单独计数，全院都登不上）
+  expectOk(await api('POST', '/api/auth/login', { body: { username: 'equip01', password: 'pass123' }, device: 'smoke-other-phone' }));
+  ok('枚举冷却 PROBE_COOLDOWN 429；同一出口 IP 下的其他设备照常登录');
 
   console.log('\nSMOKE PASS  （数据目录：' + DATA_DIR + '）');
 }

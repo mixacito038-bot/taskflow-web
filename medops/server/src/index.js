@@ -21,7 +21,7 @@ async function build() {
   const app = require('fastify')({
     logger: { level: process.env.LOG_LEVEL || 'info' },
     bodyLimit: 25 * 1024 * 1024,
-    trustProxy: true
+    trustProxy: cfg.trustProxy
   });
 
   await app.register(require('@fastify/helmet'), { contentSecurityPolicy: false });

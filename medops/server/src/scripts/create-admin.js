@@ -30,10 +30,12 @@ async function main() {
   const hash = bcrypt.hashSync(password, 10);
   const old = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (old) {
-    db.prepare(`UPDATE users SET password_hash = ?, role = 'admin', status = 'on',
+    db.prepare(`UPDATE users SET password_hash = ?, role = 'admin', status = 'on', must_change = 0,
       fail_count = 0, freeze_level = 0, frozen_until = NULL, updated_at = ? WHERE id = ?`)
       .run(hash, now, old.id);
-    console.log(`已重置管理员 ${username} (id=${old.id})`);
+    // 在服务器上重置密码 = 之前的登录全部作废（忘了密码或怀疑泄露才会来重置）
+    db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(now, old.id);
+    console.log(`已重置管理员 ${username} (id=${old.id})，已解除冻结，之前的登录已全部失效`);
   } else {
     const id = db.prepare(`INSERT INTO users (username, password_hash, display_name, role, created_at, updated_at)
       VALUES (?, ?, ?, 'admin', ?, ?)`).run(username, hash, '系统管理员', now, now).lastInsertRowid;

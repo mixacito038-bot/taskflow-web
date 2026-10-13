@@ -20,7 +20,9 @@ module.exports = async function authRoutes(app, opts) {
   app.post('/api/auth/refresh', async (req, reply) =>
     sendTokens(reply, authSvc.refresh(app, req, req.body || {})));
 
-  app.post('/api/auth/logout', { preHandler: [app.auth] }, async (req, reply) => {
+  /* 退出不要求 access token 有效：access 过期（30 分钟）后退出，也要能把 refreshToken 吊销掉；
+     凭 refreshToken 本身吊销它是安全的（拿着它的人本来就能用它） */
+  app.post('/api/auth/logout', async (req, reply) => {
     authSvc.logout(req, req.body || {});
     reply.clearCookie(cfg.cookieName, { path: '/api' });
     return { ok: true };
@@ -30,15 +32,18 @@ module.exports = async function authRoutes(app, opts) {
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
   }, async req => authSvc.loginState(req, (req.query || {}).username));
 
-  app.get('/api/auth/me', { preHandler: [app.auth] }, async req => authSvc.userJson(req.user));
+  app.get('/api/auth/me', { preHandler: [app.authLite] }, async req => authSvc.userJson(req.user));
 
-  app.post('/api/auth/change-password', { preHandler: [app.auth] }, async req => {
-    authSvc.changePassword(req.user.id, req.body || {});
+  app.post('/api/auth/change-password', {
+    preHandler: [app.authLite],
+    config: { rateLimit: { max: cfg.rl.login, timeWindow: '1 minute' } }
+  }, async req => {
+    authSvc.changePassword(req, req.user.id, req.body || {});
     return { ok: true };
   });
 
   /* 业务时钟：H5 的 today()/wkOf/moOf 一律以此为准 */
-  app.get('/api/time', { preHandler: [app.auth] }, async () => {
+  app.get('/api/time', { preHandler: [app.authLite] }, async () => {
     const n = P.shNow();
     // epochMs：前端据此算出与本机时钟的偏差，让页面上的服务器时间按秒走动（不必每秒请求）
     return { now: `${n.date} ${n.time}`, date: n.date, week: P.wkOf(n.date), month: P.moOf(n.date), epochMs: Date.now() };
