@@ -4,8 +4,12 @@ const { getDb } = require('../db/connection');
 const { E } = require('../plugins/error');
 const recSvc = require('../services/record.service');
 const fileSvc = require('../services/file.service');
+const statsSvc = require('../services/stats.service');
 
-const deptJson = d => ({ id: String(d.id), name: d.name, code: d.code, sort: d.sort, status: d.status });
+/* startDate：科室从哪天开始算「应巡」（建科室当天，或更早的第一条记录）。
+   手机端的未签提醒据此不追溯建科室之前的日子 */
+const deptJson = d => ({ id: String(d.id), name: d.name, code: d.code, sort: d.sort, status: d.status,
+  startDate: statsSvc.deptStart(d) });
 const deviceJson = v => ({ id: String(v.id), deptId: String(v.dept_id), catName: v.cat_name,
   code: v.code, name: v.name, model: v.model, location: v.location, status: v.status, sort: v.sort });
 const memberJson = m => ({ id: String(m.id), deptId: String(m.dept_id), name: m.name, title: m.title,

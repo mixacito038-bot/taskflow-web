@@ -301,6 +301,14 @@ select.in{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .pick .grow{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pick svg{width:18px;height:18px;color:var(--faint);flex-shrink:0}
 .pick:active{background:#F7FAF9}
+/* 科室页换日期（补录补签入口） */
+.datebar{display:flex;gap:8px;margin:2px 0 12px}
+.datebar .btn{flex:1;padding:9px 6px;font-size:13px;min-width:0}
+.datebar .btn.gho{background:var(--card);box-shadow:inset 0 0 0 1px var(--line);color:var(--ink2)}
+.datebar .btn:disabled{opacity:.45}
+.datebar svg{width:15px;height:15px}
+.dpick{position:relative;overflow:hidden}
+.dpick input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;font-size:16px}
 .opt{display:flex;align-items:center;gap:11px;width:100%;padding:14px 14px;border-radius:14px;
   text-align:left;font-size:15.5px;background:#fff;box-shadow:inset 0 0 0 1px var(--line)}
 .opt+.opt{margin-top:8px}
@@ -408,6 +416,11 @@ const wksOfMonth=(m,upto)=>{
   return out;
 };
 const prevMonth=m=>{let y=+m.slice(0,4),mm=+m.slice(5,7)-1;if(mm<1){mm=12;y--}return `${y}-${pad(mm)}`};
+/* 一天的记录归哪个月的月签管：看它所在的周归哪个月（与服务端 period.service signMonthOf 一致） */
+const signMonthOf=d=>moOf(wkOf(d));
+/* 月签覆盖范围：第一周周一 ～ 最后一周周日（首尾可能跨到上月末、下月初） */
+const monthSpan=m=>{const w=wksOfMonth(m);return {from:w[0],to:addDay(w[w.length-1],6)}};
+const daysBetween=(a,b)=>Math.round((D(b)-D(a))/864e5);
 
 const ICON={
   home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
@@ -505,6 +518,7 @@ async function req(path,opt={},retried){
   let data=null;try{data=await res.json()}catch(x){}
   if(res.ok)return data;
   const er=(data&&data.error)||{code:'ERR',message:'请求失败（'+res.status+'）'};
+  if(er.code==='MUST_CHANGE_PASSWORD'&&S.me){S.me.mustChange=true;setTimeout(render,0)}
   if(er.code==='KICKED'&&opt.auth!==false)onKicked();
   else if(res.status===401&&opt.auth!==false&&!retried){
     if(s&&s.refreshToken&&await refreshSession())return req(path,opt,true);
@@ -526,15 +540,19 @@ function refreshSession(){
   return REFRESHING;
 }
 
-/* 设备清单按科室缓存（台账在会话内不变，避免勾选时反复拉取） */
-const DEVCACHE=new Map();
+/* 设备清单按科室缓存，避免勾选时反复拉取。
+   缓存 3 分钟：后台新增、调拨、停用设备后，巡检员不用重新登录也能看到
+   （以前只在登录/退出时清空，App 常驻时可能连续几天看不到新设备）。 */
+const DEVCACHE=new Map(), DEV_TTL=3*60*1000;
 function devList(deptId){
-  if(!DEVCACHE.has(deptId)){
+  const c=DEVCACHE.get(deptId);
+  if(!c||Date.now()-c.at>DEV_TTL){
     const p=req('/devices?deptId='+encodeURIComponent(deptId))
       .catch(e=>{DEVCACHE.delete(deptId);throw e});
-    DEVCACHE.set(deptId,p);
+    DEVCACHE.set(deptId,{at:Date.now(),p});
+    return p;
   }
-  return DEVCACHE.get(deptId);
+  return c.p;
 }
 
 const API={
@@ -558,17 +576,24 @@ const API={
     un=String(un||'').trim();
     if(!un)return {frozen:false,disabled:false};
     try{return await req('/auth/login-state?username='+encodeURIComponent(un),{auth:false})}
-    catch(e){return {frozen:false,disabled:false}}
+    catch(e){return {frozen:false,disabled:false,unknown:true}}
   },
   async me(){
     if(!session())return null;
     try{return await req('/auth/me')}catch(e){return null}
   },
   async takeKicked(){const k=KICKED;KICKED=null;return k},
+  /* 退出：勾了「记住此账号」的，保留它的 refreshToken 给下次一键登录用，不去吊销；
+     没记住的才吊销。以前一律吊销，记住的账号退出后再点一键登录必然「登录已过期」，
+     还会触发一次重放吊销。 */
   async logout(){
     const s=session();
-    try{await req('/auth/logout',{method:'POST',body:{refreshToken:(s&&s.refreshToken)||''}})}catch(e){}
+    const kept=s&&s.user&&DB.get('saved',[]).some(x=>x.username===s.user.username&&x.refreshToken===s.refreshToken);
+    try{await req('/auth/logout',{method:'POST',body:{refreshToken:kept?'':((s&&s.refreshToken)||'')},auth:false})}catch(e){}
     DB.del('session');DEVCACHE.clear();
+  },
+  async changePassword(oldPassword,newPassword){
+    return req('/auth/change-password',{method:'POST',body:{oldPassword,newPassword}});
   },
 
   /* ---------- 记住的账号（只存 refreshToken，不落密码） ---------- */
@@ -580,7 +605,14 @@ const API={
       refreshToken:(s&&s.refreshToken)||'',at:stamp()});
     DB.set('saved',all.slice(0,5));
   },
-  async forgetAccount(un){DB.set('saved',DB.get('saved',[]).filter(x=>x.username!==un))},
+  /* 移除记住的账号：顺便把它的 refreshToken 在服务端吊销（否则这台手机上还留着一个有效登录） */
+  async forgetAccount(un){
+    const a=DB.get('saved',[]).find(x=>x.username===un);
+    const s=session();
+    if(a&&a.refreshToken&&!(s&&s.refreshToken===a.refreshToken))
+      req('/auth/logout',{method:'POST',body:{refreshToken:a.refreshToken},auth:false}).catch(()=>{});
+    DB.set('saved',DB.get('saved',[]).filter(x=>x.username!==un));
+  },
 
   /* ---------- 时间源 ---------- */
   async time(){return req('/time')},
@@ -593,7 +625,8 @@ const API={
 
   /* ---------- 数据范围（服务端已按角色过滤，off 科室前端忽略） ---------- */
   async depts(){return (await req('/depts')).filter(d=>d.status!=='off')},
-  async dept(id){try{return await req('/depts/'+encodeURIComponent(id))}catch(e){return null}},
+  /* 不吞错：以前失败时返回 null，页面接着读 d.name 抛 TypeError，界面卡住、没有任何提示 */
+  async dept(id){return req('/depts/'+encodeURIComponent(id))},
   async members(deptId){return (await req('/members?deptId='+encodeURIComponent(deptId))).filter(m=>m.status!=='off')},
   async allDevices(deptId){return devList(deptId)},
   async cats(deptId){
@@ -650,20 +683,27 @@ async function dayDone(deptId,date){
 /* 某周状态。周签前提：周一到周日 7 天全部日签（与服务端 period.service.js 同一规则）。
    旧版只检查「今天及以前」的天，周一签完当天就能签本周——违反「不可提前签」。
    missDue = 已经到了却没日签的天（可补签）；future = 还没到的天。 */
-async function weekState(deptId,week){
+function calcWeek(week,recs,ws){
   const days=wkDays(week);
-  const recs=await API.recordsRange(week,addDay(week,6),deptId);
   const map=new Map(recs.map(r=>[r.date,r]));
   const signed=days.filter(d=>{const r=map.get(d);return r&&r.sign});
   const miss=days.filter(d=>!signed.includes(d));
   const future=days.filter(d=>d>today()), missDue=miss.filter(d=>d<=today());
   let checked=0,ng=0;
   recs.forEach(r=>{const v=Object.values(r.checks||{});checked+=v.length;ng+=v.filter(x=>x==='ng').length});
-  const ws=await API.weekSign(deptId,week);
   return {week,days,signed,miss,missDue,future,checked,ng,ws,
     started:week<=today(), ended:addDay(week,6)<today(),
     ready:miss.length===0, locked:!!ws};
 }
+/* 一次取齐多周：记录只拉一次、周签只拉一次（护士长首页要看 8 周，逐周请求太慢） */
+async function weekStates(deptId,weeks){
+  if(!weeks.length) return [];
+  const from=weeks.reduce((a,b)=>a<b?a:b), to=addDay(weeks.reduce((a,b)=>a>b?a:b),6);
+  const recs=await API.recordsRange(from,to,deptId);
+  const wsAll=await API.weekSigns(deptId);
+  return weeks.map(w=>calcWeek(w,recs.filter(r=>r.date>=w&&r.date<=addDay(w,6)),wsAll.find(x=>x.week===w)||null));
+}
+async function weekState(deptId,week){return (await weekStates(deptId,[week]))[0]}
 /* 某月状态。月签前提：归属该月的「全部」周都已周签（与服务端同一规则）。
    旧版只要求「已开始的周」，月初就能把整月签掉并锁死整月记录。
    openWeeks = 周日还没到的周；missDue = 已经可以签却没周签的周。 */
@@ -672,15 +712,30 @@ async function monthState(deptId,month){
   const signs=(await API.weekSigns(deptId)).filter(x=>wks.includes(x.week));
   const miss=wks.filter(w=>!signs.find(s=>s.week===w));
   const openWeeks=wks.filter(w=>addDay(w,6)>today()), missDue=miss.filter(w=>addDay(w,6)<=today());
-  const from=month+'-01',to=month+'-31';
-  const recs=await API.recordsRange(from,to,deptId);
+  /* 统计范围 = 月签覆盖的各周（第一周周一～最后一周周日），与服务端月签台次一致；
+     旧版按自然月 1–31 号统计，月确认页的总台次和下面各周的数字加起来对不上 */
+  const sp=monthSpan(month);
+  const recs=await API.recordsRange(sp.from,sp.to,deptId);
   let checked=0,ng=0,dsign=0;
   recs.forEach(r=>{const v=Object.values(r.checks||{});checked+=v.length;
     ng+=v.filter(x=>x==='ng').length;if(r.sign)dsign++});
+  const last=sp.to<today()?sp.to:today();
+  const dueDays=last<sp.from?0:daysBetween(sp.from,last)+1;
   const ms=await API.monthSign(deptId,month);
-  return {month,weeks:wks,signedWeeks:signs.length,miss,missDue,openWeeks,checked,ng,dsign,ms,
-    started:month<=moOf(today()), ended:month<moOf(today()),
+  return {month,weeks:wks,signedWeeks:signs.length,miss,missDue,openWeeks,checked,ng,dsign,dueDays,ms,span:sp,
+    started:month<=moOf(today()), ended:sp.to<today(),
     ready:wks.length>0&&miss.length===0, locked:!!ms};
+}
+/* 这一天的记录是否已锁定：本日已日签 / 所在周已周签 / 所属月已月签（与服务端 assertWritable 同口径）。
+   以前只看日签：日签被作废、周签还在时，页面照样能勾、能签，提交全部被服务端拒绝却没有任何提示 */
+async function lockOf(deptId,date,rec){
+  if(rec&&rec.sign) return {level:'day',msg:'本日已签字确认，记录已锁定'};
+  const ws=await API.weekSign(deptId,wkOf(date));
+  if(ws) return {level:'week',msg:`这一天所在的周（${wkLab(wkOf(date))}）已由 ${ws.sign.name} 周签，记录已锁定。确需修改，请联系设备科先作废周签`};
+  const mo=signMonthOf(date);
+  const ms=await API.monthSign(deptId,mo);
+  if(ms) return {level:'month',msg:`这一天所属的 ${moLab(mo)} 已月签，记录已锁定。确需修改，请联系设备科先作废月签`};
+  return null;
 }
 
 /* =========================================================================
@@ -690,35 +745,52 @@ async function pending(me){
   const t=today();
   /* 提醒只针对「确实有任务/有数据」的周期，避免把没数据的历史月份也报成未签 */
   if(me.role==='inspector'){
+    /* 提醒「还没日签的日子」：所在周还没周签（所属月也没月签）的都算，最多往前看 12 周，
+       不早于科室起算日；没有在用设备的科室不提醒。
+       旧版只看最近 7 天：更早漏掉的日子既不提醒、也没有入口补签，所在周就永远周签不了 */
     const depts=await API.depts(me);
-    const recs=await API.recordsRange(addDay(t,-7),addDay(t,-1));
+    const from=wkOf(addDay(t,-7*12)), to=addDay(t,-1);
+    const recs=await API.recordsRange(from,to);
+    const msAll=await API.monthSigns();
     const out=[];
-    for(let i=1;i<=7;i++){
-      const d=addDay(t,-i);
-      depts.forEach(dp=>{
+    for(const dp of depts){
+      if(!(await API.devCount(dp.id))) continue;
+      const wsSet=new Set((await API.weekSigns(dp.id)).map(w=>w.week));
+      const msSet=new Set(msAll.filter(m=>m.deptId===dp.id).map(m=>m.month));
+      const start=dp.startDate&&dp.startDate>from?dp.startDate:from;
+      for(let d=to;d>=start;d=addDay(d,-1)){
+        if(wsSet.has(wkOf(d))||msSet.has(signMonthOf(d))) continue;
         const r=recs.find(x=>x.deptId===dp.id&&x.date===d);
-        if(!r||!r.sign) out.push({type:'day',date:d,deptId:dp.id,deptName:dp.name,
-          label:`${dLab(d)} · ${dp.name}`});
-      });
+        if(!r||!r.sign) out.push({type:'day',date:d,deptId:dp.id,deptName:dp.name,label:`${dLab(d)} · ${dp.name}`});
+      }
     }
+    out.sort((a,b)=>b.date.localeCompare(a.date));
     return {items:out.slice(0,10),total:out.length,
-      title:out.length?`有 ${out.length} 项巡检未签字`:'',
-      why:'每天早上提醒昨天及最近 7 天未签字的巡检任务'};
+      title:out.length?`有 ${out.length} 天的巡检还没日签`:'',
+      why:'点一下直接去补录、补签。没日签的日子会让那一周无法周签'};
   }
   if(me.role==='dept'){
-    const out=[];
-    for(let i=1;i<=4;i++){
+    /* 已结束、还没周签的周（最多往前 6 周，不早于科室起算日）。
+       旧版跳过「没有巡检数据」的周：可那一周照样挡着月签，设备科卡住了护士长却看不到提醒 */
+    const dp=await API.dept(me.deptId);
+    const hasDev=(await API.devCount(me.deptId))>0;
+    const weeks=[];
+    for(let i=1;i<=6;i++){
       const w=addDay(wkOf(t),-7*i);
-      const st=await weekState(me.deptId,w);
-      if(!st.ended||st.locked||!st.checked) continue;   // 无巡检数据的周不提醒
-      out.push({type:'week',week:w,deptId:me.deptId,
-        label:`${wkLab(w)} 这一周`, ready:st.ready, miss:st.miss.length});
+      if(dp.startDate&&addDay(w,6)<dp.startDate) break;
+      weeks.push(w);
+    }
+    const out=[];
+    for(const st of await weekStates(me.deptId,weeks)){
+      if(st.locked||(!hasDev&&!st.checked)) continue;
+      out.push({type:'week',week:st.week,deptId:me.deptId,
+        label:`${wkLab(st.week)} 这一周`, ready:st.ready, miss:st.missDue.length});
     }
     return {items:out,total:out.length,
       title:out.length?`有 ${out.length} 周未签字`:'',
-      why:'每周一早上提醒上一周（已过周日）未签字的记录'};
+      why:'已经过完、还没周签的周。日签没齐的，要等巡检员补签后才能周签'};
   }
-  /* 设备科：只回溯 2 个月，且该月须有巡检数据 */
+  /* 设备科：只回溯 2 个月，且该月须有巡检数据；最后一周过完才算「该签了」 */
   const depts=await API.depts(me);const out=[];
   let m=moOf(t);
   for(let i=1;i<=2;i++){
@@ -727,7 +799,7 @@ async function pending(me){
       const st=await monthState(dp.id,m);
       if(!st.ended||st.locked||!st.checked) continue;   // 无数据不提醒
       out.push({type:'month',month:m,deptId:dp.id,deptName:dp.name,
-        label:`${moLab(m)} · ${dp.name}`, ready:st.ready, miss:st.miss.length});
+        label:`${moLab(m)} · ${dp.name}`, ready:st.ready, miss:st.missDue.length});
     }
   }
   return {items:out.slice(0,10),total:out.length,
@@ -825,16 +897,19 @@ window.jump=(type,deptId,key)=>{
 /* =========================================================================
    登录
    ========================================================================= */
-let LOGIN={mode:'list',user:'',show:false,tick:null,dt:null,kick:'',until:0};
+let LOGIN={mode:'list',user:'',show:false,tick:null,dt:null,kick:'',until:0,listTimer:null};
 const leftText=sec=>{sec=Math.max(0,Math.ceil(sec||0));const mm=Math.floor(sec/60),ss=sec%60;
   return mm>0?`${mm} 分 ${pad(ss)} 秒`:`${ss} 秒`};
 async function viewLogin(){
   const saved=await API.savedAccounts();
-  const RN={inspector:'巡检员 · 日签',dept:'科室 · 周签',equip:'设备科 · 月签'};
+  const RN={inspector:'巡检员 · 日签',dept:'科室 · 周签',equip:'设备科 · 月签',admin:'超级管理员'};
+  clearTimeout(LOGIN.listTimer);
   /* 有已保存账号且未主动切换 → 显示一键登录列表 */
   if(saved.length&&LOGIN.mode==='list'){
+    let soonest=0;
     const rows=await Promise.all(saved.map(async a=>{
       const st=await API.loginState(a.username);
+      if(st.frozen&&st.retryAfter&&(!soonest||st.retryAfter<soonest)) soonest=st.retryAfter;
       const stop=st.disabled||st.frozen;
       return `<div class="acct ${stop?'lk':''}">
         <button class="grow" style="text-align:left;display:block;min-width:0" ${stop?'':`data-act="qlogin" data-arg="${H(a.username)}"`}>
@@ -853,7 +928,11 @@ async function viewLogin(){
       <div class="sec" style="margin:22px 2px 9px">选择账号登录</div>
       <div class="list">${rows.join('')}</div>
       <button class="btn blk" style="margin-top:14px" onclick="LOGIN.mode='form';LOGIN.user='';render()">使用其他账号</button>
-    </div>`;
+    </div>`+(()=>{
+      /* 冻结到期后自动刷新列表，按钮恢复可点（以前倒计时是死的，到点了也点不了） */
+      if(soonest) LOGIN.listTimer=setTimeout(()=>{if(!S.me&&LOGIN.mode==='list')render()},soonest*1000+800);
+      return '';
+    })();
   }
   const st=await API.loginState(LOGIN.user);
   const locked=st.frozen||st.disabled;
@@ -897,6 +976,7 @@ window.quickLogin=async u=>{
     await afterLogin();
   }catch(e){
     if(e.code==='KICKED'){LOGIN.kick=u;render();return toast('您的账户已被禁用，请联系设备科',2600)}
+    if(e.code==='NETWORK') return toast('网络异常，请检查网络后再试',2400);   // 网络问题不是「登录过期」，别让人去输密码
     LOGIN.mode='form';LOGIN.user=u;render();toast('登录已过期，请重新输入密码',2400);
   }
 };
@@ -910,11 +990,13 @@ async function afterLogin(){
   await syncTime();
   S.tab='home';S.view='home';S.deptId=S.me.deptId||null;
   S.date=today();S.week=SRV.week||wkOf(today());S.month=SRV.month||moOf(today());
+  if(S.me.mustChange){S.view='pwd';S.tab='me';render();return toast('密码已被重置，请先设置新密码',2800)}
   render();toast('欢迎，'+S.me.displayName);
 }
 async function tryLogin(u,p,remember){
   try{
     S.me=await API.login(u,p);
+    PWD.old=S.me.mustChange?p:'';   // 用临时密码登录的，改密时不用再输一遍
     if(remember) await API.saveAccount(S.me);
     await afterLogin();
   }catch(e){
@@ -979,10 +1061,12 @@ async function viewInspector(){
   let tAll=0,tDone=0,tSign=0;
   const cards=[];
   for(const d of depts){
-    const total=await API.devCount(d.id);
+    /* 只数当前在用的设备：被调走/停用的设备若还留在当天记录里，会算出「3/2 台」这种数 */
+    const devs=(await API.allDevices(d.id)).filter(x=>x.status==='in_use');
+    const total=devs.length;
     const r=recs.find(x=>x.deptId===d.id);
-    const ck=r?Object.values(r.checks||{}):[];
-    const done=ck.length,ng=ck.filter(x=>x==='ng').length,signed=!!(r&&r.sign);
+    const ck=r?r.checks||{}:{};
+    const done=devs.filter(x=>ck[x.id]).length,ng=devs.filter(x=>ck[x.id]==='ng').length,signed=!!(r&&r.sign);
     tAll+=total;tDone+=done;if(signed)tSign++;
     cards.push(`<button class="card" style="display:block;width:100%;text-align:left" onclick="openDept('${d.id}')">
       <div class="row"><div class="grow"><div class="tt">${H(d.name)}</div>
@@ -1006,7 +1090,7 @@ async function viewInspector(){
     badge=`<span class="hbadge ${tDone?'':'warn'}">${tSign}/${depts.length} 科室已签</span>`;
     btn=`<button class="hbtn" onclick="openDept('${nextDept?nextDept.id:depts[0].id}')">${svg('check')} ${tDone?'继续巡检':'开始巡检'} · ${H(nextDept?nextDept.name:'')}</button>`;
   }
-  if(p.total) note=`<div class="hnote">${svg('warn')}<div>另有 ${p.total} 项往期巡检未签字，可在上方提醒中补签</div></div>`;
+  if(p.total) note=`<div class="hnote">${svg('warn')}<div>另有 ${p.total} 天的巡检还没日签，点上方提醒可直接补录补签</div></div>`;
   const hero=`<div class="hero">
     <div class="row"><div class="grow">
       <div class="hl">今日 · ${dLab(S.date)}</div>
@@ -1037,17 +1121,18 @@ async function viewDeptHome(){
   const weeks=[];let w=cur;
   for(let i=0;i<8;i++){weeks.push(w);w=addDay(w,-7)}
 
-  /* 先算各周状态，供主卡与列表共用 */
+  /* 先算各周状态，供主卡与列表共用。科室起算日之后的周即使一条记录都没有也要列出来
+     （它照样挡着月签）；起算日之前的、且没有数据的不列 */
   const sts=[];
-  for(const wk of weeks){
-    const st=await weekState(S.me.deptId,wk);
-    if(!st.checked&&wk!==cur) continue;
+  for(const st of await weekStates(S.me.deptId,weeks)){
+    if(!st.checked&&st.week!==cur&&!(d.startDate&&addDay(st.week,6)>=d.startDate)) continue;
     sts.push(st); if(sts.length>=6) break;
   }
   const now=sts.find(x=>x.week===cur)||sts[0]||{days:[],signed:[],miss:[],missDue:[],future:[],checked:0,ng:0,locked:false,ready:false};
   const canSign=sts.filter(x=>!x.locked&&x.ready);
   const mo=moOf(today());
-  const moRecs=await API.recordsRange(mo+'-01',mo+'-31',S.me.deptId);
+  const moSp=monthSpan(signMonthOf(today()));
+  const moRecs=await API.recordsRange(moSp.from,moSp.to,S.me.deptId);
   let moCk=0,moNg=0;moRecs.forEach(r=>{const v=Object.values(r.checks||{});moCk+=v.length;moNg+=v.filter(x=>x==='ng').length});
 
   /* 状态主卡：直接回答「现在该做什么」 */
@@ -1134,6 +1219,7 @@ async function viewEquipHome(){
       ${badge}${svg('chev','chev')}</div></button>`);
   }
   const prev=prevMonth(m),isCur=m===moOf(today());
+  const tag=isCur?'本月':m===prevMonth(moOf(today()))?'上月':moLab(m);
   const pct=depts.length?Math.round(tOk/depts.length*100):0;
   const readyN=tReady;
   let badge,btn,note='';
@@ -1150,7 +1236,7 @@ async function viewEquipHome(){
   }
   const hero=`<div class="hero">
     <div class="row"><div class="grow">
-      <div class="hl">${isCur?'本月':'上月'} · ${moLab(m)}</div>
+      <div class="hl">${tag} · ${moLab(m)}</div>
       <div class="hb">${tOk}<small>/${depts.length}</small></div>
       <div class="hs">个科室已月度确认</div>
     </div>${badge}</div>
@@ -1175,13 +1261,15 @@ window.switchMonth=m=>{S.month=m;render()};
    科室 → 品类 → 设备（巡检员）
    ========================================================================= */
 async function viewDept(){
+  await flushSaves();   // 先等排队中的保存落库，否则下面从服务端取到的是旧记录
   const d=await API.dept(S.deptId);
   const cats=await API.cats(S.deptId);
   const rec=await API.record(S.deptId,S.date);
-  S.checks=rec?{...rec.checks}:{};S.notes=rec?{...rec.notes}:{};
+  S.checks=rec?{...rec.checks}:{};S.notes=rec?{...rec.notes}:{};setSaved(rec);
+  S.lock=await lockOf(S.deptId,S.date,rec);
   const total=cats.reduce((a,c)=>a+c.devices.length,0);
-  const vals=Object.values(S.checks);
-  const done=vals.length,ng=vals.filter(x=>x==='ng').length,rest=total-done;
+  const done=cats.reduce((a,c)=>a+c.devices.filter(x=>S.checks[x.id]).length,0);
+  const ng=cats.reduce((a,c)=>a+c.devices.filter(x=>S.checks[x.id]==='ng').length,0),rest=total-done;
   const signed=!!(rec&&rec.sign);
   const future=S.date>today();
 
@@ -1199,23 +1287,44 @@ async function viewDept(){
   let bar;
   if(signed) bar=`<div class="bar"><div class="info"><b>已日签</b><br>${H(rec.sign.name)} · ${H(rec.sign.at)}</div>
     <button class="btn" onclick="viewSignOf('day')">查看签名</button></div>`;
+  else if(S.lock) bar=`<div class="bar"><div class="info">${svg('lock')} <b>已锁定</b><br>${S.lock.level==='week'?'所在周已周签':'所属月已月签'}，不能再修改</div></div>`;
   else if(future) bar=`<div class="bar"><div class="info">这一天还没到<br>不能提前签字</div></div>`;
   else bar=`<div class="bar"><div class="info"><b>${done}/${total}</b> 台已巡检${rest?`<br>还有 ${rest} 台未勾选`:'<br>全部完成，可以签字了'}</div>
     <button class="btn soft" onclick="markAllOk()">全部正常</button>
     <button class="btn pri" onclick="goSign('day')" ${done===0?'disabled':''}>日签</button></div>`;
 
   const isToday=S.date===today();
-  return header(d.name,dLab(S.date)+(isToday?'':' · 补签'),`go('home')`)+
-  `<main class="pad-bar"><div class="sec">设备品类</div>
+  /* 换日期：补录、补签过去任何一天的入口（以前只能从提醒里点进去，超过 7 天就没有入口了） */
+  const datebar=`<div class="datebar">
+    <button class="btn gho" onclick="shiftDate(-1)">${svg('back')} 前一天</button>
+    <label class="btn gho dpick">${svg('cal')} 选日期<input type="date" max="${today()}" value="${S.date}" onchange="pickDate(this.value)"></label>
+    <button class="btn gho" onclick="shiftDate(1)" ${S.date>=today()?'disabled':''}>后一天 ${svg('chev')}</button></div>`;
+  return header(d.name,dLab(S.date)+(isToday?'':' · 补录补签'),`go('home')`)+
+  `<main class="pad-bar">${datebar}
+    ${S.lock&&!signed?`<div class="lock" style="margin-bottom:12px;text-align:left">${svg('lock')} ${H(S.lock.msg)}</div>`:''}
+    <div class="sec">设备品类</div>
     <div class="list">${rows||`<div class="empty">${svg('box')}<div>该科室暂无在用设备</div></div>`}</div>
   </main>`+bar;
 }
+window.shiftDate=async n=>{
+  await flushSaves();
+  const d=addDay(S.date,n);if(d>today())return;
+  S.date=d;render();
+};
+window.pickDate=async v=>{
+  if(!v)return;
+  if(v>today())return toast('不能选还没到的日期');
+  await flushSaves();
+  S.date=v;render();
+};
 
 async function viewCat(){
+  await flushSaves();
   const d=await API.dept(S.deptId);
   const devs=await API.devices(S.deptId,S.catName);
   const rec=await API.record(S.deptId,S.date);
-  const signed=!!(rec&&rec.sign);
+  S.lock=await lockOf(S.deptId,S.date,rec);
+  const signed=!!S.lock;
   const done=devs.filter(x=>S.checks[x.id]).length;
   const rows=devs.map(dv=>{const st=S.checks[dv.id];
     return `<div class="dev ${st==='ok'?'ok':''} ${st==='ng'?'ng':''}" id="dev_${dv.id}">
@@ -1225,29 +1334,70 @@ async function viewCat(){
         <div class="st trunc">${H(dv.model||dv.name)}${dv.location?' · '+H(dv.location):''}</div>
         ${st==='ng'&&S.notes[dv.id]?`<div class="ngnote">${H(S.notes[dv.id])}</div>`:''}
       </div><button class="ngbtn" onclick="markNg('${dv.id}')">异常</button></div>`}).join('');
-  const bar=signed?'':`<div class="bar"><div class="info"><b>${done}/${devs.length}</b> 台已勾选</div>
+  const bar=signed||S.date>today()?'':`<div class="bar"><div class="info"><b>${done}/${devs.length}</b> 台已勾选</div>
     <button class="btn soft" onclick="catAllOk()">本类全选</button>
     <button class="btn pri" onclick="saveBack()">保存返回</button></div>`;
   return header(S.catName,`${d.name} · ${devs.length} 台`,'openDept(S.deptId)')+
   `<main class="${signed?'':'pad-bar'}" style="${signed?'padding-bottom:calc(24px + var(--sab))':''}">
-    ${signed?`<div class="lock" style="margin-bottom:12px">${svg('lock')} 本日已签字确认，记录已锁定</div>`:''}
+    ${signed?`<div class="lock" style="margin-bottom:12px">${svg('lock')} ${H(S.lock.msg)}</div>`:''}
     <div class="list">${rows}</div></main>`+bar;
 }
 
-/* ---------- 勾选 ---------- */
-async function locked(){const r=await API.record(S.deptId,S.date);return !!(r&&r.sign)}
+/* ---------- 勾选 ----------
+   保存规则：
+   · 点了立即在界面上反映，再按顺序逐个保存（不并发：先发的旧快照可能后到，把新的覆盖掉）；
+   · 保存失败 → 恢复到服务端最后确认的状态，并说清原因。以前失败没有任何提示，界面和内存还对不上，
+     下一次保存会把用户根本没看到的勾选一起提交上去；
+   · 已锁定（本日已签 / 所在周已周签 / 所属月已月签）的不能再改，直接说明原因。 */
+const SV={saved:{checks:{},notes:{}},chain:Promise.resolve(true),gen:0};
+function setSaved(rec){SV.saved={checks:{...((rec&&rec.checks)||{})},notes:{...((rec&&rec.notes)||{})}}}
+function persist(){
+  const deptId=S.deptId,date=S.date,gen=SV.gen;
+  const snap={checks:{...S.checks},notes:{...S.notes}};
+  const job=async()=>{
+    if(gen!==SV.gen) return false;            // 前面有一次保存失败、已回滚，这份快照作废
+    try{
+      const rec=await API.saveChecks(deptId,date,snap.checks,snap.notes);
+      if(deptId===S.deptId&&date===S.date) setSaved(rec);
+      return true;
+    }catch(e){
+      SV.gen++;
+      if(deptId===S.deptId&&date===S.date){S.checks={...SV.saved.checks};S.notes={...SV.saved.notes}}
+      saveFailed(e);
+      return false;
+    }
+  };
+  SV.chain=SV.chain.then(job,job);
+  return SV.chain;
+}
+/* 等排队中的保存全部完成；返回最后一次是否成功 */
+const flushSaves=()=>SV.chain;
+function saveFailed(e){
+  if(e.code==='MUST_CHANGE_PASSWORD'||e.code==='KICKED'||e.status===401) return;   // 另有统一处理
+  if(e.code==='NETWORK') toast('网络异常，刚才的勾选没有保存，已恢复原状，请稍后再点一次',3200);
+  else if(e.code==='LOCKED') toast(e.message+'，刚才的修改没有保存',3200);
+  else{
+    if(/不属于该科室|不是在用/.test(e.message||'')) DEVCACHE.delete(S.deptId);
+    toast('没有保存：'+e.message,3200);
+  }
+  /* 不能在保存队列里 await render（render 会等队列 → 死锁），放到下一轮重画 */
+  if(S.me&&(S.view==='cat'||S.view==='dept')) setTimeout(render,0);
+}
 window.tick=async id=>{
   if(S.date>today()) return toast('这一天还没到');
-  if(await locked()) return toast('已签字确认，不能再修改');
+  if(S.lock) return toast(S.lock.msg,3000);
   const c=S.checks[id];
+  if(c==='ng') return window.markNg(id);   // 异常的行点一下是「修改异常」，不再直接把异常和描述删掉
   if(c){delete S.checks[id];delete S.notes[id]} else S.checks[id]='ok';
-  await autosave();patchDev(id);
+  patchDev(id);
+  await persist();
 };
 window.markNg=async id=>{
-  if(await locked()) return toast('已签字确认，不能再修改');
+  if(S.lock) return toast(S.lock.msg,3000);
   const devs=await API.devices(S.deptId,S.catName);const dv=devs.find(x=>x.id===id);
+  if(!dv) return toast('找不到这台设备，请返回刷新');
   sheet(`<h3>标记异常</h3><div class="d">${H(dv.code)} · ${H(dv.model||dv.name)}<br>请简要描述异常情况，科室周签时会看到。</div>
-    <div class="fld"><textarea class="in" id="ngtxt" placeholder="例如：显示屏偶发闪烁，已通知厂家">${H(S.notes[id]||'')}</textarea></div>
+    <div class="fld"><textarea class="in" id="ngtxt" maxlength="500" placeholder="例如：显示屏偶发闪烁，已通知厂家">${H(S.notes[id]||'')}</textarea></div>
     <div class="chips" style="margin-bottom:16px">${['外观破损','无法开机','报警异常','按键失灵','管路老化','电池不蓄电'].map(t=>
       `<button class="chip" onclick="document.getElementById('ngtxt').value='${t}'">${t}</button>`).join('')}</div>
     <div class="row" style="gap:10px">${S.checks[id]==='ng'?`<button class="btn gho" onclick="clearNg('${id}')">取消异常</button>`:''}
@@ -1255,30 +1405,31 @@ window.markNg=async id=>{
       <button class="btn pri" onclick="saveNg('${id}')">确定</button></div>`);
 };
 window.saveNg=async id=>{const v=$('#ngtxt').value.trim();if(!v)return toast('请填写异常情况');
-  S.checks[id]='ng';S.notes[id]=v;closeSheet();await autosave();patchDev(id);toast('已标记异常')};
-window.clearNg=async id=>{delete S.checks[id];delete S.notes[id];closeSheet();await autosave();patchDev(id)};
+  S.checks[id]='ng';S.notes[id]=v;closeSheet();patchDev(id);
+  if(await persist()) toast('已标记异常')};
+window.clearNg=async id=>{delete S.checks[id];delete S.notes[id];closeSheet();patchDev(id);
+  if(await persist()) toast('已取消异常，这台设备回到「未勾选」')};
 window.catAllOk=async()=>{
-  if(await locked())return toast('已签字确认，不能再修改');
+  if(S.lock) return toast(S.lock.msg,3000);
   const devs=await API.devices(S.deptId,S.catName);let n=0;
   devs.forEach(d=>{if(!S.checks[d.id]){S.checks[d.id]='ok';n++}});
-  await autosave();render();
+  const ok=await persist();await render();if(!ok)return;
   /* 提示里的 n 只是「这次新标的」台数；同时给出本类总数和异常数，和页面上的计数对得上 */
   const ng=devs.filter(d=>S.checks[d.id]==='ng').length;
   toast(n?`本类剩余 ${n} 台已标为正常（本类共 ${devs.length} 台${ng?`，异常 ${ng} 台`:''}）`
     :`本类 ${devs.length} 台都已勾选`,2600)};
 window.markAllOk=async()=>{
-  if(await locked())return toast('已签字确认，不能再修改');
+  if(S.lock) return toast(S.lock.msg,3000);
   const cats=await API.cats(S.deptId);let n=0,total=0,ng=0;
   cats.forEach(c=>c.devices.forEach(d=>{total++;if(!S.checks[d.id]){S.checks[d.id]='ok';n++}}));
   cats.forEach(c=>c.devices.forEach(d=>{if(S.checks[d.id]==='ng')ng++}));
-  await autosave();render();
+  const ok=await persist();await render();if(!ok)return;
   /* 旧提示「已勾选 2 台，异常项请单独标记」：2 是这次新标的台数，页面列表显示的却是累计
      9/9、1/1……两个口径对不上；且已经标了异常还提醒"请单独标记"。改为说清是「剩余」几台，
      并给出全科总数与异常数，和列表一致 */
   toast(n?`剩余 ${n} 台已标为正常，全科 ${total} 台已巡检完${ng?`（异常 ${ng} 台）`:''}`
     :`全科 ${total} 台都已勾选，无需再标`,2600)};
-window.saveBack=async()=>{await autosave();openDept(S.deptId)};
-async function autosave(){if(S.me)await API.saveChecks(S.deptId,S.date,S.checks,S.notes,S.me)}
+window.saveBack=async()=>{await flushSaves();openDept(S.deptId)};
 async function patchDev(id){
   const el=document.getElementById('dev_'+id);if(!el)return;
   const st=S.checks[id];el.className='dev '+(st==='ok'?'ok':st==='ng'?'ng':'');
@@ -1337,7 +1488,7 @@ window.showSigns=async(deptId,kind,key)=>{
     rows.push({lab:'本周汇总',lv:'周签',s:ws?ws.sign:null});
   }else{
     title=moLab(key);
-    const wks=wksOfMonth(key,today());
+    const wks=wksOfMonth(key);
     const all=await API.weekSigns(deptId);
     rows=wks.map(w=>{const x=all.find(y=>y.week===w);return {lab:wkLab(w),lv:'周签',s:x?x.sign:null}});
     const ms=await API.monthSign(deptId,key);
@@ -1416,7 +1567,9 @@ async function viewMonth(){
       <div class="st">${ws?`巡检 ${ws.stat?ws.stat.checked:'—'} 台次${ws.stat&&ws.stat.ng?` · <span style="color:var(--bad)">异常 ${ws.stat.ng}</span>`:''}`:'尚未周签'}</div></div>
       ${ws?`<span class="pill p-ok">${H(ws.sign.name)} 已签</span>`:`<span class="pill p-bad">未周签</span>`}
       ${svg('chev','chev')}</div></button>`}).join('');
-  const cs=['done', st.ready?'done':'now', st.locked?'done':st.ready?'now':''];
+  /* 递进链第一步「日签」按覆盖范围内到今天为止的日子是否都签了来判断（以前写死成已完成） */
+  const dayDone=st.dueDays>0&&st.dsign>=st.dueDays;
+  const cs=[dayDone?'done':'now', st.ready?'done':dayDone?'now':'', st.locked?'done':st.ready?'now':''];
   let bar;
   if(st.locked) bar=`<div class="bar"><div class="info"><b>已月签</b><br>${H(st.ms.sign.name)} · ${H(st.ms.at)}</div>
     <button class="btn" onclick="viewSignOf('month')">查看签名</button></div>`;
@@ -1434,10 +1587,10 @@ async function viewMonth(){
       <div><div class="n">${st.checked}</div><div class="l">巡检台次</div></div>
       <button class="tap" onclick="showSigns('${d.id}','month','${S.month}')">
         <div class="n" style="color:var(--ok)">${st.signedWeeks}/${st.weeks.length}</div><div class="l">周签完成</div></button>
-      <button class="tap" onclick="showNg('${d.id}','${S.month}-01','${S.month}-31','${moLab(S.month)}')">
+      <button class="tap" onclick="showNg('${d.id}','${st.span.from}','${st.span.to}','${moLab(S.month)}')">
         <div class="n" style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</div><div class="l">异常台次</div></button>
     </div>
-    <div class="hint">点上方「周签完成 / 异常台次」可查看签字与异常明细</div>
+    <div class="hint">本月的月签覆盖 ${dShort(st.span.from)}～${dShort(st.span.to)} 这 ${st.weeks.length} 周（周一在本月的周归本月）。点上方「周签完成 / 异常台次」可查看明细</div>
     <div class="sec">本月各周</div><div class="list">${rows||`<div class="empty">${svg('cal')}<div>本月还没有已开始的周</div></div>`}</div>
   </main>`+bar;
 }
@@ -1448,6 +1601,9 @@ async function viewMonth(){
 let SIG={ctx:null,drawn:false,cv:null};
 let SIGNER={name:'',title:''}, SIGN_MEMBERS=[];
 window.pickSigner=()=>{
+  if(!SIGN_MEMBERS.length) return sheet(`<h3>签字人名单是空的</h3>
+    <div class="d">本科室还没有可选的确认人。请联系设备科在管理后台「签字人名单」里添加护士长等签字人，添加后回到这里即可选择。</div>
+    <button class="btn blk" onclick="closeSheet()">知道了</button>`);
   const its=SIGN_MEMBERS.map((m,i)=>`<button class="opt ${SIGNER.name===m.name?'on':''}" onclick="chooseSigner(${i})">
     <div class="grow"><div>${H(m.name)}</div>${m.title?`<div class="sub">${H(m.title)}</div>`:''}</div>
     ${svg('check','ck')}</button>`).join('');
@@ -1455,7 +1611,11 @@ window.pickSigner=()=>{
     <div>${its}</div>
     <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">取消</button>`);
 };
-window.chooseSigner=i=>{const m=SIGN_MEMBERS[i];SIGNER={id:m.id,name:m.name,title:m.title||''};closeSheet();render()};
+/* 只更新「确认人」这一格。以前这里整页重画：先签名后选人的话，写好的签名和意见全被清空 */
+window.chooseSigner=i=>{const m=SIGN_MEMBERS[i];SIGNER={id:m.id,name:m.name,title:m.title||''};closeSheet();
+  const b=$('#signer');if(!b)return render();
+  b.classList.remove('ph');
+  b.innerHTML=`<span class="grow">${H(SIGNER.name)}${SIGNER.title?`（${H(SIGNER.title)}）`:''}</span>${svg('chevdown')}`};
 async function viewSignPage(){
   const k=S.signKind;
   const d=await API.dept(S.deptId||S.me.deptId);
@@ -1480,7 +1640,8 @@ async function viewSignPage(){
     const st=await monthState(d.id,S.month);
     title='月签 · 设备科确认';sub=`${d.name} · ${moLab(S.month)}`;
     members=[{name:S.me.displayName,title:'设备科'}];
-    sum=`<div class="kv"><span>本月周签</span><b>${st.signedWeeks}/${st.weeks.length} 周</b></div>
+    sum=`<div class="kv"><span>覆盖范围</span><b>${dShort(st.span.from)}～${dShort(st.span.to)}</b></div>
+      <div class="kv"><span>本月周签</span><b>${st.signedWeeks}/${st.weeks.length} 周</b></div>
       <div class="kv"><span>日签天数</span><b>${st.dsign} 天</b></div>
       <div class="kv"><span>巡检台次</span><b>${st.checked}</b></div>
       <div class="kv"><span>异常台次</span><b style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</b></div>`;
@@ -1507,7 +1668,7 @@ async function viewSignPage(){
   </main>
   <div class="bar"><div class="info warnmsg">${svg('lock')}
       <div><b>签字即锁定</b>提交后本${k==='day'?'日':k==='week'?'周':'月'}记录不可再修改</div></div>
-    <button class="btn pri lg" onclick="submitSign()">确认签字</button></div>`;
+    <button class="btn pri lg" id="signbtn" onclick="submitSign()">确认签字</button></div>`;
 }
 function initSig(){
   const cv=$('#sigpad');if(!cv)return;const wrap=$('#sigwrap');
@@ -1567,9 +1728,10 @@ window.clearSig=()=>{if(!SIG.cv||!SIG.ctx)return;
   SIG.drawn=false;$('#sigwrap').classList.add('blank')};
 window.goSign=async k=>{
   if(k==='day'){
-    await autosave();
-    const total=await API.devCount(S.deptId);
-    const rest=total-Object.keys(S.checks).length;
+    if(S.lock) return toast(S.lock.msg,3000);
+    if(!(await flushSaves())) return;   // 最后一次保存失败了（已提示并恢复），不能带着没存上的结果去签字
+    const devs=(await API.allDevices(S.deptId)).filter(d=>d.status==='in_use');
+    const rest=devs.filter(d=>!S.checks[d.id]).length;
     if(rest>0){sheet(`<h3>还有 ${rest} 台未勾选</h3>
       <div class="d">未勾选的设备不计入本次巡检。确定现在签字吗？</div>
       <div class="row" style="gap:10px;justify-content:flex-end">
@@ -1580,12 +1742,15 @@ window.goSign=async k=>{
 };
 /* 进入签字页的唯一入口：每次都清空上一次的确认人 */
 window.startSign=k=>{S.signKind=k;SIGNER={name:'',title:''};S.view='sign';render()};
+let SUBMITTING=false;
 window.submitSign=async()=>{
+  if(SUBMITTING) return;                  // 防连点：以前双击会先成功、再报「已签字」，最后留在屏幕上的是错误提示
   if(!SIGNER.name) return toast('请选择确认人');
   if(!SIG.drawn) return toast('请手写签名后再提交');
   const name=SIGNER.name,title=SIGNER.title||'';
   const sign={name,title,memberId:SIGNER.id,dataUrl:SIG.cv.toDataURL('image/png'),opinion:$('#opinion').value.trim()};
   const d=S.deptId||S.me.deptId;
+  SUBMITTING=true;const btn=$('#signbtn');if(btn){btn.disabled=true;btn.textContent='提交中…'}
   try{
     if(S.signKind==='day'){await API.signDay(d,S.date,sign);toast('已日签');SIGNER={name:'',title:''};S.view='dept'}
     else if(S.signKind==='week'){const st=await weekState(d,S.week);
@@ -1596,8 +1761,12 @@ window.submitSign=async()=>{
       if(!st.ready) throw new Error('还有周签未完成，不能月签');
       await API.signMonth(d,S.month,sign,{checked:st.checked,ng:st.ng,weeks:st.signedWeeks});
       toast('已月签');SIGNER={name:'',title:''};S.view='home';S.tab='home'}
+    SUBMITTING=false;
     render();
-  }catch(e){toast(e.message)}
+  }catch(e){
+    SUBMITTING=false;if(btn){btn.disabled=false;btn.textContent='确认签字'}
+    toast(e.message,3000);
+  }
 };
 window.viewSignOf=async k=>{
   const d=S.deptId||S.me.deptId;let s=null,ttl='';
@@ -1635,9 +1804,13 @@ async function viewRecords(){
     `<main class="pad-tab">${blocks||`<div class="empty">${svg('file')}<div>还没有巡检记录</div></div>`}</main>`+tabbar();
 }
 window.openRec=async(deptId,date)=>{
+  try{
   const rec=await API.record(deptId,date);if(!rec)return;
   const d=await API.dept(deptId);
   const devs=await API.allDevices(deptId);
+  /* 巡检员：没日签、也没被周签/月签锁住的日子，给「去补录、补签」入口（以前这里只能看、只能关） */
+  const lk=S.me.role==='inspector'&&!rec.sign?await lockOf(deptId,date,rec):null;
+  const canFix=S.me.role==='inspector'&&!rec.sign&&!lk&&date<=today();
   const ng=Object.entries(rec.checks||{}).filter(([,v])=>v==='ng').map(([id])=>{
     const dv=devs.find(x=>x.id===id);
     return `<div class="kv"><span>${H(dv?dv.code:'')}</span><b style="color:var(--bad)">${H(rec.notes[id]||'异常')}</b></div>`}).join('');
@@ -1651,8 +1824,10 @@ window.openRec=async(deptId,date)=>{
     ${ng?`<div class="sec">异常明细</div><div class="card" style="box-shadow:inset 0 0 0 1px var(--line)">${ng}</div>`:''}
     ${rec.sign?`<div class="sec">日签</div><div class="sig-done"><img src="${rec.sign.url}" alt="签名">
       <div class="st" style="margin-top:8px">${H(rec.sign.name)} · ${H(rec.sign.at)}</div></div>`
-      :`<div class="lock" style="margin-top:14px">该日尚未日签</div>`}
-    <button class="btn blk" style="margin-top:16px" onclick="closeSheet()">关闭</button>`);
+      :`<div class="lock" style="margin-top:14px">${lk?H(lk.msg):'该日尚未日签'}</div>`}
+    ${canFix?`<button class="btn pri blk" style="margin-top:16px" onclick="closeSheet();jump('day','${deptId}','${date}')">去补录、补签这一天</button>`:''}
+    <button class="btn blk" style="margin-top:${canFix?10:16}px" onclick="closeSheet()">关闭</button>`);
+  }catch(e){toast('加载失败：'+e.message,2600)}
 };
 
 /* =========================================================================
@@ -1667,7 +1842,9 @@ async function mySigns(){
   const dn=id=>(depts.find(d=>d.id===id)||{}).name||'';
   const scope=depts.map(d=>d.id);
   if(me.role==='inspector'){
-    (await API.recordsRange(addDay(today(),-366),today())).forEach(r=>{if(r.sign&&scope.includes(r.deptId))
+    /* 只算本人签的：同一科室可能有几个巡检员，以前把同科室别人的日签也算成「我的」 */
+    const mine=r=>r.sign.userId?r.sign.userId===String(me.id):r.sign.name===me.displayName;
+    (await API.recordsRange(addDay(today(),-366),today())).forEach(r=>{if(r.sign&&scope.includes(r.deptId)&&mine(r))
       out.push({kind:'日签',lab:dLab(r.date),dept:dn(r.deptId),sign:r.sign,at:r.sign.at,
         stat:`巡检 ${Object.keys(r.checks||{}).length} 台`,
         ng:Object.values(r.checks||{}).filter(x=>x==='ng').length})});
@@ -1696,7 +1873,7 @@ async function viewMySigns(){
         <span class="pill ${K[x.kind]||'p-br'}">${x.kind}</span>${svg('chev','chev')}</div></button>`).join('');
     return `<div class="sec">${+m.slice(5,7)}月</div><div class="list">${its}</div>`;
   }).join('');
-  const kindName={inspector:'日签',dept:'周签',equip:'月签'}[S.me.role];
+  const kindName={inspector:'日签',dept:'周签',equip:'月签',admin:'月签'}[S.me.role];
   return header('我的签字记录',`${kindName} · 共 ${list.length} 次`,`go('me')`)+
     `<main class="pad-tab">${blocks||`<div class="empty">${svg('pen')}<div>还没有签字记录</div></div>`}</main>`+tabbar();
 }
@@ -1716,14 +1893,15 @@ window.viewOneSign=(m,i)=>{
    我的（所有角色都有，含退出）
    ========================================================================= */
 async function viewMe(){
-  const rn={inspector:'巡检员 · 日签',dept:'科室确认人 · 周签',equip:'设备科 · 月签'}[S.me.role];
+  const rn={inspector:'巡检员 · 日签',dept:'科室确认人 · 周签',equip:'设备科 · 月签',admin:'超级管理员 · 月签'}[S.me.role];
   const myDepts=await API.depts(S.me);
-  const scope=S.me.role==='equip'?'全院所有科室'
+  const scope=S.me.role==='equip'||S.me.role==='admin'?'全院所有科室'
     :S.me.role==='dept'?'仅本科室'
     :`${myDepts.length} 个科室（后台配置）`;
-  const remind={inspector:'每天早上提醒昨天及更早未签字的巡检',
-    dept:'每周一早上提醒上一周未签字的记录',
-    equip:'每月 1 日提醒上一个月未签字的记录'}[S.me.role];
+  const remind={inspector:'提醒还没日签的日子（所在周还没周签的都算）',
+    dept:'提醒已经过完、还没周签的周',
+    equip:'提醒上一个月（最后一周过完后）还没月签的科室',
+    admin:'提醒上一个月（最后一周过完后）还没月签的科室'}[S.me.role];
   const d=S.me.deptId?await API.dept(S.me.deptId):null;
   return header('我的',null,null,null,{icon:'user'})+`<main class="pad-tab">
     <div class="card" style="text-align:center;padding:26px 16px">
@@ -1734,6 +1912,10 @@ async function viewMe(){
       <div class="row"><div class="grow"><div class="tt">我的签字记录</div>
         <div class="st">查看自己签过的日签 / 周签 / 月签</div></div>
         ${svg('hist')}${svg('chev','chev')}</div></button>
+    <button class="card" style="display:block;width:100%;text-align:left" onclick="openPwd()">
+      <div class="row"><div class="grow"><div class="tt">修改密码</div>
+        <div class="st">改完后，其他手机、电脑上的旧登录会失效</div></div>
+        ${svg('lock')}${svg('chev','chev')}</div></button>
     <div class="card">
       <div class="kv"><span>账号</span><b class="mono">${H(S.me.username)}</b></div>
       <div class="kv"><span>签字层级</span><b>${rn}</b></div>
@@ -1752,10 +1934,55 @@ async function viewMe(){
     <button class="btn blk" style="margin-top:14px;color:var(--bad)" onclick="doLogout()">${svg('out')} 退出登录</button>
   </main>`+tabbar();
 }
-window.doLogout=()=>sheet(`<h3>退出登录</h3><div class="d">退出后需要重新输入账号密码。</div>
+window.doLogout=()=>{
+  const s=session();
+  const kept=s&&s.user&&DB.get('saved',[]).some(x=>x.username===s.user.username&&x.refreshToken===s.refreshToken);
+  sheet(`<h3>退出登录</h3><div class="d">${kept
+    ?'这个账号已「记住」，退出后在登录页点一下就能再登录。公用手机请在登录页点 × 移除这个账号。'
+    :'退出后需要重新输入账号密码。'}</div>
   <div class="row" style="gap:10px;justify-content:flex-end"><button class="btn" onclick="closeSheet()">取消</button>
-  <button class="btn pri" onclick="reallyLogout()">退出</button></div>`);
+  <button class="btn pri" onclick="reallyLogout()">退出</button></div>`)};
 window.reallyLogout=async()=>{await API.logout();S.me=null;LOGIN.mode='list';LOGIN.show=false;closeSheet();render()};
+
+/* =========================================================================
+   修改密码：密码被设备科重置过的，登录后必须先改（服务端在改密前拒绝其它操作）；
+   也可以在「我的」里随时改
+   ========================================================================= */
+let PWD={old:''};
+window.openPwd=()=>{S.tab='me';S.view='pwd';render()};
+async function viewPwd(){
+  const forced=!!S.me.mustChange;
+  const needOld=!(forced&&PWD.old);
+  return header(forced?'请先修改密码':'修改密码',forced?'密码已被设备科重置':S.me.displayName,forced?null:`go('me')`)+
+  `<main class="pad-tab" style="padding-top:14px">
+    ${forced?`<div class="lock" style="margin-bottom:14px;text-align:left">${svg('lock')} 为了账号安全，请先设置一个只有自己知道的新密码，然后才能继续巡检和签字。</div>`:''}
+    ${needOld?`<div class="fld"><label class="lb">${forced?'临时密码':'当前密码'}<i>*</i></label>
+      <input class="in" id="pw0" type="password" autocomplete="current-password" placeholder="${forced?'设备科告诉你的临时密码':'现在用的密码'}"></div>`:''}
+    <div class="fld"><label class="lb">新密码<i>*</i></label>
+      <input class="in" id="pw1" type="password" autocomplete="new-password" placeholder="至少 6 位"></div>
+    <div class="fld"><label class="lb">再输一次新密码<i>*</i></label>
+      <input class="in" id="pw2" type="password" autocomplete="new-password"></div>
+    <button class="btn pri lg blk" id="pwbtn" onclick="submitPwd()">确认修改</button>
+    ${forced?`<button class="btn blk" style="margin-top:10px" onclick="reallyLogout()">退出登录</button>`:''}
+  </main>`+(forced?'':tabbar());
+}
+window.submitPwd=async()=>{
+  const forced=!!S.me.mustChange;
+  const old=forced&&PWD.old?PWD.old:(($('#pw0')||{}).value||'');
+  const p1=$('#pw1').value,p2=$('#pw2').value;
+  if(!old) return toast('请输入'+(forced?'临时密码':'当前密码'));
+  if(p1.length<6) return toast('新密码至少 6 位');
+  if(p1!==p2) return toast('两次输入的新密码不一致');
+  if(p1===old) return toast('新密码不能和原来的一样');
+  const b=$('#pwbtn');b.disabled=true;b.textContent='提交中…';
+  try{
+    await API.changePassword(old,p1);
+    PWD.old='';
+    S.me=await API.me()||S.me;S.me.mustChange=false;
+    toast('密码已修改。其他手机、电脑上的旧登录已失效',2800);
+    S.view='home';S.tab='home';render();
+  }catch(e){b.disabled=false;b.textContent='确认修改';toast(e.message,2800)}
+};
 
 /* =========================================================================
    路由
@@ -1781,6 +2008,8 @@ document.addEventListener('click',e=>{
 window.openWeek=w=>{S.week=w;S.deptId=S.me.deptId;S.view='week';render()};
 window.openMonth=id=>{S.deptId=id;S.view='month';render()};
 
+/* 上一次成功显示的页面：进新页面加载失败时退回去，而不是停在原页面、状态却已经切走 */
+let LAST_OK=null, FALLING_BACK=false, HIST_GUARD=false;
 async function render(){
   const app=$('#app');
   if(!S.me){
@@ -1789,25 +2018,61 @@ async function render(){
     if(LOGIN.mode==='form')setTimeout(()=>refreshLock(LOGIN.user),40);
     return;
   }
+  if(S.me.mustChange&&S.view!=='pwd'){S.view='pwd';S.tab='me'}
   let h='';
-  switch(S.view){
-    case 'dept': h=await viewDept();break;
-    case 'cat':  h=await viewCat();break;
-    case 'week': h=await viewWeek();break;
-    case 'month':h=await viewMonth();break;
-    case 'sign': h=await viewSignPage();break;
-    case 'records':h=await viewRecords();break;
-    case 'me':   h=await viewMe();break;
-    case 'mysigns': h=await viewMySigns();break;
-    default:
-      h=S.me.role==='inspector'?await viewInspector()
-       :S.me.role==='dept'?await viewDeptHome():await viewEquipHome();
+  try{
+    switch(S.view){
+      case 'dept': h=await viewDept();break;
+      case 'cat':  h=await viewCat();break;
+      case 'week': h=await viewWeek();break;
+      case 'month':h=await viewMonth();break;
+      case 'sign': h=await viewSignPage();break;
+      case 'records':h=await viewRecords();break;
+      case 'me':   h=await viewMe();break;
+      case 'mysigns': h=await viewMySigns();break;
+      case 'pwd':  h=await viewPwd();break;
+      default:
+        h=S.me.role==='inspector'?await viewInspector()
+         :S.me.role==='dept'?await viewDeptHome():await viewEquipHome();
+    }
+  }catch(e){
+    /* 以前这里没有兜底：接口一失败，页面停在原处没有任何提示，S.view 却已经切走了 */
+    if(!S.me) return render();                       // 登录失效 / 被停用，已转登录页
+    if(e.code==='MUST_CHANGE_PASSWORD'){S.me.mustChange=true;S.view='pwd';return render()}
+    toast('加载失败：'+(e.message||'请稍后再试'),2800);
+    if(LAST_OK&&!FALLING_BACK&&(LAST_OK.view!==S.view||LAST_OK.deptId!==S.deptId||LAST_OK.date!==S.date||LAST_OK.catName!==S.catName)){
+      Object.assign(S,LAST_OK);FALLING_BACK=true;
+      try{await render()}finally{FALLING_BACK=false}
+      return;
+    }
+    app.innerHTML=header('加载失败',null,null,null,{icon:'warn'})+`<main class="pad-tab"><div class="empty">${svg('warn')}
+      <div>${H(e.message||'网络异常')}<br><span style="font-size:12.5px">请检查网络后点「重试」</span></div>
+      <button class="btn pri" style="margin-top:16px" onclick="render()">重试</button></div></main>`+tabbar();
+    return;
   }
+  LAST_OK={view:S.view,tab:S.tab,deptId:S.deptId,catName:S.catName,date:S.date,week:S.week,month:S.month,signKind:S.signKind};
   app.innerHTML=h;window.scrollTo(0,0);
   if(S.view==='sign') requestAnimationFrame(()=>initSig());
   const hd=$('#hd');
   if(hd){const on=()=>hd.classList.toggle('sc',window.scrollY>4);window.onscroll=on;on()}
+  /* 返回键：不在首页时保留一条历史记录，安卓返回键 / iOS 侧滑先回上一级，而不是直接离开巡检页面 */
+  if(S.view!=='home'&&!HIST_GUARD){try{history.pushState({h5:1},'');HIST_GUARD=true}catch(e){}}
 }
+function goBack(){
+  switch(S.view){
+    case 'cat': return window.openDept(S.deptId);
+    case 'sign': S.view=S.signKind==='day'?'dept':S.signKind==='week'?'week':'month'; return render();
+    case 'mysigns': case 'pwd': return S.me.mustChange?render():window.go('me');
+    default: return window.go('home');
+  }
+}
+window.addEventListener('popstate',()=>{
+  HIST_GUARD=false;
+  if(!S.me) return;
+  if($('.mask')){closeSheet();if(S.view!=='home'){try{history.pushState({h5:1},'');HIST_GUARD=true}catch(e){}}return}
+  if(S.view==='home') return;
+  goBack();
+});
 
 (async()=>{
   S.me=await API.me();

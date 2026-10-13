@@ -180,4 +180,4 @@ function signatures(deptIds, month) {
   return out;
 }
 
-module.exports = { unsigned, completion, ngList, signatures, scopedDepts };
+module.exports = { unsigned, completion, ngList, signatures, scopedDepts, deptStart };

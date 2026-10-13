@@ -28,8 +28,11 @@ module.exports = async function authRoutes(app, opts) {
     return { ok: true };
   });
 
+  /* 限流按「设备+IP」计：全院共用一个出口 IP，按 IP 每分钟 10 次的话，几个人同时打开登录页
+     就被限住，冻结/禁用提示随之消失 */
   app.get('/api/auth/login-state', {
-    config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
+    config: { rateLimit: { max: 30, timeWindow: '1 minute',
+      keyGenerator: req => `${String(req.headers['x-device-id'] || '').slice(0, 64)}|${req.ip}` } }
   }, async req => authSvc.loginState(req, (req.query || {}).username));
 
   app.get('/api/auth/me', { preHandler: [app.authLite] }, async req => authSvc.userJson(req.user));

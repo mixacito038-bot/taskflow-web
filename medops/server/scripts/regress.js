@@ -538,6 +538,19 @@ async function main() {
   okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'hn-del', password: 'Pass@123', displayName: '待删护士长', role: 'dept', deptIds: [hd.id] } }));
   errj(await api('DELETE', `/api/admin/depts/${hd.id}`, { token: A }), 409, 'CONFLICT', '有护士长的科室删除');
   ok('历史导入校验日期/周一/月份/护士长科室数；删除科室：有签字 → 409（以前 500），有护士长 → 409 提示先处理账号');
+
+  step = '手机端需要的字段';
+  const dl = okj(await api('GET', '/api/depts', { token: A }));
+  assert.equal(dl.find(d => d.id === kf.id).startDate, today, '今天新建、没有记录的科室，起算日是今天');
+  assert.equal(dl.find(d => d.id === k3.id).startDate, spillWeek, '导入/补录过更早记录的科室，起算日是最早一条记录');
+  const signed = okj(await api('GET', `/api/records/${k3.id}/${wksX[1]}`, { token: A }));
+  const i3 = okj(await api('GET', '/api/admin/users', { token: A })).find(u => u.username === 'insp3');
+  assert.equal(signed.sign.userId, i3.id, '日签带上签字人账号 ID（手机端「我的签字记录」只算本人的）');
+  for (let i = 0; i < 12; i++) {
+    const r = await raw('GET', '/api/auth/login-state?username=insp3', { device: `ls-phone-${i}`, headers: { 'x-forwarded-for': '203.0.113.50' } });
+    assert.equal(r.status, 200, `同一出口 IP 下第 ${i + 1} 台手机查登录状态不应被限流`);
+  }
+  ok('科室带起算日；日签带签字人账号 ID；同一出口 IP 下多台手机查登录状态不被限流（以前每分钟 10 次全院共用）');
   sql.close();
 
   console.log('\nREGRESS PASS');

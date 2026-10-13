@@ -34,7 +34,8 @@ function recordJson(row, items) {
     checks, notes,
     sign: row.sign_at ? {
       name: row.sign_user_live || row.sign_name, title: row.sign_title || '',
-      url: `/api/files/${row.sign_file_id}`, opinion: row.sign_opinion || '', at: row.sign_at
+      url: `/api/files/${row.sign_file_id}`, opinion: row.sign_opinion || '', at: row.sign_at,
+      userId: row.sign_user_id != null ? String(row.sign_user_id) : null
     } : null,
     inspectorId: row.inspector_id != null ? String(row.inspector_id) : null,
     inspectorName: row.inspector_live || row.inspector_name || '',
