@@ -454,6 +454,90 @@ async function main() {
   errj(await raw('POST', '/api/auth/refresh', { device: 'adm-pc', body: { refreshToken: adm.refreshToken } }), 401, 'UNAUTHORIZED', '重置前的登录续期');
   okj(await loginAs('admin', 'Reset@2026', 'adm-pc'), '新密码登录');
   ok('manage.sh 重置管理员 → 之前的登录全部失效，新密码可登录');
+
+  /* ======================= 输入校验与杂项 ======================= */
+  step = '设备状态只认四个值';
+  errj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: k3.id, catName: '药品', code: 'DRUG-1', name: '肾上腺素', status: '正常', expiryDate: P.addDay(today, -12) } }), 400, 'BAD_INPUT', '状态写「正常」');
+  errj(await api('PATCH', `/api/admin/devices/${k3dev.id}`, { token: A, body: { status: 'abc' } }), 400, 'BAD_INPUT', '改成未知状态');
+  errj(await api('PATCH', `/api/admin/devices/${k3dev.id}`, { token: A, body: { code: '  ' } }), 400, 'BAD_INPUT', '编码改成空白');
+  ok('设备状态写「正常」等未知值 → 400（以前入库后从巡检清单和有效期提醒里消失）；编码不能改成空白');
+
+  step = '导入：状态留空不改动已有设备';
+  okj(await api('PATCH', `/api/admin/devices/${k3dev.id}`, { token: A, body: { status: 'scrapped' } }), '先报废');
+  {
+    const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('设备导入');
+    ws.addRow(['科室名称', '设备品类', '设备编码', '设备名称', '型号', '位置', '状态', '有效期', '提醒提前天数']);
+    ws.addRow(['科室3', '除颤类', 'K3-001', '除颤仪', '', '抢救室2', '', '', '']);
+    ws.addRow(['科室3', '除颤类', 'K3-NEW', '新除颤仪', '', '抢救室2', '', '', '']);
+    const fd = new FormData();
+    fd.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'devices.xlsx');
+    const r = await fetch(BASE + '/api/admin/devices/import', { method: 'POST', headers: { authorization: `Bearer ${A}`, 'x-device-id': 'regress-dev' }, body: fd });
+    const out = await r.json();
+    assert.equal(r.status, 200, JSON.stringify(out));
+    assert.deepEqual([out.created, out.updated, out.errors.length], [1, 1, 0], JSON.stringify(out));
+  }
+  const devs3 = okj(await api('GET', `/api/admin/devices?deptId=${k3.id}`, { token: A }));
+  assert.equal(devs3.find(d => d.code === 'K3-001').status, 'scrapped', '已报废设备导入时状态留空，应保持报废');
+  assert.equal(devs3.find(d => d.code === 'K3-001').location, '抢救室2');
+  assert.equal(devs3.find(d => d.code === 'K3-NEW').status, 'in_use', '新设备状态留空默认在用');
+  okj(await api('PATCH', `/api/admin/devices/${k3dev.id}`, { token: A, body: { status: 'in_use' } }));
+  ok('重导入只改位置、状态留空：已报废的仍是报废（以前被改回在用）；新设备默认在用');
+
+  step = '巡检勾选的输入校验';
+  for (const bad of [{ '02': 'ok' }, { '2.0': 'ok' }, { [k3dev.id]: 'ok', ['0' + k3dev.id]: 'ok' }]) {
+    errj(await api('PUT', `/api/records/${k3.id}/${today}`, { token: I3, body: { checks: bad } }), 400, 'BAD_INPUT', '非规范设备 id：' + JSON.stringify(bad));
+  }
+  const huge = {}; for (let i = 1; i <= 40000; i++) huge[i] = 'ok';
+  errj(await api('PUT', `/api/records/${k3.id}/${today}`, { token: I3, body: { checks: huge } }), 400, 'BAD_INPUT', '4 万个勾选');
+  ok('「02」「2.0」这类设备 id、超大勾选 → 400（以前 500）');
+
+  step = '排序号与名称校验';
+  errj(await api('PATCH', `/api/admin/depts/${k3.id}`, { token: A, body: { sort: 'abc' } }), 400, 'BAD_INPUT', '科室排序 abc');
+  errj(await api('PATCH', `/api/admin/devices/${k3dev.id}`, { token: A, body: { sort: 'abc' } }), 400, 'BAD_INPUT', '设备排序 abc');
+  errj(await api('PATCH', `/api/admin/members/${k3m.id}`, { token: A, body: { sort: 'abc' } }), 400, 'BAD_INPUT', '签字人排序 abc');
+  errj(await api('PATCH', `/api/admin/members/${k3m.id}`, { token: A, body: { deptId: d2.id } }), 400, 'BAD_INPUT', '签字人改科室');
+  ok('排序号非整数 → 400（以前 500）；签字人改科室明确提示不支持（以前静默不生效）');
+
+  step = '作废：原因不能是空白、审计留下原签字、时间格式统一、签名图范围';
+  const vd = spillDays[0];
+  errj(await api('POST', '/api/admin/signs/void', { token: A, body: { type: 'week', deptId: k3.id, key: spillWeek, reason: '   ' } }), 400, 'BAD_INPUT', '空白原因');
+  const vrec = okj(await api('GET', `/api/records/${k3.id}/${vd}`, { token: A }));
+  okj(await api('POST', '/api/admin/signs/void', { token: A, body: { type: 'week', deptId: k3.id, key: spillWeek, reason: '测试作废' } }));
+  okj(await api('POST', '/api/admin/signs/void', { token: A, body: { type: 'day', deptId: k3.id, key: vd, reason: '测试作废' } }));
+  const voidLog = okj(await api('GET', '/api/admin/audit', { token: A })).filter(a => a.action === 'sign_void').slice(0, 2);
+  assert.ok(voidLog.every(a => a.detail.includes('原签字：') && a.detail.includes('签名图=')), '作废审计应记下原签字：' + JSON.stringify(voidLog));
+  const voided = okj(await api('GET', `/api/records/${k3.id}/${vd}`, { token: A }));
+  assert.match(voided.updatedAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/, '作废后 updatedAt 应是上海时间格式：' + voided.updatedAt);
+  okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'outsider', password: 'Pass@123', displayName: '外科室巡检员', role: 'inspector', deptIds: [d2.id] } }));
+  const O = await login('outsider');
+  assert.equal((await api('GET', vrec.sign.url, { token: O, raw: true })).status, 404, '别科室的人看作废后的签名图应 404');
+  assert.equal((await api('GET', vrec.sign.url, { token: Q, raw: true })).status, 200, '设备科可以查看作废的签名图（核对用）');
+  ok('作废原因不能只填空格；审计里留有原签字人/时间/签名图；作废后的签名图别科室看不到');
+
+  step = '审计日志按上海日期筛选';
+  sql.prepare("INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (NULL, 'probe_tz', '', '', '2026-10-12T16:30:00.000Z')").run();
+  const day13 = okj(await api('GET', '/api/admin/audit?from=2026-10-13&to=2026-10-13', { token: A }));
+  const day12 = okj(await api('GET', '/api/admin/audit?from=2026-10-12&to=2026-10-12', { token: A }));
+  assert.ok(day13.some(a => a.action === 'probe_tz'), '上海 10-13 00:30 的操作应在 10-13 查到');
+  assert.ok(!day12.some(a => a.action === 'probe_tz'), '不应落到 10-12');
+  ok('凌晨 00:30（上海）的操作按当天日期能查到（以前落到前一天）');
+
+  step = '删除科室：有签字/护士长时给出明确提示';
+  const leg = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: {
+    depts: [{ id: 'x1', name: '导入科室' }],
+    weeksigns: [{ deptId: 'x1', week: P.addDay(wksX[0], -7), sign: { name: '某人', dataUrl: PNG } }, { deptId: 'x1', week: P.addDay(wksX[0], -5), sign: { name: '某人', dataUrl: PNG } }],
+    records: [{ deptId: 'x1', date: '2026-02-30', checks: {} }],
+    monthsigns: [{ deptId: 'x1', month: '2026-13', sign: { name: '某人', dataUrl: PNG } }],
+    users: [{ username: 'legacy-hn', role: 'dept', deptIds: [] }]
+  } }));
+  assert.equal(leg.imported.weeksigns, 1, '非周一的周签应被跳过');
+  assert.ok(leg.errors.length >= 4, '非法日期/非周一/非法月份/护士长无科室都应报错：' + JSON.stringify(leg.errors));
+  const impDept = okj(await api('GET', '/api/admin/depts', { token: A })).find(d => d.name === '导入科室');
+  errj(await api('DELETE', `/api/admin/depts/${impDept.id}`, { token: A }), 409, 'CONFLICT', '有周签无记录的科室删除');
+  const hd = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '待删科室' } }));
+  okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'hn-del', password: 'Pass@123', displayName: '待删护士长', role: 'dept', deptIds: [hd.id] } }));
+  errj(await api('DELETE', `/api/admin/depts/${hd.id}`, { token: A }), 409, 'CONFLICT', '有护士长的科室删除');
+  ok('历史导入校验日期/周一/月份/护士长科室数；删除科室：有签字 → 409（以前 500），有护士长 → 409 提示先处理账号');
   sql.close();
 
   console.log('\nREGRESS PASS');

@@ -111,7 +111,10 @@ module.exports = async function inspRoutes(app) {
     const f = fileSvc.getFile(req.params.id);
     if (!f || !fs.existsSync(f.abs)) throw E.notFound('文件不存在');
     const deptId = fileSvc.fileDeptId(f.id);
+    /* 没有任何签字引用的文件（签字已被作废）只有设备科/管理员能看（核对作废记录用）；
+       以前对这类文件不做范围校验，任何登录用户知道文件号就能看别科室作废掉的签名 */
     if (deptId != null) app.assertDeptScope(req.user, deptId);
+    else if (req.user.role !== 'equip' && req.user.role !== 'admin') throw E.notFound('文件不存在');
     const etag = `"${f.sha256}"`;
     reply.header('ETag', etag).header('Cache-Control', 'private, max-age=86400');
     if (req.headers['if-none-match'] === etag) return reply.code(304).send();

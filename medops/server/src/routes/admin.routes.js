@@ -11,6 +11,29 @@ const P = require('../services/period.service');
 
 const nowIso = () => new Date().toISOString();
 const ROLES = ['inspector', 'dept', 'equip', 'admin'];
+/* 设备状态只认这四个值。以前任意字符串都收（如「正常」）：设备照样出现在台账里，
+   却被巡检清单和有效期提醒（只认 in_use）永久排除，过期了也没人知道 */
+const DEVICE_STATUS = ['in_use', 'repair', 'retired', 'scrapped'];
+function devStatus(v, fallback) {
+  if (v == null || v === '') return fallback;
+  if (!DEVICE_STATUS.includes(v)) throw E.badInput('设备状态只能是：在用 / 维修 / 停用 / 报废');
+  return v;
+}
+/* 排序号：留空沿用原值；非整数报 400（以前 'abc' 变成 NaN 撞 NOT NULL，返回 500） */
+function sortOf(v, fallback) {
+  if (v == null || v === '') return fallback;
+  const n = Number(v);
+  if (!Number.isInteger(n) || Math.abs(n) > 1e6) throw E.badInput('排序号必须是整数');
+  return n;
+}
+/* 必填文本：去首尾空白后不能为空；不传沿用原值 */
+function reqText(v, fallback, label, max = 100) {
+  if (v == null) return fallback;
+  const t = String(v).trim();
+  if (!t) throw E.badInput(`${label}不能为空`);
+  if (t.length > max) throw E.badInput(`${label}最多 ${max} 个字`);
+  return t;
+}
 
 function userJsonRow(db, u) {
   const deptIds = db.prepare('SELECT dept_id FROM user_depts WHERE user_id = ? ORDER BY dept_id').all(u.id).map(r => String(r.dept_id));
@@ -165,7 +188,7 @@ module.exports = async function adminRoutes(app) {
     if (!name) throw E.badInput('缺少科室名称');
     if (db().prepare('SELECT 1 FROM depts WHERE name = ?').get(name)) throw E.conflict('科室名称已存在');
     const id = db().prepare('INSERT INTO depts (name, code, sort, status, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(name, String(b.code || ''), +b.sort || 0, b.status === 'off' ? 'off' : 'on', nowIso()).lastInsertRowid;
+      .run(name, String(b.code || '').trim(), sortOf(b.sort, 0), b.status === 'off' ? 'off' : 'on', nowIso()).lastInsertRowid;
     return deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(id));
   });
 
@@ -176,18 +199,25 @@ module.exports = async function adminRoutes(app) {
     const name = b.name != null ? String(b.name).trim() : d.name;
     if (!name) throw E.badInput('科室名称不能为空');
     if (name !== d.name && db().prepare('SELECT 1 FROM depts WHERE name = ?').get(name)) throw E.conflict('科室名称已存在');
+    if (b.status != null && !['on', 'off'].includes(b.status)) throw E.badInput('status 不正确');
     db().prepare('UPDATE depts SET name = ?, code = ?, sort = ?, status = ? WHERE id = ?')
-      .run(name, String(b.code ?? d.code), +(b.sort ?? d.sort),
-        ['on', 'off'].includes(b.status) ? b.status : d.status, d.id);
+      .run(name, String(b.code ?? d.code).trim(), sortOf(b.sort, d.sort), b.status || d.status, d.id);
+    if (b.status && b.status !== d.status) authSvc.audit(req.user.id, b.status === 'off' ? 'dept_disable' : 'dept_enable', `id=${d.id} name=${name}`, req.ip);
     return deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(d.id));
   });
 
   app.delete('/api/admin/depts/:id', { preHandler: guard }, async req => {
     const id = +req.params.id;
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(id)) throw E.notFound('科室不存在');
-    if (db().prepare('SELECT 1 FROM records WHERE dept_id = ? LIMIT 1').get(id)) {
-      throw E.conflict('该科室已有巡检记录，禁止删除，请改为停用');
+    if (db().prepare('SELECT 1 FROM records WHERE dept_id = ? LIMIT 1').get(id)
+      || db().prepare('SELECT 1 FROM week_signs WHERE dept_id = ? LIMIT 1').get(id)
+      || db().prepare('SELECT 1 FROM month_signs WHERE dept_id = ? LIMIT 1').get(id)) {
+      throw E.conflict('该科室已有巡检或签字记录，禁止删除，请改为停用');
     }
+    /* 护士长账号恰好绑定 1 个科室：删了科室它就变成「没有科室的护士长」，登录后什么都看不到 */
+    const nurse = db().prepare(`SELECT u.username, u.display_name FROM users u JOIN user_depts ud ON ud.user_id = u.id
+      WHERE ud.dept_id = ? AND u.role = 'dept' LIMIT 1`).get(id);
+    if (nurse) throw E.conflict(`护士长账号「${nurse.display_name}（${nurse.username}）」属于该科室，请先把它改到别的科室或停用后再删除`);
     /* 设备可以在科室之间调拨，所以"本科室没有巡检记录"不等于"本科室的设备没被巡检过"。
        漏了这一检查，下面 DELETE FROM devices 会撞 record_items 的外键约束，
        事务回滚后用户只拿到一条没有信息量的 500。 */
@@ -217,15 +247,18 @@ module.exports = async function adminRoutes(app) {
 
   app.post('/api/admin/devices', { preHandler: guard }, async req => {
     const b = req.body || {};
-    if (!b.deptId || !b.code || !b.name || !b.catName) throw E.badInput('deptId/catName/code/name 必填');
+    if (!b.deptId) throw E.badInput('请选择所属科室');
+    const catName = reqText(b.catName ?? '', '', '设备品类', 40);
+    const code = reqText(b.code ?? '', '', '设备编码', 60);
+    const name = reqText(b.name ?? '', '', '设备名称', 100);
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
-    if (db().prepare('SELECT 1 FROM devices WHERE code = ?').get(String(b.code))) throw E.conflict('设备编码已存在');
+    if (db().prepare('SELECT 1 FROM devices WHERE code = ?').get(code)) throw E.conflict('设备编码已存在');
     const exp = normExpiry(b);
     const id = db().prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, sort,
       expiry_date, expiry_note, remind_days, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(+b.deptId, String(b.catName), String(b.code), String(b.name), String(b.model || ''),
-        String(b.location || ''), String(b.status || 'in_use'), +b.sort || 0,
+      .run(+b.deptId, catName, code, name, String(b.model || '').trim(),
+        String(b.location || '').trim(), devStatus(b.status, 'in_use'), sortOf(b.sort, 0),
         exp.date, exp.note, exp.days, nowIso(), nowIso()).lastInsertRowid;
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(id));
   });
@@ -234,16 +267,20 @@ module.exports = async function adminRoutes(app) {
     const v = db().prepare('SELECT * FROM devices WHERE id = ?').get(+req.params.id);
     if (!v) throw E.notFound('设备不存在');
     const b = req.body || {};
-    if (b.code != null && b.code !== v.code &&
-      db().prepare('SELECT 1 FROM devices WHERE code = ?').get(String(b.code))) throw E.conflict('设备编码已存在');
+    const code = reqText(b.code, v.code, '设备编码', 60);
+    const catName = reqText(b.catName, v.cat_name, '设备品类', 40);
+    const name = reqText(b.name, v.name, '设备名称', 100);
+    if (code !== v.code && db().prepare('SELECT 1 FROM devices WHERE code = ?').get(code)) throw E.conflict('设备编码已存在');
     if (b.deptId != null && !db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
     const exp = normExpiry(b, v);
+    const deptId = +(b.deptId ?? v.dept_id);
     db().prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, code = ?, name = ?, model = ?, location = ?,
       status = ?, sort = ?, expiry_date = ?, expiry_note = ?, remind_days = ?, updated_at = ? WHERE id = ?`)
-      .run(+(b.deptId ?? v.dept_id), String(b.catName ?? v.cat_name), String(b.code ?? v.code),
-        String(b.name ?? v.name), String(b.model ?? v.model), String(b.location ?? v.location),
-        String(b.status ?? v.status), +(b.sort ?? v.sort),
+      .run(deptId, catName, code, name, String(b.model ?? v.model).trim(), String(b.location ?? v.location).trim(),
+        devStatus(b.status, v.status), sortOf(b.sort, v.sort),
         exp.date, exp.note, exp.days, nowIso(), v.id);
+    // 调拨留痕：月报按实际巡检记录出行，调拨本身记进审计，事后能查到设备何时从哪调到哪
+    if (deptId !== v.dept_id) authSvc.audit(req.user.id, 'device_transfer', `code=${code} from=${v.dept_id} to=${deptId}`, req.ip);
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(v.id));
   });
 
@@ -292,7 +329,7 @@ module.exports = async function adminRoutes(app) {
       throw E.conflict('该科室已有同名签字人');
     }
     const id = db().prepare('INSERT INTO members (dept_id, name, title, status, sort) VALUES (?, ?, ?, ?, ?)')
-      .run(+b.deptId, name, String(b.title || '').trim(), b.status === 'off' ? 'off' : 'on', +b.sort || 0).lastInsertRowid;
+      .run(+b.deptId, name, String(b.title || '').trim(), b.status === 'off' ? 'off' : 'on', sortOf(b.sort, 0)).lastInsertRowid;
     return memberJson(db().prepare('SELECT * FROM members WHERE id = ?').get(id));
   });
 
@@ -300,16 +337,22 @@ module.exports = async function adminRoutes(app) {
     const m = db().prepare('SELECT * FROM members WHERE id = ?').get(+req.params.id);
     if (!m) throw E.notFound('签字人不存在');
     const b = req.body || {};
+    /* 签字人不能换科室：他签过的周签都挂在原科室，换过去会让原科室的历史周签显示成别科室的人。
+       以前静默忽略，界面提示保存成功、实际没变。 */
+    if (b.deptId != null && +b.deptId !== m.dept_id) {
+      throw E.badInput('签字人不能改科室。如果调到了别的科室，请在新科室里新建一位签字人，并把这里的停用');
+    }
     const name = String(b.name ?? m.name).trim();
     const title = String(b.title ?? m.title).trim();
     if (!name) throw E.badInput('姓名不能为空');
+    if (b.status != null && !['on', 'off'].includes(b.status)) throw E.badInput('status 不正确');
     // 以前不查重，改成同科室已有的名字会撞上数据库唯一约束，接口直接报 500
     if (name !== m.name && db().prepare('SELECT 1 FROM members WHERE dept_id = ? AND name = ? AND id <> ?').get(m.dept_id, name, m.id)) {
       throw E.conflict('该科室已有同名签字人');
     }
     db().transaction(() => {
       db().prepare('UPDATE members SET name = ?, title = ?, status = ?, sort = ? WHERE id = ?')
-        .run(name, title, ['on', 'off'].includes(b.status) ? b.status : m.status, +(b.sort ?? m.sort), m.id);
+        .run(name, title, b.status || m.status, sortOf(b.sort, m.sort), m.id);
       /* 历史周签的快照跟着最新姓名走：页面本来就按 ID 显示当前姓名，这里同步快照，
          是为了这个签字人以后被删除时，历史记录仍显示最新姓名而不是早已改掉的旧名。
          同时把升级前签的、还没建立关联的周签（同科室、签的是原姓名）一并关联上。 */
@@ -328,9 +371,12 @@ module.exports = async function adminRoutes(app) {
 
   /* ---------- 作废签字（admin） ---------- */
   app.post('/api/admin/signs/void', { preHandler: adminOnly }, async req => {
-    const { type, deptId, key, reason } = req.body || {};
+    const { type, deptId, key } = req.body || {};
+    const reason = String((req.body || {}).reason || '').trim();
     if (!['day', 'week', 'month'].includes(type)) throw E.badInput('type 必须是 day/week/month');
-    if (!deptId || !key || !reason) throw E.badInput('deptId/key/reason 必填');
+    if (!deptId || !key) throw E.badInput('deptId/key 必填');
+    if (!reason) throw E.badInput('请填写作废原因');
+    let orig = '';   // 被作废的签字原样写进审计：签字行会被清空/删除，事后要能查到原来是谁、何时签的
     const did = +deptId;
     /* 作废必须「自上而下」：上级签字建立在下级签字之上，且上级签字会锁定下级记录。
        若允许先作废下级（如周签还在时作废日签），就会出现「周签已签、其中一天却没有日签」，
@@ -344,20 +390,23 @@ module.exports = async function adminRoutes(app) {
       if (weekSigned(w)) throw E.locked(`${w} 起的这一周已周签，请先作废周签，再作废这一天的日签`);
       const mo = P.signMonthOf(r.date);   // 这一天所在的周归哪个月，就由哪个月的月签管
       if (monthSigned(mo)) throw E.locked(`这一天所属的 ${mo} 已月签，请先作废月签`);
+      orig = `签字人=${r.sign_name} 签字人账号=${r.sign_user_id ?? ''} 时间=${r.sign_at} 签名图=${r.sign_file_id} 意见=${r.sign_opinion || ''}`;
       db().prepare(`UPDATE records SET sign_name = NULL, sign_title = NULL, sign_opinion = NULL,
-        sign_file_id = NULL, sign_user_id = NULL, sign_at = NULL, updated_at = ? WHERE id = ?`).run(nowIso(), r.id);
+        sign_file_id = NULL, sign_user_id = NULL, sign_at = NULL, updated_at = ? WHERE id = ?`).run(P.stamp(), r.id);
     } else if (type === 'week') {
       const r = db().prepare('SELECT * FROM week_signs WHERE dept_id = ? AND week_start = ?').get(did, String(key));
       if (!r) throw E.notFound('该周无签字');
       const m = P.moOf(r.week_start);   // 周按周一所在月份归属
       if (monthSigned(m)) throw E.locked(`这一周归属的 ${m} 已月签，请先作废月签，再作废周签`);
+      orig = `签字人=${r.sign_name} 名单ID=${r.sign_member_id ?? ''} 时间=${r.sign_at} 签名图=${r.sign_file_id} 统计=台次${r.stat_checked}/异常${r.stat_ng}/天数${r.stat_days}`;
       db().prepare('DELETE FROM week_signs WHERE id = ?').run(r.id);
     } else {
       const r = db().prepare('SELECT * FROM month_signs WHERE dept_id = ? AND month = ?').get(did, String(key));
       if (!r) throw E.notFound('该月无签字');
+      orig = `签字人=${r.sign_name} 账号=${r.signed_by ?? ''} 时间=${r.sign_at} 签名图=${r.sign_file_id} 统计=台次${r.stat_checked}/异常${r.stat_ng}/周数${r.stat_weeks}`;
       db().prepare('DELETE FROM month_signs WHERE id = ?').run(r.id);
     }
-    authSvc.audit(req.user.id, 'sign_void', `type=${type} deptId=${did} key=${key} reason=${reason}`, req.ip);
+    authSvc.audit(req.user.id, 'sign_void', `type=${type} deptId=${did} key=${key} reason=${reason} 原签字：${orig}`, req.ip);
     return { ok: true };
   });
 
@@ -374,8 +423,10 @@ module.exports = async function adminRoutes(app) {
   app.get('/api/admin/audit', { preHandler: guard }, async req => {
     const { from, to } = req.query;
     const cond = []; const args = [];
-    if (from) { cond.push('created_at >= ?'); args.push(from); }
-    if (to) { cond.push('created_at <= ?'); args.push(to + (to.length === 10 ? 'T23:59:59.999Z' : '')); }
+    /* 审计时间按 UTC 存；按日期筛选时换算成上海的一整天，否则凌晨 0–8 点的操作会落到前一天 */
+    const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v));
+    if (from) { cond.push('created_at >= ?'); args.push(isDay(from) ? P.shDayStartIso(from) : String(from)); }
+    if (to) { cond.push('created_at <= ?'); args.push(isDay(to) ? P.shDayEndIso(to) : String(to)); }
     return db().prepare(`SELECT * FROM audit_log ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''} ORDER BY id DESC LIMIT 1000`)
       .all(...args)
       .map(a => ({ id: String(a.id), userId: a.user_id != null ? String(a.user_id) : null,

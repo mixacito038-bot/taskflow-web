@@ -6,6 +6,7 @@ const { getDb } = require('../db/connection');
 const expirySvc = require('./expiry.service');
 const { E } = require('../plugins/error');
 const fileSvc = require('./file.service');
+const P = require('./period.service');
 
 const nowIso = () => new Date().toISOString();
 
@@ -94,10 +95,12 @@ async function importDevices(buffer) {
       if (!deptId) { errors.push({ row: n, message: `科室「${deptName}」不存在` }); continue; }
       /* 状态必须是模板列出的四个词之一。写成「正常」「使用中」这类同义词若原样入库，
          设备会照常出现在台账里，却被有效期提醒和巡检清单永久排除，过期了没人知道 */
-      let status = 'in_use';
+      /* 留空：新设备默认「在用」；已有设备「本次不改动」（与有效期两列同一语义）。
+         以前已有设备留空也写成在用：只想改个位置的重导入，会把报废的设备悄悄改回在用 */
+      let status;
       if (statusRaw) {
         status = STATUS_MAP[statusRaw];
-        if (!status) { errors.push({ row: n, message: `状态「${statusRaw}」无法识别，只能填：${STATUS_WORDS}（留空默认在用）` }); continue; }
+        if (!status) { errors.push({ row: n, message: `状态「${statusRaw}」无法识别，只能填：${STATUS_WORDS}（留空：新设备默认在用，已有设备不改动）` }); continue; }
       }
 
       /* undefined = 本次不改动该列 */
@@ -127,9 +130,9 @@ async function importDevices(buffer) {
       if (old) {
         /* COALESCE 的参数为 null 时保留原值 —— 对应上面 undefined = 不改动 */
         db.prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, name = ?, model = ?, location = ?,
-          status = ?, expiry_date = COALESCE(?, expiry_date), remind_days = COALESCE(?, remind_days),
+          status = COALESCE(?, status), expiry_date = COALESCE(?, expiry_date), remind_days = COALESCE(?, remind_days),
           updated_at = ? WHERE id = ?`)
-          .run(deptId, catName, name, model, location, status,
+          .run(deptId, catName, name, model, location, status || null,
             expiry === undefined ? null : expiry, remind === undefined ? null : remind,
             nowIso(), old.id);
         updated++;
@@ -137,7 +140,7 @@ async function importDevices(buffer) {
         db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status,
           expiry_date, remind_days, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(deptId, catName, code, name, model, location, status,
+          .run(deptId, catName, code, name, model, location, status || 'in_use',
             expiry || '', remind || 0, nowIso(), nowIso());
         created++;
       }
@@ -156,14 +159,19 @@ function importLegacy(data) {
   const deptMap = new Map();   // 旧 id → 新 id
   const deviceMap = new Map();
 
+  const saved = [];   // 已落盘的签名图：事务失败回滚时一并删掉，免得留下孤儿文件
   const saveSign = (sign, where) => {
     if (!sign) return null;
     if (!sign.dataUrl) { errors.push({ where, message: '签名缺少 dataUrl，已跳过该签字' }); return null; }
-    try { return fileSvc.saveSignature(sign.dataUrl); }
+    try { const f = fileSvc.saveSignature(sign.dataUrl); saved.push(f.id); return f; }
     catch (e) { errors.push({ where, message: `签名图无效：${e.message}` }); return null; }
   };
+  const isDay = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s)) && P.fmt(P.D(s)) === s;
+  const STATUS_SET = new Set(Object.values(STATUS_MAP));
+  // 旧数据没带签字时间时用上海时间（库里约定的格式），不再写 UTC ISO
+  const at = v => (typeof v === 'string' && v ? v : P.stamp());
 
-  db.transaction(() => {
+  try { db.transaction(() => {
     for (const d of data.depts || []) {
       const old = db.prepare('SELECT id FROM depts WHERE name = ?').get(d.name);
       let id;
@@ -182,12 +190,12 @@ function importLegacy(data) {
       let id;
       if (old) {
         db.prepare('UPDATE devices SET dept_id = ?, cat_name = ?, name = ?, model = ?, location = ?, status = ?, updated_at = ? WHERE id = ?')
-          .run(deptId, v.catName || '', v.name || '', v.model || '', v.location || '', v.status || 'in_use', nowIso(), old.id);
+          .run(deptId, v.catName || '', v.name || '', v.model || '', v.location || '', STATUS_SET.has(v.status) ? v.status : 'in_use', nowIso(), old.id);
         id = old.id;
       } else {
         id = db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(deptId, v.catName || '', v.code, v.name || '', v.model || '', v.location || '', v.status || 'in_use', nowIso(), nowIso()).lastInsertRowid;
+          .run(deptId, v.catName || '', v.code, v.name || '', v.model || '', v.location || '', STATUS_SET.has(v.status) ? v.status : 'in_use', nowIso(), nowIso()).lastInsertRowid;
         counts.devices++;
       }
       deviceMap.set(String(v.id), id);
@@ -204,22 +212,24 @@ function importLegacy(data) {
       if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(u.username)) {
         errors.push({ where: `user ${u.username}`, message: '账号已存在，已跳过' }); continue;
       }
+      const role = ['inspector', 'dept', 'equip', 'admin'].includes(u.role) ? u.role : 'inspector';
+      const nds = (u.deptIds || (u.deptId != null ? [u.deptId] : [])).map(od => deptMap.get(String(od))).filter(Boolean);
+      if (role === 'dept' && new Set(nds).size !== 1) {
+        errors.push({ where: `user ${u.username}`, message: '护士长账号必须恰好属于 1 个科室，已跳过' }); continue;
+      }
       const pwd = crypto.randomBytes(6).toString('base64url');
       const id = db.prepare(`INSERT INTO users (username, password_hash, display_name, role, status, must_change, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
-        .run(u.username, bcrypt.hashSync(pwd, 10), u.displayName || u.username,
-          ['inspector', 'dept', 'equip', 'admin'].includes(u.role) ? u.role : 'inspector',
+        .run(u.username, bcrypt.hashSync(pwd, 10), u.displayName || u.username, role,
           u.status === 'off' ? 'off' : 'on', nowIso(), nowIso()).lastInsertRowid;
-      for (const od of (u.deptIds || (u.deptId != null ? [u.deptId] : []))) {
-        const nd = deptMap.get(String(od));
-        if (nd) db.prepare('INSERT OR IGNORE INTO user_depts (user_id, dept_id) VALUES (?, ?)').run(id, nd);
-      }
+      for (const nd of nds) db.prepare('INSERT OR IGNORE INTO user_depts (user_id, dept_id) VALUES (?, ?)').run(id, nd);
       passwords[u.username] = pwd;
       counts.users++;
     }
     for (const r of data.records || []) {
       const deptId = deptMap.get(String(r.deptId));
       if (!deptId) continue;
+      if (!isDay(r.date)) { errors.push({ where: `record ${r.deptId}/${r.date}`, message: '日期不正确，已跳过' }); continue; }
       if (db.prepare('SELECT 1 FROM records WHERE dept_id = ? AND date = ?').get(deptId, r.date)) {
         errors.push({ where: `record ${r.deptId}/${r.date}`, message: '记录已存在，已跳过' }); continue;
       }
@@ -228,8 +238,8 @@ function importLegacy(data) {
         sign_opinion, sign_file_id, sign_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(deptId, r.date, r.inspectorName || '',
           sf ? r.sign.name : null, sf ? (r.sign.title || '') : null, sf ? (r.sign.opinion || '') : null,
-          sf ? sf.id : null, sf ? (r.sign.at || nowIso()) : null,
-          r.createdAt || nowIso(), r.updatedAt || nowIso()).lastInsertRowid;
+          sf ? sf.id : null, sf ? at(r.sign.at) : null,
+          at(r.createdAt), at(r.updatedAt)).lastInsertRowid;
       const ins = db.prepare('INSERT OR IGNORE INTO record_items (record_id, device_id, result, note) VALUES (?, ?, ?, ?)');
       for (const [devOld, res] of Object.entries(r.checks || {})) {
         const dev = deviceMap.get(String(devOld));
@@ -240,28 +250,33 @@ function importLegacy(data) {
     for (const w of data.weeksigns || []) {
       const deptId = deptMap.get(String(w.deptId));
       if (!deptId) continue;
+      if (!isDay(w.week) || P.wkOf(w.week) !== w.week) { errors.push({ where: `weeksign ${w.week}`, message: '周签的周必须是周一日期，已跳过' }); continue; }
       if (db.prepare('SELECT 1 FROM week_signs WHERE dept_id = ? AND week_start = ?').get(deptId, w.week)) continue;
       const sf = saveSign(w.sign, `weeksign ${w.week}`);
       if (!sf) continue; // 周签签名图必填
       db.prepare(`INSERT INTO week_signs (dept_id, week_start, sign_name, sign_title, sign_opinion, sign_file_id,
         stat_checked, stat_ng, stat_days, sign_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(deptId, w.week, w.sign.name, w.sign.title || '', w.sign.opinion || '', sf.id,
-          (w.stat || {}).checked || 0, (w.stat || {}).ng || 0, (w.stat || {}).days || 0, w.sign.at || nowIso());
+          (w.stat || {}).checked || 0, (w.stat || {}).ng || 0, (w.stat || {}).days || 0, at(w.sign.at));
       counts.weeksigns++;
     }
     for (const m of data.monthsigns || []) {
       const deptId = deptMap.get(String(m.deptId));
       if (!deptId) continue;
+      if (!P.isMonth(m.month)) { errors.push({ where: `monthsign ${m.month}`, message: '月份不正确，已跳过' }); continue; }
       if (db.prepare('SELECT 1 FROM month_signs WHERE dept_id = ? AND month = ?').get(deptId, m.month)) continue;
       const sf = saveSign(m.sign, `monthsign ${m.month}`);
       if (!sf) continue;
       db.prepare(`INSERT INTO month_signs (dept_id, month, sign_name, sign_title, sign_opinion, sign_file_id,
         stat_checked, stat_ng, stat_weeks, sign_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(deptId, m.month, m.sign.name, m.sign.title || '', m.sign.opinion || '', sf.id,
-          (m.stat || {}).checked || 0, (m.stat || {}).ng || 0, (m.stat || {}).weeks || 0, m.sign.at || nowIso());
+          (m.stat || {}).checked || 0, (m.stat || {}).ng || 0, (m.stat || {}).weeks || 0, at(m.sign.at));
       counts.monthsigns++;
     }
-  })();
+  })(); } catch (e) {
+    for (const id of saved) { const f = fileSvc.getFile(id); try { if (f) require('fs').unlinkSync(f.abs); } catch { /* 已不存在 */ } }
+    throw e;
+  }
   return { imported: counts, passwords, errors };
 }
 
