@@ -26,6 +26,15 @@ const wksOfMonth = (m, today) => {
   return out;
 };
 const prevMonth = m => { let y = +m.slice(0, 4), mm = +m.slice(5, 7) - 1; if (mm < 1) { mm = 12; y--; } return `${y}-${pad(mm)}`; };
+/* 合法月份 YYYY-MM（01–12）。只用正则会放过 2026-13、2026-00 */
+const isMonth = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(m));
+/* 某天的记录归哪个月的月签管：看它所在的周归哪个月（周一所在月份），不是看日期本身。
+   例：2026-08-01（周六）属于 07-27 那一周 → 归 7 月；2026-09-02 属于 08-31 那一周 → 归 8 月。
+   ⚠ 旧版按日期本身的月份加锁：8 月月签后 08-01/08-02 被锁死，而它们所在的 7 月最后一周
+   因此永远补不齐日签、永远周签不了，7 月也就永远月签不了。 */
+const signMonthOf = date => moOf(wkOf(date));
+/* 月签覆盖的日期范围：归属该月的第一周周一 ～ 最后一周周日（可能从上月末开始、到下月初结束） */
+const monthSpan = m => { const w = wksOfMonth(m); return { from: w[0], to: addDay(w[w.length - 1], 6) }; };
 
 /* ---------- 业务时钟：只按 Asia/Shanghai 计算，不依赖进程 TZ ---------- */
 const SH_FMT = new Intl.DateTimeFormat('en-CA', {
@@ -41,6 +50,16 @@ function shNow() {
 }
 const today = () => shNow().date;
 const stamp = () => { const n = shNow(); return `${n.date} ${n.time}`; };
+/* 库里 created_at 等字段存的是 UTC ISO 时刻，换算成上海日期（零点到八点之间差一天） */
+const SH_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
+function shDateOf(iso) {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return String(iso || '').slice(0, 10);
+  return SH_DATE.format(new Date(t));
+}
+/* 上海日期 YYYY-MM-DD 的 [起, 止] → UTC ISO 区间（审计日志等按 UTC 存的字段按上海日期筛选用） */
+const shDayStartIso = d => new Date(`${d}T00:00:00+08:00`).toISOString();
+const shDayEndIso = d => new Date(Date.parse(`${d}T00:00:00+08:00`) + 864e5 - 1).toISOString();
 
 /* ---------- 递进关系判定（H5 620-650 行移植） ---------- */
 /* 日签是否完成 */
@@ -68,7 +87,10 @@ function weekState({ week, today: t, recs, ws }) {
 /* 某月状态。月签前提：归属该月的「全部」周都已周签（周按周一所在月份归属）。
    ⚠ 旧版只要求「已开始的周」：月初签完第一周就能把整月签掉，而月签会锁定整月记录，
    导致当月后面的日子再也录不了巡检。
-   weekSignWeeks: 该科室已周签的周一列表；recs: 该月 [m-01, m-31] 记录；ms: 已存在的月签或 null
+   weekSignWeeks: 该科室已周签的周一列表；ms: 已存在的月签或 null
+   recs: 月签覆盖范围 monthSpan(m) 内的记录（第一周周一～最后一周周日）。
+         ⚠ 旧版取自然月 [m-01, m-31]：月签的台次和组成它的各周周签加起来对不上
+         （8 月：5 个周签合计 35 天的台次，月签只算了 8/1–8/31 的 31 天）。
    openWeeks = 周日还没到的周（本月还没结束）；missDue = 已经可以签却没周签的周。 */
 function monthState({ month, today: t, weekSignWeeks, recs, ms }) {
   const wks = wksOfMonth(month);
@@ -85,6 +107,6 @@ function monthState({ month, today: t, weekSignWeeks, recs, ms }) {
 }
 
 module.exports = {
-  pad, D, fmt, addDay, wkOf, wkDays, moOf, wksOfMonth, prevMonth,
-  shNow, today, stamp, dayDone, weekState, monthState
+  pad, D, fmt, addDay, wkOf, wkDays, moOf, wksOfMonth, prevMonth, isMonth, signMonthOf, monthSpan,
+  shNow, today, stamp, shDateOf, shDayStartIso, shDayEndIso, dayDone, weekState, monthState
 };

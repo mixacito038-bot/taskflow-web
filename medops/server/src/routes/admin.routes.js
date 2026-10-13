@@ -328,7 +328,8 @@ module.exports = async function adminRoutes(app) {
       if (!r || !r.sign_at) throw E.notFound('该日无签字');
       const w = P.wkOf(r.date);
       if (weekSigned(w)) throw E.locked(`${w} 起的这一周已周签，请先作废周签，再作废这一天的日签`);
-      if (monthSigned(P.moOf(r.date))) throw E.locked(`${P.moOf(r.date)} 已月签，请先作废月签`);
+      const mo = P.signMonthOf(r.date);   // 这一天所在的周归哪个月，就由哪个月的月签管
+      if (monthSigned(mo)) throw E.locked(`这一天所属的 ${mo} 已月签，请先作废月签`);
       db().prepare(`UPDATE records SET sign_name = NULL, sign_title = NULL, sign_opinion = NULL,
         sign_file_id = NULL, sign_user_id = NULL, sign_at = NULL, updated_at = ? WHERE id = ?`).run(nowIso(), r.id);
     } else if (type === 'week') {

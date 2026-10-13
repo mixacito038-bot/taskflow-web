@@ -219,6 +219,119 @@ async function main() {
   okj(await api('POST', '/api/auth/login', { body: { username: 'insp2', password: np } }), '用新密码登录');
   ok('重置密码后，旧的登录续期被拒，新密码可登录');
 
+  step = '跨月的周：月签只锁归属本月的周，不锁上月最后一周里的日子';
+  // 找一个已经完全结束、且 1 号不是周一（月初几天属于上个月最后一周）的月份
+  let X = P.prevMonth(P.moOf(today));
+  while (!(P.monthSpan(X).to < today && P.wkOf(`${X}-01`) !== `${X}-01`)) X = P.prevMonth(X);
+  const k3 = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '科室3' } }));
+  const k3dev = okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: k3.id, catName: '除颤类', code: 'K3-001', name: '除颤仪' } }));
+  const k3m = okj(await api('POST', '/api/admin/members', { token: A, body: { deptId: k3.id, name: '张三', title: '护士长' } }));
+  okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'insp3', password: 'Pass@123', displayName: '巡检员三', role: 'inspector', deptIds: [k3.id] } }));
+  okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'hn3', password: 'Pass@123', displayName: '护士长三', role: 'dept', deptIds: [k3.id] } }));
+  const I3 = await login('insp3'), N3 = await login('hn3');
+  const day3 = async (d, r = 'ok') => {
+    okj(await api('PUT', `/api/records/${k3.id}/${d}`, { token: I3, body: { checks: { [k3dev.id]: r }, notes: r === 'ng' ? { [k3dev.id]: '电量低' } : {} } }), `科室3 巡检 ${d}`);
+    okj(await api('POST', `/api/records/${k3.id}/${d}/sign`, { token: I3, body: { dataUrl: PNG } }), `科室3 日签 ${d}`);
+  };
+  const wksX = P.wksOfMonth(X);
+  let wkChecked = 0;
+  for (const w of wksX) {
+    for (const d of P.wkDays(w)) await day3(d, d === P.addDay(w, 2) ? 'ng' : 'ok');
+    wkChecked += okj(await api('POST', `/api/weeksigns/${k3.id}/${w}/sign`, { token: N3, body: { memberId: k3m.id, dataUrl: PNG } }), `科室3 周签 ${w}`).stat.checked;
+  }
+  const msX = okj(await api('POST', `/api/monthsigns/${k3.id}/${X}/sign`, { token: Q, body: { dataUrl: PNG } }), `科室3 月签 ${X}`);
+  assert.equal(msX.stat.checked, wkChecked, `月签台次 ${msX.stat.checked} 应等于各周周签台次之和 ${wkChecked}`);
+  assert.equal(msX.stat.ng, wksX.length);
+  ok(`${X} 月签的台次（${msX.stat.checked}）= 各周周签之和；统计范围是 ${P.monthSpan(X).from} ～ ${P.monthSpan(X).to}`);
+
+  const spillWeek = P.wkOf(`${X}-01`);                  // 上个月最后一周，月初几天落在 X 月
+  const spillDays = P.wkDays(spillWeek);
+  for (const d of spillDays.filter(d => P.moOf(d) === X)) {
+    okj(await api('PUT', `/api/records/${k3.id}/${d}`, { token: I3, body: { checks: { [k3dev.id]: 'ok' } } }), `${X} 已月签后补录 ${d}`);
+  }
+  for (const d of spillDays) await day3(d);
+  okj(await api('POST', `/api/weeksigns/${k3.id}/${spillWeek}/sign`, { token: N3, body: { memberId: k3m.id, dataUrl: PNG } }), `周签上月最后一周 ${spillWeek}`);
+  ok(`${X} 已月签，${spillWeek} 起那一周（属 ${P.moOf(spillWeek)}）里落在 ${X} 的日子仍可补录、整周可以周签（旧版被锁死）`);
+  const tail = P.wkDays(wksX[wksX.length - 1]).filter(d => P.moOf(d) !== X);
+  for (const d of tail) {
+    errj(await api('PUT', `/api/records/${k3.id}/${d}`, { token: I3, body: { checks: { [k3dev.id]: 'ok' } } }), 409, 'LOCKED', `${X} 最后一周落在下月的 ${d}`);
+  }
+  if (tail.length) {
+    errj(await api('POST', '/api/admin/signs/void', { token: A, body: { type: 'week', deptId: k3.id, key: wksX[wksX.length - 1], reason: '测试' } }), 409, 'LOCKED', '作废月签覆盖的最后一周');
+    ok(`${X} 最后一周延伸到下月的 ${tail[0].slice(5)}～${tail[tail.length - 1].slice(5)} 由 ${X} 的月签锁定`);
+  }
+
+  step = '未签提醒：更早的月份也要提醒';
+  const un = okj(await api('GET', '/api/stats/unsigned', { token: Q }));
+  assert.ok(un.months.some(x => x.deptId === k3.id && x.month === P.moOf(spillWeek)),
+    `${P.moOf(spillWeek)} 有记录、已结束、没月签，应出现在未签提醒里：${JSON.stringify(un.months)}`);
+  assert.ok(!un.months.some(x => x.deptId === k3.id && x.month === X), '已月签的月份不应提醒');
+  ok(`${P.moOf(spillWeek)}（不止上个月）未月签也会出现在首页提醒里`);
+
+  step = '周签列表：起始日不是周一也不漏周';
+  const wed = P.addDay(wksX[0], 2);
+  const wl = okj(await api('GET', `/api/weeksigns?deptId=${k3.id}&from=${wed}&to=${wksX[0]}`, { token: A }));
+  assert.equal(wl.length, 1, `从周三 ${wed} 查，应包含 ${wksX[0]} 那一周`);
+  ok('周签查询从周三开始也包含当周');
+
+  step = '月份参数校验';
+  errj(await api('GET', `/api/stats/completion?month=2026-13`, { token: Q }), 400, 'BAD_INPUT', 'completion 2026-13');
+  errj(await api('GET', `/api/stats/signatures?month=2026-00`, { token: Q }), 400, 'BAD_INPUT', 'signatures 2026-00');
+  errj(await api('GET', `/api/export/monthly.xlsx?deptId=${k3.id}&month=2026-13`, { token: Q }), 400, 'BAD_INPUT', '导出 2026-13');
+  errj(await api('POST', `/api/monthsigns/${k3.id}/2026-13/sign`, { token: Q, body: { dataUrl: PNG } }), 400, 'BAD_INPUT', '月签 2026-13');
+  ok('2026-13 / 2026-00 → 400（以前返回 200 空报表或「这个月还没开始」）');
+
+  step = '异常清单导出带科室条件、中文文件名';
+  res = await api('GET', `/api/export/ng.xlsx?from=${P.monthSpan(X).from}&to=${P.monthSpan(X).to}&deptId=${k3.id}`, { token: Q, raw: true });
+  assert.equal(res.status, 200);
+  const cd = res.headers.get('content-disposition');
+  const ngK3 = await xlsxRows(res, '异常清单');
+  assert.ok(ngK3.length > 1 && ngK3.slice(1).every(r => r[1] === '科室3'), '只应导出科室3 的异常：' + JSON.stringify(ngK3.slice(0, 3)));
+  assert.ok(decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(cd)[1]).startsWith('异常清单_科室3_'), cd);
+  res = await api('GET', `/api/export/monthly.xlsx?deptId=${k3.id}&month=${X}`, { token: Q, raw: true });
+  assert.equal(decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(res.headers.get('content-disposition'))[1]), `巡检月报_科室3_${X}.xlsx`);
+  ok('异常清单导出只含所选科室；文件名为「巡检月报_科室3_月份.xlsx」这样的中文名');
+
+  step = '设备调拨不改写历史月报';
+  const before = await xlsxRows(await api('GET', `/api/export/monthly.xlsx?deptId=${dept.id}&month=${M}`, { token: Q, raw: true }), '巡检记录');
+  const rowOf = (rows, code) => rows.find(r => r[0] === code);
+  assert.ok(rowOf(before, 'LD-002'), '调拨前月报应有 LD-002');
+  okj(await api('PATCH', `/api/admin/devices/${dev2.id}`, { token: A, body: { deptId: d2.id } }), '把 LD-002 调拨到急诊科');
+  const after = await xlsxRows(await api('GET', `/api/export/monthly.xlsx?deptId=${dept.id}&month=${M}`, { token: Q, raw: true }), '巡检记录');
+  const r2 = rowOf(after, 'LD-002');
+  assert.ok(r2, '调拨后原科室历史月报仍应有 LD-002 这一行');
+  assert.deepEqual(r2.slice(3), rowOf(before, 'LD-002').slice(3), 'LD-002 的 ✓/✗ 应原样保留');
+  assert.ok(r2[1].includes('现属急诊科'), '应注明设备现属科室：' + r2[1]);
+  const icu = await xlsxRows(await api('GET', `/api/export/monthly.xlsx?deptId=${d2.id}&month=${M}`, { token: Q, raw: true }), '巡检记录');
+  assert.ok(!rowOf(icu, 'LD-002'), '调入科室的历史月报不应凭空多出一整行空白');
+  okj(await api('PATCH', `/api/admin/devices/${dev2.id}`, { token: A, body: { deptId: dept.id } }), '调回');
+  ok('设备调拨后：原科室历史月报保留该设备整行（注明现属科室），调入科室历史月报不出空行');
+
+  step = '停用科室：历史统计保留、不能再录入、不再提醒';
+  okj(await api('PATCH', `/api/admin/depts/${k3.id}`, { token: A, body: { status: 'off' } }), '停用科室3');
+  const compX = okj(await api('GET', `/api/stats/completion?month=${X}`, { token: Q }));
+  assert.ok(compX.find(x => x.deptId === k3.id && x.deptStatus === 'off' && x.monthSigned), `停用后 ${X} 的完成率里仍应有科室3`);
+  assert.ok(okj(await api('GET', `/api/stats/signatures?month=${X}`, { token: Q })).some(x => x.deptId === k3.id), '签字人工作量仍应有科室3');
+  errj(await api('PUT', `/api/records/${k3.id}/${today}`, { token: I3, body: { checks: { [k3dev.id]: 'ok' } } }), 400, 'BAD_INPUT', '停用科室录入巡检');
+  const un2 = okj(await api('GET', '/api/stats/unsigned', { token: Q }));
+  assert.ok(![...un2.days, ...un2.weeks, ...un2.months].some(x => x.deptId === k3.id), '停用科室不应再出现在未签提醒里');
+  okj(await api('PATCH', `/api/admin/devices/${k3dev.id}`, { token: A, body: { expiryDate: P.addDay(today, -3) } }), '设置已过期');
+  const exp = okj(await api('GET', '/api/stats/expiry', { token: Q })).find(x => x.code === 'K3-001');
+  assert.ok(exp && exp.level === 'expired' && exp.deptName === '科室3（已停用）', '停用科室里在用的过期设备仍要提醒：' + JSON.stringify(exp));
+  okj(await api('PATCH', `/api/admin/depts/${k3.id}`, { token: A, body: { status: 'on' } }), '重新启用');
+  ok('停用科室：历史完成率/工作量照常显示；不能再录入；不再出现在未签提醒；过期设备仍提醒（注明已停用）');
+
+  step = '新建科室不误报缺签';
+  const kf = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '康复科' } }));
+  let un3 = okj(await api('GET', '/api/stats/unsigned', { token: Q }));
+  assert.ok(!un3.days.some(x => x.deptId === kf.id), '今天新建的科室不应有「前 7 天未日签」');
+  okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: kf.id, catName: '监护类', code: 'KF-001', name: '监护仪' } }));
+  un3 = okj(await api('GET', '/api/stats/unsigned', { token: Q }));
+  assert.ok(!un3.days.some(x => x.deptId === kf.id), '加了设备也不应追溯建科室之前的日子');
+  const compK = okj(await api('GET', `/api/stats/completion?month=${P.moOf(today)}&deptId=${kf.id}`, { token: Q }))[0];
+  assert.equal(compK.dueDays, 1, '今天新建的科室本月应巡天数应为 1（今天）');
+  ok('今天新建的科室：不追溯前 7 天缺签；本月应巡天数从建科室当天算');
+
   console.log('\nREGRESS PASS');
 }
 

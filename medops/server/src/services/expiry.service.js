@@ -81,9 +81,13 @@ function list(deptIds, { onlyAlert = true, today = P.today() } = {}) {
   if (Array.isArray(deptIds) && !deptIds.length) return [];
   const db = getDb();
   const scoped = Array.isArray(deptIds);
+  /* 停用科室里仍是「在用」状态的设备照样提醒：东西实际还在某个地方，过期了一样危险。
+     旧版按科室状态剔除，台账上标红「已过期」、首页提醒里却没有它，两处说法对不上。
+     科室名后加「（已停用）」，提示应把设备调拨或改状态。 */
   const rows = db.prepare(`
-    SELECT v.*, d.name AS dept_name FROM devices v JOIN depts d ON d.id = v.dept_id
-    WHERE v.expiry_date <> '' AND v.status = 'in_use' AND d.status = 'on'
+    SELECT v.*, d.name || CASE WHEN d.status = 'on' THEN '' ELSE '（已停用）' END AS dept_name
+    FROM devices v JOIN depts d ON d.id = v.dept_id
+    WHERE v.expiry_date <> '' AND v.status = 'in_use'
     ${scoped ? `AND v.dept_id IN (${deptIds.map(() => '?').join(',')})` : ''}
   `).all(...(scoped ? deptIds : []));
 

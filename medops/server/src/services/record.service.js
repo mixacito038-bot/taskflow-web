@@ -5,7 +5,6 @@ const P = require('./period.service');
 const fileSvc = require('./file.service');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MONTH_RE = /^\d{4}-\d{2}$/;
 
 function assertDate(s) {
   if (!DATE_RE.test(String(s)) || P.fmt(P.D(s)) !== s) throw E.badInput('日期格式不正确');
@@ -75,28 +74,45 @@ function listRecords({ deptIds, deptId, from, to }) {
   return rows.map(r => recordJson(r, items.get(r.id) || []));
 }
 
-/* 日期可写校验：不能未来、日/周/月任一已签即锁定 */
-function assertWritable(deptId, date, today) {
+/* 日期可写校验：不能未来、日/周/月任一已签即锁定。
+   月锁看「这一天所在的周归哪个月」（P.signMonthOf），与月签覆盖的范围一致；
+   按日期本身的月份加锁会把跨月周里属于上个月的几天锁死（见 period.service signMonthOf 注释）。 */
+function lockReason(deptId, date) {
   const db = getDb();
-  if (date > today) throw E.early('不能提前记录未来日期');
   const row = getRecordRow(deptId, date);
-  if (row && row.sign_at) throw E.locked('该日已签字锁定');
+  if (row && row.sign_at) return { level: 'day', message: '该日已签字锁定' };
   const wk = P.wkOf(date);
   if (db.prepare('SELECT 1 FROM week_signs WHERE dept_id = ? AND week_start = ?').get(deptId, wk)) {
-    throw E.locked('该周已完成周签，记录锁定');
+    return { level: 'week', message: `该日所在的这一周（${wk.slice(5)} 起）已完成周签，记录锁定` };
   }
-  if (db.prepare('SELECT 1 FROM month_signs WHERE dept_id = ? AND month = ?').get(deptId, P.moOf(date))) {
-    throw E.locked('该月已完成月签，记录锁定');
+  const mo = P.signMonthOf(date);
+  if (db.prepare('SELECT 1 FROM month_signs WHERE dept_id = ? AND month = ?').get(deptId, mo)) {
+    return { level: 'month', message: `该日所属的 ${mo} 已完成月签，记录锁定` };
   }
-  return row;
+  return null;
 }
+function assertWritable(deptId, date, today) {
+  if (date > today) throw E.early('不能提前记录未来日期');
+  const lk = lockReason(deptId, date);
+  if (lk) throw E.locked(lk.message);
+  return getRecordRow(deptId, date);
+}
+/* 停用的科室不再接受巡检录入和日签（停用而不删除，是为了保留历史）。
+   要补录停用前漏掉的日子，先在后台把科室改回启用。 */
+function assertDeptActive(deptId) {
+  const d = getDb().prepare('SELECT name, status FROM depts WHERE id = ?').get(deptId);
+  if (!d) throw E.notFound('科室不存在');
+  if (d.status !== 'on') throw E.badInput(`科室「${d.name}」已停用，不能再录入巡检；如需补录，请先在后台把科室改回启用`);
+}
+const MAX_CHECKS = 2000;     // 单科室单日勾选上限（远大于任何科室的设备数），防止超大请求拖垮 SQLite
+const MAX_NOTE = 500;
 
 /* PUT /api/records/:deptId/:date —— checks/notes 整体覆盖 */
 function putRecord(user, deptId, date, body) {
   const db = getDb();
   assertDate(date);
   deptId = +deptId;
-  if (!db.prepare('SELECT 1 FROM depts WHERE id = ?').get(deptId)) throw E.notFound('科室不存在');
+  assertDeptActive(deptId);
   const checks = body && body.checks;
   const notes = (body && body.notes) || {};
   if (!checks || typeof checks !== 'object' || Array.isArray(checks)) throw E.badInput('checks 必须是对象');
@@ -104,15 +120,29 @@ function putRecord(user, deptId, date, body) {
   const today = P.today();
   const row = assertWritable(deptId, date, today);
 
-  const devIds = Object.keys(checks).map(k => +k);
-  if (devIds.some(id => !Number.isInteger(id) || id <= 0)) throw E.badInput('设备 id 不正确');
+  /* 键必须是规范的正整数写法：「02」「2.0」经 +k 都会变成 2 并通过校验，
+     写入时却按 2 去取值取不到，最后撞 NOT NULL 约束返回 500 */
+  const keys = Object.keys(checks);
+  if (keys.length > MAX_CHECKS) throw E.badInput('勾选的设备数量异常');
+  if (keys.some(k => !/^[1-9]\d{0,9}$/.test(k))) throw E.badInput('设备 id 不正确');
+  const devIds = keys.map(Number);
   for (const [k, v] of Object.entries(checks)) {
     if (v !== 'ok' && v !== 'ng') throw E.badInput(`设备 ${k} 巡检结果必须是 ok/ng`);
   }
   if (devIds.length) {
+    /* 能勾的设备：本科室在用的设备；以及这条记录里本来就勾过的设备——
+       设备当天被调拨/停用后，早上已经做过的巡检照样保留，不会因此让整天都保存不了 */
     const qs = devIds.map(() => '?').join(',');
-    const okIds = new Set(db.prepare(`SELECT id FROM devices WHERE dept_id = ? AND id IN (${qs})`).all(deptId, ...devIds).map(r => r.id));
-    for (const id of devIds) if (!okIds.has(id)) throw E.badInput(`设备 ${id} 不属于该科室`);
+    const okIds = new Set(db.prepare(`SELECT id FROM devices WHERE dept_id = ? AND status = 'in_use' AND id IN (${qs})`)
+      .all(deptId, ...devIds).map(r => r.id));
+    if (row) for (const it of db.prepare('SELECT device_id FROM record_items WHERE record_id = ?').all(row.id)) okIds.add(it.device_id);
+    for (const id of devIds) {
+      if (okIds.has(id)) continue;
+      const dv = db.prepare('SELECT code, dept_id, status FROM devices WHERE id = ?').get(id);
+      if (!dv) throw E.badInput(`设备 ${id} 不存在`);
+      if (dv.dept_id !== deptId) throw E.badInput(`设备「${dv.code}」已不属于该科室（可能刚被调拨），请返回刷新后再勾选`);
+      throw E.badInput(`设备「${dv.code}」不是在用状态，不能勾选巡检`);
+    }
   }
 
   const at = P.stamp();
@@ -128,7 +158,7 @@ function putRecord(user, deptId, date, body) {
     }
     db.prepare('DELETE FROM record_items WHERE record_id = ?').run(rid);
     const ins = db.prepare('INSERT INTO record_items (record_id, device_id, result, note) VALUES (?, ?, ?, ?)');
-    for (const id of devIds) ins.run(rid, id, checks[id], String(notes[id] || ''));
+    for (const id of devIds) ins.run(rid, id, checks[id], checks[id] === 'ng' ? String(notes[id] || '').slice(0, MAX_NOTE) : '');
     return rid;
   });
   const rid = tx();
@@ -161,6 +191,7 @@ function signRecord(user, deptId, date, body) {
   const db = getDb();
   assertDate(date);
   deptId = +deptId;
+  assertDeptActive(deptId);
   assertSignImage(body);
   const today = P.today();
   const row = assertWritable(deptId, date, today);
@@ -190,7 +221,8 @@ function listWeekSigns({ deptIds, deptId, from, to }) {
   const cond = []; const args = [];
   if (deptId != null) { cond.push('w.dept_id = ?'); args.push(+deptId); }
   else if (deptIds) { cond.push(`w.dept_id IN (${deptIds.map(() => '?').join(',') || 'NULL'})`); args.push(...deptIds); }
-  if (from) { cond.push('w.week_start >= ?'); args.push(from); }
+  /* from 不是周一时对齐到它所在周的周一：否则从周三查，会漏掉这周（周签以周一为键） */
+  if (from) { cond.push('w.week_start >= ?'); args.push(DATE_RE.test(String(from)) ? P.wkOf(from) : from); }
   if (to) { cond.push('w.week_start <= ?'); args.push(to); }
   return db.prepare(`${WS_SELECT} ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''} ORDER BY w.week_start, w.dept_id`)
     .all(...args).map(weekSignJson);
@@ -262,8 +294,9 @@ function listMonthSigns({ deptIds, deptId, year }) {
 function deptMonthState(deptId, month, today) {
   const db = getDb();
   const weekSignWeeks = db.prepare('SELECT week_start FROM week_signs WHERE dept_id = ?').all(deptId).map(r => r.week_start);
+  const span = P.monthSpan(month);   // 月签覆盖的是归属该月的各周，统计范围与之一致
   const rows = db.prepare('SELECT * FROM records WHERE dept_id = ? AND date >= ? AND date <= ?')
-    .all(deptId, `${month}-01`, `${month}-31`);
+    .all(deptId, span.from, span.to);
   const items = loadItems(db, rows.map(r => r.id));
   const recs = rows.map(r => {
     const checks = {};
@@ -277,7 +310,7 @@ function deptMonthState(deptId, month, today) {
 function signMonth(user, deptId, month, body) {
   const db = getDb();
   deptId = +deptId;
-  if (!MONTH_RE.test(String(month))) throw E.badInput('month 格式必须是 YYYY-MM');
+  if (!P.isMonth(month)) throw E.badInput('month 格式必须是 YYYY-MM（月份 01–12）');
   if (!db.prepare('SELECT 1 FROM depts WHERE id = ?').get(deptId)) throw E.notFound('科室不存在');
   assertSignImage(body);
   const today = P.today();
@@ -303,7 +336,7 @@ function signMonth(user, deptId, month, body) {
 }
 
 module.exports = {
-  REC_SELECT, WS_SELECT, MS_SELECT,
+  REC_SELECT, WS_SELECT, MS_SELECT, lockReason,
   recordJson, getRecord, getRecordRow, listRecords, putRecord, signRecord,
   listWeekSigns, signWeek, deptWeekState,
   listMonthSigns, signMonth, deptMonthState, loadItems

@@ -28,7 +28,7 @@ module.exports = async function statsRoutes(app) {
 
   app.get('/api/stats/completion', { preHandler: guard }, async req => {
     const month = req.query.month || P.moOf(P.today());
-    if (!/^\d{4}-\d{2}$/.test(month)) throw E.badInput('month 格式必须是 YYYY-MM');
+    if (!P.isMonth(month)) throw E.badInput('month 格式必须是 YYYY-MM（月份 01–12）');
     const deptId = req.query.deptId ? +req.query.deptId : null;
     if (deptId != null) app.assertDeptScope(req.user, deptId);
     return statsSvc.completion(scope(req.user), month, deptId);
@@ -43,7 +43,7 @@ module.exports = async function statsRoutes(app) {
 
   app.get('/api/stats/signatures', { preHandler: guard }, async req => {
     const month = req.query.month || P.moOf(P.today());
-    if (!/^\d{4}-\d{2}$/.test(month)) throw E.badInput('month 格式必须是 YYYY-MM');
+    if (!P.isMonth(month)) throw E.badInput('month 格式必须是 YYYY-MM（月份 01–12）');
     return statsSvc.signatures(scope(req.user), month);
   });
 };

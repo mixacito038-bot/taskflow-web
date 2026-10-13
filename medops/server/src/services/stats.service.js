@@ -2,28 +2,51 @@
 const { getDb } = require('../db/connection');
 const P = require('./period.service');
 
-/* 数据范围：deptIds=null 表示全院 */
-function scopedDepts(deptIds) {
+/* 数据范围：deptIds=null 表示全院。
+   month 给定时（按月的统计），全院范围除了启用中的科室，还要带上「该月有巡检记录」的停用科室——
+   停用而不删除就是为了保留历史；旧版只取启用科室，科室一停用，它过去几个月的完成率、
+   签字工作量就整体从统计里消失了。 */
+function scopedDepts(deptIds, month) {
   const db = getDb();
-  if (deptIds == null) return db.prepare("SELECT * FROM depts WHERE status = 'on' ORDER BY sort, id").all();
+  if (deptIds == null) {
+    if (!month) return db.prepare("SELECT * FROM depts WHERE status = 'on' ORDER BY sort, id").all();
+    return db.prepare(`SELECT * FROM depts d WHERE d.status = 'on'
+        OR EXISTS (SELECT 1 FROM records r WHERE r.dept_id = d.id AND r.date LIKE ? || '-%')
+      ORDER BY d.sort, d.id`).all(month);
+  }
   if (!deptIds.length) return [];
   const qs = deptIds.map(() => '?').join(',');
   return db.prepare(`SELECT * FROM depts WHERE id IN (${qs}) ORDER BY sort, id`).all(...deptIds);
 }
 
-/* GET /api/stats/unsigned：最近 7 天未日签 / 上周及更早未周签 / 上月未月签 */
+/* 科室从哪天开始算「应巡」：建科室那天；导入过更早的历史记录的，从最早一条记录算起。
+   旧版不看起点：今天新建的科室，首页立刻多出「前 7 天未日签」7 条提醒。 */
+function deptStart(d) {
+  const first = getDb().prepare('SELECT MIN(date) AS d FROM records WHERE dept_id = ?').get(d.id).d;
+  const created = P.shDateOf(d.created_at);
+  return first && first < created ? first : created;
+}
+const inUseCount = deptId =>
+  getDb().prepare("SELECT COUNT(*) AS c FROM devices WHERE dept_id = ? AND status = 'in_use'").get(deptId).c;
+
+/* GET /api/stats/unsigned：最近 7 天未日签 / 上周及更早未周签 / 已结束但未月签的月 */
 function unsigned(deptIds) {
   const db = getDb();
   const t = P.today();
-  const depts = scopedDepts(deptIds);
+  // 提醒只针对启用中的科室（停用科室不再有人巡检，提醒了也没人处理）
+  const depts = scopedDepts(deptIds).filter(d => d.status === 'on');
   const days = [], weeks = [], months = [];
   const curWeek = P.wkOf(t);
-  const prevMo = P.prevMonth(P.moOf(t));
   for (const d of depts) {
-    for (let i = 1; i <= 7; i++) {
-      const date = P.addDay(t, -i);
-      const r = db.prepare('SELECT sign_at FROM records WHERE dept_id = ? AND date = ?').get(d.id, date);
-      if (!r || !r.sign_at) days.push({ deptId: String(d.id), date });
+    const start = deptStart(d);
+    // 日：最近 7 天、且在科室起算日之后；没有在用设备的科室无事可做，不提醒
+    if (inUseCount(d.id) > 0) {
+      for (let i = 1; i <= 7; i++) {
+        const date = P.addDay(t, -i);
+        if (date < start) break;
+        const r = db.prepare('SELECT sign_at FROM records WHERE dept_id = ? AND date = ?').get(d.id, date);
+        if (!r || !r.sign_at) days.push({ deptId: String(d.id), date });
+      }
     }
     // 周：自该科室最早记录所在周起（最多回溯 12 周），到上周为止，缺周签的
     const first = db.prepare('SELECT MIN(date) AS d FROM records WHERE dept_id = ?').get(d.id).d;
@@ -36,13 +59,22 @@ function unsigned(deptIds) {
         if (!signed.has(w)) weeks.push({ deptId: String(d.id), week: w });
         w = P.addDay(w, 7);
       }
-    }
-    // 月：上月有巡检记录但未月签的
-    const hasRec = db.prepare("SELECT 1 FROM records WHERE dept_id = ? AND date LIKE ? || '-%' LIMIT 1").get(d.id, prevMo);
-    if (hasRec && !db.prepare('SELECT 1 FROM month_signs WHERE dept_id = ? AND month = ?').get(d.id, prevMo)) {
-      months.push({ deptId: String(d.id), month: prevMo });
+      /* 月：最后一周已经结束（可以月签了）、覆盖范围内有巡检记录、却还没月签的月。
+         旧版只看「上个月」：8 月没签、到了 10 月，提醒里就再也看不到 8 月了。最多回溯 12 个月。 */
+      const signedMo = new Set(db.prepare('SELECT month FROM month_signs WHERE dept_id = ?').all(d.id).map(r => r.month));
+      let m = P.moOf(t);
+      for (let i = 0; i < 12; i++) {
+        m = P.prevMonth(m);
+        const span = P.monthSpan(m);
+        if (span.to < P.wkOf(first)) break;
+        if (span.to >= t || signedMo.has(m)) continue;
+        if (db.prepare('SELECT 1 FROM records WHERE dept_id = ? AND date >= ? AND date <= ? LIMIT 1').get(d.id, span.from, span.to)) {
+          months.push({ deptId: String(d.id), month: m });
+        }
+      }
     }
   }
+  months.sort((a, b) => a.month.localeCompare(b.month) || a.deptId - b.deptId);
   return { days, weeks, months };
 }
 
@@ -50,19 +82,21 @@ function unsigned(deptIds) {
 function completion(deptIds, month, deptId) {
   const db = getDb();
   const t = P.today();
-  let depts = scopedDepts(deptIds);
+  let depts = scopedDepts(deptIds, month);
   if (deptId != null) depts = depts.filter(d => d.id === +deptId);
   /* 周签进度的分母 = 归属该月的全部周（与月签就绪条件一致）；
      旧版只算已开始的周，本月中途会显示 1/2 这种"看着快齐了"的假进度 */
   const wks = P.wksOfMonth(month);
-  // 应巡天数：该月内 ≤今天 的天数
-  const last = +P.addDay(P.moOf(t) === month ? t : `${month}-01`, 0).slice(8, 10);
-  let dueDays = 0;
-  if (month < P.moOf(t)) { // 已结束的月：整月天数
-    const d = P.D(`${month}-01`); d.setMonth(d.getMonth() + 1); d.setDate(0);
-    dueDays = d.getDate();
-  } else if (month === P.moOf(t)) dueDays = last;
+  /* 应巡天数：该月内、科室起算日之后、≤今天 的天数（按科室分别算：月中新建的科室不该按整月算缺签） */
+  const monthEnd = (() => { const d = P.D(`${month}-01`); d.setMonth(d.getMonth() + 1); d.setDate(0); return P.fmt(d); })();
+  const dueOf = d => {
+    let from = `${month}-01`; const to = monthEnd < t ? monthEnd : t;
+    const st = deptStart(d); if (st > from) from = st;
+    if (from > to) return 0;
+    return Math.round((P.D(to) - P.D(from)) / 864e5) + 1;
+  };
   return depts.map(d => {
+    const dueDays = dueOf(d);
     const rows = db.prepare("SELECT * FROM records WHERE dept_id = ? AND date LIKE ? || '-%'").all(d.id, month);
     const signedDays = rows.filter(r => r.sign_at).length;
     let checked = 0, ng = 0;
@@ -76,7 +110,7 @@ function completion(deptIds, month, deptId) {
       db.prepare('SELECT 1 FROM week_signs WHERE dept_id = ? AND week_start = ?').get(d.id, w)).length;
     const monthSigned = !!db.prepare('SELECT 1 FROM month_signs WHERE dept_id = ? AND month = ?').get(d.id, month);
     return {
-      deptId: String(d.id), deptName: d.name,
+      deptId: String(d.id), deptName: d.name, deptStatus: d.status,
       dueDays, signedDays, checked, ng,
       weekSigned, weekTotal: wks.length, monthSigned
     };
@@ -113,7 +147,7 @@ function ngList(deptIds, { from, to, deptId }) {
    关联不上的历史签字（对象已删除）按签字当时的姓名单独成行。 */
 function signatures(deptIds, month) {
   const db = getDb();
-  const depts = scopedDepts(deptIds);
+  const depts = scopedDepts(deptIds, month);
   const out = [];
   for (const d of depts) {
     const acc = new Map(); // key → {name, title, day, week, month}

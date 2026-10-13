@@ -175,3 +175,44 @@ test('monthState：全部周签齐 → ready；统计；已月签锁定；其它
   st = P.monthState({ month, today: '2026-08-04', weekSignWeeks: allWeeks, recs: [], ms: { id: 9 } });
   assert.equal(st.locked, true);
 });
+
+test('月锁归属：一天归哪个月的月签管，看它所在的周归哪个月（不是看日期本身的月份）', () => {
+  // 2026-08-01（周六）、08-02（周日）属于 07-27 那一周 → 归 7 月
+  assert.equal(P.signMonthOf('2026-08-01'), '2026-07');
+  assert.equal(P.signMonthOf('2026-08-02'), '2026-07');
+  assert.equal(P.signMonthOf('2026-08-03'), '2026-08');
+  // 2026-09-01～09-06 属于 08-31 那一周 → 归 8 月
+  assert.equal(P.signMonthOf('2026-09-01'), '2026-08');
+  assert.equal(P.signMonthOf('2026-09-06'), '2026-08');
+  assert.equal(P.signMonthOf('2026-09-07'), '2026-09');
+  // 跨年：2026-01-01～01-04 属于 2025-12-29 那一周 → 归 2025-12
+  assert.equal(P.signMonthOf('2026-01-02'), '2025-12');
+  // 与 wksOfMonth 一致：任何一天都恰好落在它所属月份的某一周里
+  for (let d = '2025-11-20'; d <= '2027-02-10'; d = P.addDay(d, 1)) {
+    assert.ok(P.wksOfMonth(P.signMonthOf(d)).includes(P.wkOf(d)), d);
+  }
+});
+
+test('月签覆盖范围 monthSpan：第一周周一 ～ 最后一周周日，首尾可跨月', () => {
+  assert.deepEqual(P.monthSpan('2026-08'), { from: '2026-08-03', to: '2026-09-06' });
+  assert.deepEqual(P.monthSpan('2026-07'), { from: '2026-07-06', to: '2026-08-02' });
+  assert.deepEqual(P.monthSpan('2026-02'), { from: '2026-02-02', to: '2026-03-01' });
+  assert.deepEqual(P.monthSpan('2025-12'), { from: '2025-12-01', to: '2026-01-04' });
+  // 相邻两个月的覆盖范围首尾相接、不重叠、不留缝
+  for (let m = '2027-06'; m > '2025-01'; m = P.prevMonth(m)) {
+    const prev = P.prevMonth(m);
+    assert.equal(P.addDay(P.monthSpan(prev).to, 1), P.monthSpan(m).from, `${prev} → ${m}`);
+  }
+});
+
+test('isMonth：只接受 01–12 月', () => {
+  for (const ok of ['2026-01', '2026-09', '2026-12']) assert.equal(P.isMonth(ok), true, ok);
+  for (const bad of ['2026-00', '2026-13', '2026-1', '26-01', '2026/01', '', null, undefined]) assert.equal(P.isMonth(bad), false, String(bad));
+});
+
+test('shDateOf：UTC 时刻换算成上海日期；上海日期 → UTC 区间', () => {
+  assert.equal(P.shDateOf('2026-10-12T15:59:59.000Z'), '2026-10-12');
+  assert.equal(P.shDateOf('2026-10-12T16:00:00.000Z'), '2026-10-13'); // 上海 10-13 00:00
+  assert.equal(P.shDayStartIso('2026-10-13'), '2026-10-12T16:00:00.000Z');
+  assert.equal(P.shDayEndIso('2026-10-13'), '2026-10-13T15:59:59.999Z');
+});

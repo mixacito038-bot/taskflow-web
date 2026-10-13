@@ -23,15 +23,36 @@ function embedSign(wb, ws, fileId, row, col) {
   ws.getRow(row).height = 36;
 }
 
+/* 月报矩阵的设备行 = 该月在本科室实际巡检过的设备 ∪ 本科室当前在用、该月之前已建档的设备。
+   ⚠ 旧版只取「当前台账里属于本科室的设备」：设备一调拨，它在原科室历史月报里的整行（连同 ✗）
+   消失，同一份文件的异常清单却还有它；调入科室的历史月报又凭空多出一整行空白，像整月漏检。
+   已月签归档的月报不能随台账变动而变。
+   当前在用设备整月没有巡检记录会显示为空行（真实漏检）；但该月在别的科室被巡检过的
+   （月中调拨进来的）不算本科室漏检，不出空行。 */
+function monthDevices(deptId, month, monthEnd, itemMap) {
+  const db = getDb();
+  const seen = new Set([...itemMap.values()].map(it => it.device_id));
+  const elsewhere = new Set(db.prepare(`SELECT DISTINCT ri.device_id FROM record_items ri JOIN records r ON r.id = ri.record_id
+    WHERE r.dept_id <> ? AND r.date LIKE ? || '-%'`).all(deptId, month).map(r => r.device_id));
+  const rows = [...seen].map(id => db.prepare(`SELECT v.*, d.name AS now_dept FROM devices v
+    JOIN depts d ON d.id = v.dept_id WHERE v.id = ?`).get(id)).filter(Boolean);
+  for (const v of db.prepare("SELECT * FROM devices WHERE dept_id = ? AND status = 'in_use'").all(deptId)) {
+    if (seen.has(v.id) || elsewhere.has(v.id) || P.shDateOf(v.created_at) > monthEnd) continue;
+    rows.push(v);
+  }
+  return rows
+    .map(v => ({ ...v, label: v.dept_id !== deptId ? `${v.name}（现属${v.now_dept}）` : v.name }))
+    .sort((a, b) => (a.dept_id !== deptId) - (b.dept_id !== deptId) || a.sort - b.sort || a.code.localeCompare(b.code));
+}
+
 /* 月报：设备×日期矩阵(✓/✗) + 异常清单 + 三级签名（嵌图） */
 async function monthlyXlsx(deptId, month) {
   const db = getDb();
   deptId = +deptId;
   const dept = db.prepare('SELECT * FROM depts WHERE id = ?').get(deptId);
   if (!dept) throw E.notFound('科室不存在');
-  if (!/^\d{4}-\d{2}$/.test(String(month))) throw E.badInput('month 格式必须是 YYYY-MM');
+  if (!P.isMonth(month)) throw E.badInput('month 格式必须是 YYYY-MM（月份 01–12）');
 
-  const devices = db.prepare('SELECT * FROM devices WHERE dept_id = ? ORDER BY sort, code').all(deptId);
   const days = daysOfMonth(month);
   const recs = db.prepare(`${REC_SELECT} WHERE r.dept_id = ? AND r.date LIKE ? || '-%'`).all(deptId, month);
   const recByDate = new Map(recs.map(r => [r.date, r]));
@@ -41,6 +62,7 @@ async function monthlyXlsx(deptId, month) {
       itemMap.set(`${r.date}|${it.device_id}`, it);
     }
   }
+  const devices = monthDevices(deptId, month, days[days.length - 1], itemMap);
 
   const wb = new ExcelJS.Workbook();
 
@@ -54,7 +76,7 @@ async function monthlyXlsx(deptId, month) {
   ws.getColumn(1).width = 14; ws.getColumn(2).width = 20; ws.getColumn(3).width = 12;
   for (let i = 0; i < days.length; i++) ws.getColumn(4 + i).width = 3.6;
   for (const dv of devices) {
-    ws.addRow([dv.code, dv.name, dv.cat_name, ...days.map(d => {
+    ws.addRow([dv.code, dv.label, dv.cat_name, ...days.map(d => {
       const it = itemMap.get(`${d}|${dv.id}`);
       return it ? (it.result === 'ok' ? '✓' : '✗') : '';
     })]);
@@ -86,20 +108,23 @@ async function monthlyXlsx(deptId, month) {
   }
   const ms = db.prepare(`${MS_SELECT} WHERE ms.dept_id = ? AND ms.month = ?`).get(deptId, month);
   if (ms) {
-    r = ws3.addRow(['月签', month, ms.signer_live || ms.sign_name, ms.sign_opinion || '', ms.sign_at, '']).number;
+    // 月签覆盖的是归属本月的各周（周一在本月），首尾可能跨到上月末、下月初，写明范围免得对不上
+    const span = P.monthSpan(month);
+    r = ws3.addRow(['月签', `${month}（${span.from.slice(5)}～${span.to.slice(5)}）`, ms.signer_live || ms.sign_name,
+      ms.sign_opinion || '', ms.sign_at, '']).number;
     embedSign(wb, ws3, ms.sign_file_id, r, 5);
   }
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-/* 异常清单表 */
-async function ngXlsx(deptIds, { from, to }) {
+/* 异常清单表（deptId 可选：与页面上的科室筛选一致，旧版忽略科室条件、总是导出全院） */
+async function ngXlsx(deptIds, { from, to, deptId }) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('异常清单');
   ws.addRow(['日期', '科室', '设备编码', '设备名称', '品类', '异常说明', '巡检员']).font = { bold: true };
   [12, 14, 14, 20, 12, 40, 12].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
-  for (const x of statsSvc.ngList(deptIds, { from, to })) {
+  for (const x of statsSvc.ngList(deptIds, { from, to, deptId })) {
     ws.addRow([x.date, x.deptName, x.deviceCode, x.deviceName, x.catName, x.note, x.inspectorName]);
   }
   return Buffer.from(await wb.xlsx.writeBuffer());
