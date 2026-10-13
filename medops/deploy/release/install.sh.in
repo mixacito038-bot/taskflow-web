@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  急救设备巡检系统 · 一键升级包    版本 @VERSION@（代码提交 @COMMIT@）
+#
+#  用法：上传到服务器后，用 root 执行一次即可
+#      bash /root/medops-upgrade-@VERSION@.sh
+#
+#  会依次自动完成：
+#    1. 检查环境、校验升级包是否完整（这一步之前什么都不会改）
+#    2. 备份数据（数据库 + 签名图）    3. 备份旧代码（用于回退）
+#    4. 覆盖新代码                     5. 重新构建并启动
+#    6. 健康检查——不通过就自动回退到升级前的版本，网站不会停在坏掉的状态
+#    7. 签字数据体检，打印总结
+#
+#  升级在后台运行：SSH 断线也不会中断，重新连上后看记录文件即可。
+#  不会动的东西：.env（密钥、端口）、HTTPS 证书、nginx 配置、资产盘点(pandian)、数据目录。
+# =============================================================================
+set -euo pipefail
+
+VERSION="@VERSION@"
+COMMIT="@COMMIT@"
+PAYLOAD_SHA256="@SHA256@"
+SERVER_IP="49.234.179.153"
+
+APP="${MEDOPS_APP_DIR:-/opt/medops}"          # 代码目录（= 仓库里的 medops/）
+OPS="$APP/deploy/tencent"                      # 运维目录（manage.sh、.env 所在）
+OUTDIR="${MEDOPS_OUT_DIR:-/root}"              # 记录、数据备份、回退脚本放这里
+SELF="$(readlink -f "$0")"
+
+# =============================================================================
+#  前台：把升级放到后台运行（nohup，SSH 断线不中断），自己只负责实时显示进度
+# =============================================================================
+if [ "${1:-}" != "--worker" ]; then
+  mkdir -p "$OUTDIR"
+  TS=$(date +%Y%m%d-%H%M%S)
+  LOG="$OUTDIR/medops-upgrade-$VERSION-$TS.log"
+  : > "$LOG"
+  nohup bash "$SELF" --worker "$TS" > "$LOG" 2>&1 < /dev/null &
+  WPID=$!
+  echo "升级已开始，在后台运行（SSH 断开也不会中断）。"
+  echo "如果中途断线，重新连上服务器后执行下面这条继续看进度："
+  echo "  tail -f $LOG"
+  echo
+  tail -n +1 -f --pid="$WPID" "$LOG" 2>/dev/null || true
+  set +e; wait "$WPID"; code=$?
+  exit "$code"
+fi
+
+# =============================================================================
+#  后台：真正的升级流程（输出全部写进记录文件）
+# =============================================================================
+TS="${2:?}"
+LOG="$OUTDIR/medops-upgrade-$VERSION-$TS.log"
+BAK_CODE="$APP.bak-$TS"
+BAK_DATA="$OUTDIR/medops-backup-$TS.tar.gz"
+ROLLBACK="$OUTDIR/medops-rollback-$TS.sh"
+STAGE=""
+STATE="检查"                                    # 检查 → 已备份 → 已替换 → 完成
+
+step() { echo; echo "==== [$1/7] $2 ===="; }
+ok()   { echo "  ✓ $*"; }
+warn() { echo "  ! $*"; }
+die()  {
+  echo; echo "  ✗ $*"
+  if [ "$STATE" = 检查 ] || [ "$STATE" = 已备份 ]; then
+    echo "  升级已停止。系统没有被改动，网站照常运行。"
+  fi
+  echo "  完整记录：$LOG （有问题把这个文件或上面的输出发给 Claude）"
+  exit 1
+}
+LOCK="$OUTDIR/.medops-upgrade.lock"
+cleanup() {
+  if [ -n "$STAGE" ]; then rm -rf "$STAGE"; fi
+  if [ "$(cat "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi
+}
+trap cleanup EXIT
+on_error() {
+  local code=$? line=$1
+  if [ "$STATE" = 已替换 ]; then echo "  ✗ 第 $line 行出错（退出码 $code）"; rollback; fi
+  die "第 $line 行出错（退出码 $code）"
+}
+trap 'on_error $LINENO' ERR
+
+# 同一时间只允许一个升级在跑（防止连按两次）。用 PID 文件而不是 flock：
+# flock 的文件描述符会被启动的子进程继承，子进程不退出锁就一直不放
+if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
+  die "已经有一个升级正在进行，请等它结束（或查看 $OUTDIR 下最新的 medops-upgrade-*.log）"
+fi
+echo $$ > "$LOCK"
+
+# ---------- 对外地址（与 manage.sh 状态 的自检一致） ----------
+read_env() { grep -E "^$1=" "$OPS/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'" || true; }
+WEB_PORT=""; BASE=""
+set_base() {
+  WEB_PORT=$(read_env WEB_PORT); WEB_PORT=${WEB_PORT:-8912}
+  local inner; inner=$(read_env WEB_INNER_PORT)
+  if [ "${inner:-80}" = 443 ]; then BASE="https://127.0.0.1:$WEB_PORT"; else BASE="http://127.0.0.1:$WEB_PORT"; fi
+}
+http_code() { curl -sk -o /dev/null -w '%{http_code}' --max-time 6 "$BASE$1" 2>/dev/null || echo 000; }
+wait_healthy() {
+  # 后端启动、执行数据库升级、nginx 就绪，一般 10～40 秒；最多等 3 分钟
+  local i
+  for i in $(seq 1 60); do
+    [ "$(http_code /api/health)" = 200 ] && return 0
+    sleep 3
+  done
+  return 1
+}
+pages_ok() {
+  local u c bad=0
+  for u in /api/health /xunjian/ /admin/; do
+    c=$(http_code "$u")
+    if [ "$c" = 200 ]; then ok "$u  $c"; else warn "$u  $c"; bad=1; fi
+  done
+  return $bad
+}
+
+rollback() {
+  trap - ERR
+  set +e
+  echo
+  echo "==== 新版本没能正常运行，正在自动回退到升级前的版本 ===="
+  echo "  （先把出错时的后端日志留在记录里）"
+  (cd "$OPS" && docker compose logs --tail=60 api) 2>&1 | sed 's/^/    /'
+  mv "$APP" "$APP.failed-$TS" && cp -a "$BAK_CODE" "$APP"
+  (cd "$OPS" && docker compose up -d --build) 2>&1 | sed 's/^/  /'
+  if wait_healthy && pages_ok; then
+    echo
+    echo "  ✓ 已回退到升级前的版本，网站正常运行，数据没有受影响。"
+  else
+    echo
+    echo "  ✗ 回退后仍未恢复。请执行： cd $OPS && bash manage.sh 状态"
+    echo "    并把输出连同 $LOG 发给 Claude。数据备份在：$BAK_DATA"
+  fi
+  echo "  这次失败的代码留在 $APP.failed-$TS 供排查；完整记录：$LOG"
+  exit 1
+}
+
+echo "急救设备巡检系统 · 一键升级"
+echo "  升级包版本：$VERSION（代码提交 $COMMIT）"
+echo "  开始时间：$(date '+%Y-%m-%d %H:%M:%S')"
+
+# ============================================================================
+step 1 "检查环境、校验升级包"
+[ "$(id -u)" = 0 ] || [ -n "${MEDOPS_ALLOW_NONROOT:-}" ] || die "请用 root 执行（先 sudo -i 再运行）"
+[ -f "$OPS/manage.sh" ] && [ -f "$OPS/.env" ] || die "没找到 $OPS/manage.sh 或 .env —— 这台服务器上还没部署过巡检系统，或者目录不是 $APP"
+command -v docker >/dev/null 2>&1 || die "没找到 docker 命令"
+docker compose version >/dev/null 2>&1 || die "docker compose 不可用"
+command -v curl >/dev/null 2>&1 || die "没找到 curl 命令"
+ok "部署目录：$APP"
+AVAIL_KB=$(df -Pk / | awk 'NR==2{print $4}')
+if [ "${AVAIL_KB:-0}" -lt 1572864 ]; then
+  die "系统盘只剩 $((AVAIL_KB / 1024)) MB，至少要 1.5 GB 才能安全构建。先执行 docker builder prune -f 清理构建缓存再升级"
+fi
+ok "系统盘剩余 $((AVAIL_KB / 1024 / 1024)) GB"
+LINE=$(awk '/^__PAYLOAD_BELOW__$/{print NR+1; exit}' "$SELF")
+[ -n "$LINE" ] || die "升级包不完整（找不到数据段），请重新下载、重新上传"
+STAGE=$(mktemp -d)
+tail -n +"$LINE" "$SELF" | base64 -d > "$STAGE/payload.tgz" 2>/dev/null || die "升级包数据损坏，请重新下载、重新上传"
+echo "$PAYLOAD_SHA256  $STAGE/payload.tgz" | sha256sum -c --status || die "升级包校验不通过（上传不完整或文件被改过），请重新下载、重新上传"
+mkdir -p "$STAGE/new"
+tar xzf "$STAGE/payload.tgz" -C "$STAGE/new" --no-same-owner
+[ -f "$STAGE/new/server/src/index.js" ] && [ -f "$STAGE/new/h5/index.html" ] && [ -f "$STAGE/new/admin/dist/index.html" ] \
+  || die "升级包内容不完整，请重新下载"
+ok "升级包完整（$(find "$STAGE/new" -type f | wc -l) 个文件，校验通过）"
+if [ -f "$APP/RELEASE" ]; then ok "当前版本：$(grep '^version=' "$APP/RELEASE" | cut -d= -f2)"; fi
+set_base
+BEFORE=$(http_code /api/health)
+if [ "$BEFORE" = 200 ]; then ok "当前网站正常运行（$BASE）"; else warn "当前网站没有正常响应（$BEFORE），继续升级，升级后一并检查"; fi
+
+# ============================================================================
+step 2 "备份数据（数据库 + 签名图）"
+# manage.sh 自己也会提示怎么把备份拉回本地，这里去掉，最后统一给
+(cd "$OPS" && bash manage.sh 备份 "$BAK_DATA") 2>&1 \
+  | sed -e '/备份和数据在同一台机器上/d' -e '/请在自己电脑上执行下面这条/d' -e '/^ *scp root@/d' -e '/^ *$/d' -e 's/^/  /'
+[ -s "$BAK_DATA" ] || die "数据备份失败，已停止升级"
+STATE=已备份
+ok "数据备份：$BAK_DATA（$(du -h "$BAK_DATA" | cut -f1)）"
+
+# ============================================================================
+step 3 "备份旧代码（用于回退）"
+cp -a "$APP" "$BAK_CODE"
+ok "旧代码：$BAK_CODE"
+cat > "$ROLLBACK" <<ROLL
+#!/usr/bin/env bash
+# 回到 $TS 升级之前的版本（数据不受影响；新版本加的数据库字段旧版本会忽略）
+set -e
+cd "$OPS" && docker compose down
+mv "$APP" "$APP.rolledback-\$(date +%Y%m%d-%H%M%S)"
+cp -a "$BAK_CODE" "$APP"
+cd "$OPS" && docker compose up -d --build
+sleep 8 && bash manage.sh 状态
+ROLL
+chmod +x "$ROLLBACK"
+# 旧代码备份只留最近 3 份，免得占满磁盘
+{ ls -1dt "$APP".bak-* 2>/dev/null || true; } | tail -n +4 | while read -r d; do rm -rf "$d"; ok "清理较早的代码备份：$d"; done
+
+# ============================================================================
+step 4 "覆盖新代码"
+STATE=已替换
+# 管理后台是构建产物，文件名带哈希：整体替换，不留旧文件
+if [ -d "$STAGE/new/admin/dist" ]; then rm -rf "$APP/admin/dist"; fi
+cp -a "$STAGE/new/." "$APP/"
+printf 'version=%s\ncommit=%s\ninstalled_at=%s\n' "$VERSION" "$COMMIT" "$(date '+%Y-%m-%d %H:%M:%S')" > "$APP/RELEASE"
+ok "新代码已就位（.env、证书、nginx 配置、资产盘点未改动）"
+
+# ============================================================================
+step 5 "重新构建并启动（1～3 分钟，请稍候）"
+if ! (cd "$OPS" && docker compose up -d --build) 2>&1 | sed 's/^/  /'; then
+  echo "  ✗ 构建或启动失败"; rollback
+fi
+ok "容器已启动"
+
+# ============================================================================
+step 6 "健康检查（新版本首次启动会自动升级数据库结构）"
+if ! wait_healthy; then echo "  ✗ 3 分钟内后端没有就绪"; rollback; fi
+pages_ok || { echo "  ✗ 有页面打不开"; rollback; }
+STATE=完成
+ok "新版本运行正常"
+
+# ============================================================================
+step 7 "签字数据体检（只读）"
+if [ -f "$APP/server/src/scripts/check-signs.js" ]; then
+  (cd "$OPS" && docker compose exec -T api node src/scripts/check-signs.js) 2>&1 | sed 's/^/  /' \
+    || warn "体检没跑成功（不影响使用），稍后可手动执行：cd $OPS && bash manage.sh 体检"
+fi
+# 清掉旧版本留下的无用镜像、7 天前的构建缓存（以前构建缓存攒到 17GB 把磁盘占满过）
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
+
+echo
+echo "==================================================================="
+echo "  ✓ 升级完成：$VERSION（代码提交 $COMMIT）  $(date '+%Y-%m-%d %H:%M:%S')"
+echo "==================================================================="
+echo "  · 电脑上打开管理后台按 Ctrl+F5 刷新；手机上关掉巡检页面重新打开"
+echo "  · 签名图片暂时不显示的，重新登录一次即可"
+echo "  · 上面「体检」若列出 ✗，管理员到后台「周签 / 月签」作废这些提前签的签字（先月签、再周签）"
+echo
+echo "  数据备份：$BAK_DATA"
+echo "    建议拉回院内电脑保存（在你自己电脑上执行，二选一）："
+echo "      Windows（PowerShell）：scp root@$SERVER_IP:$BAK_DATA \$HOME\\Downloads"
+echo "      Mac（终端）：          scp root@$SERVER_IP:$BAK_DATA ~/Downloads/"
+echo "  想退回升级前的版本：bash $ROLLBACK"
+echo "  完整记录：$LOG"
+exit 0
