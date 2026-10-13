@@ -58,22 +58,33 @@ module.exports = async function adminRoutes(app) {
   const adminOnly = [app.auth, app.requireRole('admin')];
   const db = () => getDb();
 
-  /* ---------- 用户 ---------- */
+  /* ---------- 用户 ----------
+     设备科可以管理巡检员、护士长、设备科账号；「管理员」账号的创建、修改、重置密码，
+     以及授予管理员权限，只能由管理员操作——否则设备科能把自己改成管理员，
+     或重置管理员密码直接接管管理员账号。 */
+  const assertDeptsExist = ids => {
+    for (const id of ids) if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(id)) throw E.badInput(`科室 ${id} 不存在`);
+  };
+  const activeAdminsExcept = id => db().prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND status = 'on' AND id <> ?").get(id).c;
+
   app.get('/api/admin/users', { preHandler: guard }, async () =>
     db().prepare('SELECT * FROM users ORDER BY id').all().map(u => userJsonRow(db(), u)));
 
   app.post('/api/admin/users', { preHandler: guard }, async req => {
-    const { username, password, displayName, role, deptIds } = req.body || {};
-    if (!username || typeof username !== 'string') throw E.badInput('缺少 username');
+    const { password, displayName, role, deptIds } = req.body || {};
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+    if (!username) throw E.badInput('缺少 username');
     if (!password || String(password).length < 6) throw E.badInput('密码至少 6 位');
     if (!ROLES.includes(role)) throw E.badInput('role 不正确');
-    const list = Array.isArray(deptIds) ? deptIds : [];
-    if (role === 'dept' && list.length !== 1) throw E.badInput('dept 角色必须指定恰好 1 个科室');
+    if (role === 'admin' && req.user.role !== 'admin') throw E.forbidden('只有管理员可以创建管理员账号');
+    const list = (Array.isArray(deptIds) ? deptIds : []).map(Number);
+    if (role === 'dept' && list.length !== 1) throw E.badInput('护士长账号必须指定恰好 1 个科室');
+    assertDeptsExist(list);
     if (db().prepare('SELECT 1 FROM users WHERE username = ?').get(username)) throw E.conflict('账号已存在');
     const id = db().transaction(() => {
       const uid = db().prepare(`INSERT INTO users (username, password_hash, display_name, role, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(username, bcrypt.hashSync(String(password), 10), String(displayName || username), role, nowIso(), nowIso())
+        .run(username, bcrypt.hashSync(String(password), 10), String(displayName || '').trim() || username, role, nowIso(), nowIso())
         .lastInsertRowid;
       setUserDepts(db(), uid, list);
       return uid;
@@ -86,15 +97,29 @@ module.exports = async function adminRoutes(app) {
     const u = db().prepare('SELECT * FROM users WHERE id = ?').get(+req.params.id);
     if (!u) throw E.notFound('用户不存在');
     const b = req.body || {};
+    const isAdmin = req.user.role === 'admin';
+    if (u.role === 'admin' && !isAdmin) throw E.forbidden('管理员账号只能由管理员修改');
+    if (b.role === 'admin' && !isAdmin) throw E.forbidden('只有管理员可以授予管理员权限');
+    if (b.role != null && !ROLES.includes(b.role)) throw E.badInput('role 不正确');
+    if (b.status != null && !['on', 'off'].includes(b.status)) throw E.badInput('status 不正确');
+    if (b.displayName != null && !String(b.displayName).trim()) throw E.badInput('显示名不能为空');
+    const nextRole = b.role != null ? b.role : u.role;
+    const nextDepts = Array.isArray(b.deptIds) ? b.deptIds.map(Number)
+      : db().prepare('SELECT dept_id FROM user_depts WHERE user_id = ?').all(u.id).map(r => r.dept_id);
+    // 新建时要求护士长恰好 1 个科室，修改时以前不查，能改出 0 个或多个科室的护士长
+    if (nextRole === 'dept' && nextDepts.length !== 1) throw E.badInput('护士长账号必须指定恰好 1 个科室');
+    if (Array.isArray(b.deptIds)) assertDeptsExist(nextDepts);
+    // 不能把自己锁在门外，也不能让系统没有可用的管理员
+    if (u.id === req.user.id && b.status === 'off') throw E.badInput('不能停用自己正在使用的账号');
+    if (u.id === req.user.id && b.role != null && b.role !== u.role) throw E.badInput('不能修改自己的角色');
+    if (u.role === 'admin' && (b.status === 'off' || (b.role != null && b.role !== 'admin')) && !activeAdminsExcept(u.id)) {
+      throw E.badInput('系统至少要保留一个启用的管理员账号');
+    }
     db().transaction(() => {
-      if (b.displayName != null) db().prepare('UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?').run(String(b.displayName), nowIso(), u.id);
-      if (b.role != null) {
-        if (!ROLES.includes(b.role)) throw E.badInput('role 不正确');
-        db().prepare('UPDATE users SET role = ?, updated_at = ? WHERE id = ?').run(b.role, nowIso(), u.id);
-      }
-      if (Array.isArray(b.deptIds)) setUserDepts(db(), u.id, b.deptIds);
+      if (b.displayName != null) db().prepare('UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?').run(String(b.displayName).trim(), nowIso(), u.id);
+      if (b.role != null) db().prepare('UPDATE users SET role = ?, updated_at = ? WHERE id = ?').run(b.role, nowIso(), u.id);
+      if (Array.isArray(b.deptIds)) setUserDepts(db(), u.id, nextDepts);
       if (b.status != null) {
-        if (!['on', 'off'].includes(b.status)) throw E.badInput('status 不正确');
         db().prepare('UPDATE users SET status = ?, updated_at = ? WHERE id = ?').run(b.status, nowIso(), u.id);
         if (b.status === 'off') authSvc.revokeAllTokens(u.id); // 禁用即吊销全部 refreshToken
       }
@@ -106,9 +131,12 @@ module.exports = async function adminRoutes(app) {
   app.post('/api/admin/users/:id/reset-password', { preHandler: guard }, async req => {
     const u = db().prepare('SELECT * FROM users WHERE id = ?').get(+req.params.id);
     if (!u) throw E.notFound('用户不存在');
+    if (u.role === 'admin' && req.user.role !== 'admin') throw E.forbidden('管理员账号的密码只能由管理员重置');
     const password = crypto.randomBytes(6).toString('base64url');
-    db().prepare('UPDATE users SET password_hash = ?, must_change = 1, fail_count = 0, frozen_until = NULL, updated_at = ? WHERE id = ?')
-      .run(bcrypt.hashSync(password, 10), nowIso(), u.id);
+    db().prepare(`UPDATE users SET password_hash = ?, must_change = 1, fail_count = 0, freeze_level = 0,
+      frozen_until = NULL, updated_at = ? WHERE id = ?`).run(bcrypt.hashSync(password, 10), nowIso(), u.id);
+    // 重置密码 = 让旧会话全部失效：怀疑密码泄露才去重置，对方的登录不能还继续有效
+    authSvc.revokeAllTokens(u.id);
     authSvc.audit(req.user.id, 'user_reset_password', `id=${u.id}`, req.ip);
     return { password };
   });
@@ -119,10 +147,11 @@ module.exports = async function adminRoutes(app) {
 
   app.post('/api/admin/depts', { preHandler: guard }, async req => {
     const b = req.body || {};
-    if (!b.name) throw E.badInput('缺少科室名称');
-    if (db().prepare('SELECT 1 FROM depts WHERE name = ?').get(b.name)) throw E.conflict('科室名称已存在');
+    const name = String(b.name || '').trim();
+    if (!name) throw E.badInput('缺少科室名称');
+    if (db().prepare('SELECT 1 FROM depts WHERE name = ?').get(name)) throw E.conflict('科室名称已存在');
     const id = db().prepare('INSERT INTO depts (name, code, sort, status, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(String(b.name), String(b.code || ''), +b.sort || 0, b.status === 'off' ? 'off' : 'on', nowIso()).lastInsertRowid;
+      .run(name, String(b.code || ''), +b.sort || 0, b.status === 'off' ? 'off' : 'on', nowIso()).lastInsertRowid;
     return deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(id));
   });
 
@@ -130,10 +159,11 @@ module.exports = async function adminRoutes(app) {
     const d = db().prepare('SELECT * FROM depts WHERE id = ?').get(+req.params.id);
     if (!d) throw E.notFound('科室不存在');
     const b = req.body || {};
-    if (b.name != null && b.name !== d.name &&
-      db().prepare('SELECT 1 FROM depts WHERE name = ?').get(b.name)) throw E.conflict('科室名称已存在');
+    const name = b.name != null ? String(b.name).trim() : d.name;
+    if (!name) throw E.badInput('科室名称不能为空');
+    if (name !== d.name && db().prepare('SELECT 1 FROM depts WHERE name = ?').get(name)) throw E.conflict('科室名称已存在');
     db().prepare('UPDATE depts SET name = ?, code = ?, sort = ?, status = ? WHERE id = ?')
-      .run(String(b.name ?? d.name), String(b.code ?? d.code), +(b.sort ?? d.sort),
+      .run(name, String(b.code ?? d.code), +(b.sort ?? d.sort),
         ['on', 'off'].includes(b.status) ? b.status : d.status, d.id);
     return deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(d.id));
   });

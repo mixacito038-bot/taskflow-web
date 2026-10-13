@@ -189,6 +189,36 @@ async function main() {
   assert.ok(ws2.every(x => x.sign.name === '王护士长'), '签字人删除后，历史周签应显示其最新姓名（不是早已改掉的旧名「科室2」）');
   ok('有签字历史的签字人可以删除；历史周签显示其最新姓名');
 
+  step = '账号管理：设备科不能越权';
+  errj(await api('POST', '/api/admin/users', { token: Q, body: { username: 'evil', password: 'Pass@123', displayName: 'x', role: 'admin', deptIds: [] } }), 403, 'FORBIDDEN', '设备科新建管理员');
+  errj(await api('PATCH', `/api/admin/users/${equip.id}`, { token: Q, body: { role: 'admin' } }), 403, 'FORBIDDEN', '设备科把自己改成管理员');
+  const adminRow = okj(await api('GET', '/api/admin/users', { token: A })).find(u => u.username === 'admin');
+  errj(await api('PATCH', `/api/admin/users/${adminRow.id}`, { token: Q, body: { status: 'off' } }), 403, 'FORBIDDEN', '设备科停用管理员');
+  errj(await api('POST', `/api/admin/users/${adminRow.id}/reset-password`, { token: Q }), 403, 'FORBIDDEN', '设备科重置管理员密码');
+  okj(await api('POST', '/api/admin/users', { token: Q, body: { username: 'insp2', password: 'Pass@123', displayName: '新巡检员', role: 'inspector', deptIds: [dept.id] } }), '设备科新建巡检员（允许）');
+  ok('设备科：建管理员 / 自升管理员 / 改管理员 / 重置管理员密码 → 403；管理巡检员账号照常可用');
+
+  step = '账号管理：校验与防自锁';
+  errj(await api('PATCH', `/api/admin/users/${adminRow.id}`, { token: A, body: { status: 'off' } }), 400, 'BAD_INPUT', '管理员停用自己');
+  errj(await api('PATCH', `/api/admin/users/${adminRow.id}`, { token: A, body: { role: 'equip' } }), 400, 'BAD_INPUT', '管理员改自己的角色');
+  const d2 = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '  急诊科  ' } }));
+  assert.equal(d2.name, '急诊科', '科室名首尾空格应去掉');
+  const hn = okj(await api('GET', '/api/admin/users', { token: A })).find(u => u.username === 'hn2');
+  errj(await api('PATCH', `/api/admin/users/${hn.id}`, { token: A, body: { deptIds: [dept.id, d2.id] } }), 400, 'BAD_INPUT', '护士长改成 2 个科室');
+  errj(await api('PATCH', `/api/admin/users/${insp.id}`, { token: A, body: { role: 'dept', deptIds: [] } }), 400, 'BAD_INPUT', '改成护士长但不给科室');
+  errj(await api('PATCH', `/api/admin/users/${insp.id}`, { token: A, body: { displayName: '   ' } }), 400, 'BAD_INPUT', '显示名改成空白');
+  errj(await api('PATCH', `/api/admin/depts/${dept.id}`, { token: A, body: { name: '  ' } }), 400, 'BAD_INPUT', '科室名改成空白');
+  errj(await api('POST', '/api/admin/users', { token: A, body: { username: 'ghost', password: 'Pass@123', role: 'inspector', deptIds: [999999] } }), 400, 'BAD_INPUT', '指定不存在的科室');
+  ok('不能停用自己/改自己角色；护士长必须恰好 1 个科室；空白名称、不存在的科室 → 400');
+
+  step = '重置密码后旧会话失效';
+  const lr = okj(await api('POST', '/api/auth/login', { body: { username: 'insp2', password: 'Pass@123' } }));
+  const insp2 = okj(await api('GET', '/api/admin/users', { token: A })).find(u => u.username === 'insp2');
+  const np = okj(await api('POST', `/api/admin/users/${insp2.id}/reset-password`, { token: A }), '重置密码').password;
+  errj(await api('POST', '/api/auth/refresh', { body: { refreshToken: lr.refreshToken } }), 401, 'UNAUTHORIZED', '重置密码后用旧 refreshToken 续期');
+  okj(await api('POST', '/api/auth/login', { body: { username: 'insp2', password: np } }), '用新密码登录');
+  ok('重置密码后，旧的登录续期被拒，新密码可登录');
+
   console.log('\nREGRESS PASS');
 }
 
