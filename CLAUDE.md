@@ -28,6 +28,12 @@
 3. 升级包自动完成：检查环境与包完整性 → 备份数据 → 备份旧代码 → 覆盖新代码 → 重建启动 →
    健康检查（不通过自动回退）→ 签字数据体检 → 打印总结（含数据备份下载命令、一键回退命令）。
 4. 发布前先在会话里跑完测试：`medops/server` 下 `npm test`、`node scripts/smoke.js`、`node scripts/regress.js`。
+5. ⚠ 服务器上的代码**只能就地覆盖文件**，绝不能删除、替换或挪动 `/opt/medops` 下的目录：
+   nginx 容器以「目录本身」挂载 h5、admin/dist、deploy/landing、ams/dist、certs、nginx 配置，
+   目录一换，容器里看到的还是旧目录（2026-10-14 第一次一键升级 /admin/ 403 就是这么来的）。
+   改完代码后用 `docker compose up -d --build --force-recreate` 让 nginx 容器也重建、重新挂载。
+   修改升级脚本后，要在模拟真实挂载语义的环境里把「正常 / 坏版本自动回退 / 包不完整 / 回退脚本 /
+   SSH 断线 / 重复执行」都跑一遍再发。
 
 ## 开发约定
 
