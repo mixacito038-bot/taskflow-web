@@ -551,6 +551,19 @@ async function main() {
     assert.equal(r.status, 200, `同一出口 IP 下第 ${i + 1} 台手机查登录状态不应被限流`);
   }
   ok('科室带起算日；日签带签字人账号 ID；同一出口 IP 下多台手机查登录状态不被限流（以前每分钟 10 次全院共用）');
+
+  step = '签字数据体检脚本';
+  // 模拟旧版留下的「提前周签」：本周只有部分天日签就有了周签
+  const anyFile = sql.prepare('SELECT sign_file_id FROM week_signs LIMIT 1').get().sign_file_id;
+  const curW = P.wkOf(today);
+  sql.prepare(`INSERT INTO week_signs (dept_id, week_start, sign_name, sign_title, sign_opinion, sign_file_id,
+    stat_checked, stat_ng, stat_days, sign_at) VALUES (?, ?, '旧版提前签', '', '', ?, 0, 0, 1, '2026-01-01 00:00')`).run(+k3.id, curW, anyFile);
+  let report = require('child_process').execFileSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+  assert.ok(report.includes(`✗ 周签 · 科室3 · ${curW} 起的一周`), '应报出提前签的周签：\n' + report);
+  sql.prepare('DELETE FROM week_signs WHERE dept_id = ? AND week_start = ?').run(+k3.id, curW);
+  report = require('child_process').execFileSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+  assert.ok(!report.includes(`${curW} 起的一周`), '作废后不应再报');
+  ok('体检脚本能找出旧版留下的提前周签，作废后不再报');
   sql.close();
 
   console.log('\nREGRESS PASS');
