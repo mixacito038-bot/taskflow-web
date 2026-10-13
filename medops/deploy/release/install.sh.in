@@ -13,6 +13,8 @@
 #    7. 签字数据体检，打印总结
 #
 #  升级在后台运行：SSH 断线也不会中断，重新连上后看记录文件即可。
+#  代码一律「就地覆盖文件」，不删除/替换/挪动目录：nginx 容器挂载的是目录本身，目录一换，
+#  容器里看到的还是原来那个（已删除的）目录 —— 2026-10-14 第一次升级 /admin/ 403 就是这么来的。
 #  不会动的东西：.env（密钥、端口）、HTTPS 证书、nginx 配置、资产盘点(pandian)、数据目录。
 # =============================================================================
 set -euo pipefail
@@ -56,6 +58,8 @@ BAK_DATA="$OUTDIR/medops-backup-$TS.tar.gz"
 ROLLBACK="$OUTDIR/medops-rollback-$TS.sh"
 STAGE=""
 STATE="检查"                                    # 检查 → 已备份 → 已替换 → 完成
+# 这些目录要和来源「完全一致」：就地覆盖后，再删掉来源里没有的旧文件（只删文件，不动目录）
+SYNC_DIRS="server/src server/scripts server/test h5 admin/dist admin/src"
 
 step() { echo; echo "==== [$1/7] $2 ===="; }
 ok()   { echo "  ✓ $*"; }
@@ -107,13 +111,30 @@ wait_healthy() {
   return 1
 }
 pages_ok() {
-  local u c bad=0
-  for u in /api/health /xunjian/ /admin/; do
+  local u c bad=0 list="/api/health /xunjian/ /admin/"
+  [ -f "$APP/deploy/landing/index.html" ] && list="$list /"
+  [ -f "$APP/ams/dist/index.html" ] && list="$list /pandian/"
+  for u in $list; do
     c=$(http_code "$u")
     if [ "$c" = 200 ]; then ok "$u  $c"; else warn "$u  $c"; bad=1; fi
   done
   return $bad
 }
+
+# 让 $APP 的程序文件和来源目录一致：就地覆盖 + 删掉 SYNC_DIRS 里多出来的旧文件
+sync_from() {
+  local src=$1 d f
+  cp -a "$src/." "$APP/"
+  for d in $SYNC_DIRS; do
+    [ -d "$src/$d" ] && [ -d "$APP/$d" ] || continue
+    (cd "$APP/$d" && find . -type f) | while IFS= read -r f; do
+      [ -e "$src/$d/$f" ] || rm -f "$APP/$d/$f"
+    done
+  done
+}
+# 重建并启动全部容器。--force-recreate：nginx 容器也重建，挂载重新指向当前目录
+# （否则它可能还挂着以前被删掉或改了名的目录）
+rebuild() { (cd "$OPS" && docker compose up -d --build --force-recreate) 2>&1 | sed 's/^/  /'; }
 
 rollback() {
   trap - ERR
@@ -122,8 +143,9 @@ rollback() {
   echo "==== 新版本没能正常运行，正在自动回退到升级前的版本 ===="
   echo "  （先把出错时的后端日志留在记录里）"
   (cd "$OPS" && docker compose logs --tail=60 api) 2>&1 | sed 's/^/    /'
-  mv "$APP" "$APP.failed-$TS" && cp -a "$BAK_CODE" "$APP"
-  (cd "$OPS" && docker compose up -d --build) 2>&1 | sed 's/^/  /'
+  sync_from "$BAK_CODE"
+  rm -f "$APP/RELEASE"; [ -f "$BAK_CODE/RELEASE" ] && cp -a "$BAK_CODE/RELEASE" "$APP/RELEASE"
+  rebuild
   if wait_healthy && pages_ok; then
     echo
     echo "  ✓ 已回退到升级前的版本，网站正常运行，数据没有受影响。"
@@ -132,7 +154,7 @@ rollback() {
     echo "  ✗ 回退后仍未恢复。请执行： cd $OPS && bash manage.sh 状态"
     echo "    并把输出连同 $LOG 发给 Claude。数据备份在：$BAK_DATA"
   fi
-  echo "  这次失败的代码留在 $APP.failed-$TS 供排查；完整记录：$LOG"
+  echo "  完整记录：$LOG"
   exit 1
 }
 
@@ -184,11 +206,15 @@ ok "旧代码：$BAK_CODE"
 cat > "$ROLLBACK" <<ROLL
 #!/usr/bin/env bash
 # 回到 $TS 升级之前的版本（数据不受影响；新版本加的数据库字段旧版本会忽略）
+# 就地恢复文件，不挪动目录；再重建全部容器，让挂载重新指向当前目录
 set -e
-cd "$OPS" && docker compose down
-mv "$APP" "$APP.rolledback-\$(date +%Y%m%d-%H%M%S)"
-cp -a "$BAK_CODE" "$APP"
-cd "$OPS" && docker compose up -d --build
+cp -a "$BAK_CODE/." "$APP/"
+for d in $SYNC_DIRS; do
+  [ -d "$BAK_CODE/\$d" ] && [ -d "$APP/\$d" ] || continue
+  (cd "$APP/\$d" && find . -type f) | while IFS= read -r f; do [ -e "$BAK_CODE/\$d/\$f" ] || rm -f "$APP/\$d/\$f"; done
+done
+rm -f "$APP/RELEASE"; [ -f "$BAK_CODE/RELEASE" ] && cp -a "$BAK_CODE/RELEASE" "$APP/RELEASE"
+cd "$OPS" && docker compose up -d --build --force-recreate
 sleep 8 && bash manage.sh 状态
 ROLL
 chmod +x "$ROLLBACK"
@@ -198,15 +224,13 @@ chmod +x "$ROLLBACK"
 # ============================================================================
 step 4 "覆盖新代码"
 STATE=已替换
-# 管理后台是构建产物，文件名带哈希：整体替换，不留旧文件
-if [ -d "$STAGE/new/admin/dist" ]; then rm -rf "$APP/admin/dist"; fi
-cp -a "$STAGE/new/." "$APP/"
+sync_from "$STAGE/new"
 printf 'version=%s\ncommit=%s\ninstalled_at=%s\n' "$VERSION" "$COMMIT" "$(date '+%Y-%m-%d %H:%M:%S')" > "$APP/RELEASE"
 ok "新代码已就位（.env、证书、nginx 配置、资产盘点未改动）"
 
 # ============================================================================
 step 5 "重新构建并启动（1～3 分钟，请稍候）"
-if ! (cd "$OPS" && docker compose up -d --build) 2>&1 | sed 's/^/  /'; then
+if ! rebuild; then
   echo "  ✗ 构建或启动失败"; rollback
 fi
 ok "容器已启动"
@@ -217,6 +241,11 @@ if ! wait_healthy; then echo "  ✗ 3 分钟内后端没有就绪"; rollback; fi
 pages_ok || { echo "  ✗ 有页面打不开"; rollback; }
 STATE=完成
 ok "新版本运行正常"
+# 以前失败留下的目录（旧版升级脚本回退时会把整个目录改名留下），现在已没有容器挂着它，清掉
+for d in "$APP".failed-* "$APP".rolledback-*; do
+  [ -d "$d" ] || continue
+  rm -rf "$d"; ok "清理以前留下的目录：$d"
+done
 
 # ============================================================================
 step 7 "签字数据体检（只读）"
