@@ -40,6 +40,7 @@ module.exports = async function authRoutes(app, opts) {
   /* 业务时钟：H5 的 today()/wkOf/moOf 一律以此为准 */
   app.get('/api/time', { preHandler: [app.auth] }, async () => {
     const n = P.shNow();
-    return { now: `${n.date} ${n.time}`, date: n.date, week: P.wkOf(n.date), month: P.moOf(n.date) };
+    // epochMs：前端据此算出与本机时钟的偏差，让页面上的服务器时间按秒走动（不必每秒请求）
+    return { now: `${n.date} ${n.time}`, date: n.date, week: P.wkOf(n.date), month: P.moOf(n.date), epochMs: Date.now() };
   });
 };

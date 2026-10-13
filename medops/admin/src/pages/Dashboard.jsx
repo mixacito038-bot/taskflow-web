@@ -5,6 +5,7 @@ import { useDepts, useServerTime } from '../hooks'
 import { asList, nz } from '../utils'
 import { Bar, Empty, ErrorTip, Spinner, Badge } from '../components/ui'
 import { Link } from 'react-router-dom'
+import ServerClock from '../components/ServerClock'
 
 // 容忍字段命名差异（契约未定 completion 具体字段名）
 function normRow(r) {
@@ -73,7 +74,7 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold">未签提醒</h2>
           <p className="mt-0.5 text-sm text-slate-600">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（上月）</p>
         </div>
-        {time && <span className="text-sm text-slate-600">服务器时间 {time.now}</span>}
+        <ServerClock className="text-sm text-slate-600" />
       </div>
 
       <ErrorTip error={err} className="mb-4" />

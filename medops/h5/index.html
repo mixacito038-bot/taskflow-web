@@ -1261,12 +1261,22 @@ window.catAllOk=async()=>{
   if(await locked())return toast('已签字确认，不能再修改');
   const devs=await API.devices(S.deptId,S.catName);let n=0;
   devs.forEach(d=>{if(!S.checks[d.id]){S.checks[d.id]='ok';n++}});
-  await autosave();render();toast(n?`已勾选 ${n} 台`:'本类已全部勾选')};
+  await autosave();render();
+  /* 提示里的 n 只是「这次新标的」台数；同时给出本类总数和异常数，和页面上的计数对得上 */
+  const ng=devs.filter(d=>S.checks[d.id]==='ng').length;
+  toast(n?`本类剩余 ${n} 台已标为正常（本类共 ${devs.length} 台${ng?`，异常 ${ng} 台`:''}）`
+    :`本类 ${devs.length} 台都已勾选`,2600)};
 window.markAllOk=async()=>{
   if(await locked())return toast('已签字确认，不能再修改');
-  const cats=await API.cats(S.deptId);let n=0;
-  cats.forEach(c=>c.devices.forEach(d=>{if(!S.checks[d.id]){S.checks[d.id]='ok';n++}}));
-  await autosave();render();toast(n?`已勾选 ${n} 台，异常项请单独标记`:'已全部勾选')};
+  const cats=await API.cats(S.deptId);let n=0,total=0,ng=0;
+  cats.forEach(c=>c.devices.forEach(d=>{total++;if(!S.checks[d.id]){S.checks[d.id]='ok';n++}}));
+  cats.forEach(c=>c.devices.forEach(d=>{if(S.checks[d.id]==='ng')ng++}));
+  await autosave();render();
+  /* 旧提示「已勾选 2 台，异常项请单独标记」：2 是这次新标的台数，页面列表显示的却是累计
+     9/9、1/1……两个口径对不上；且已经标了异常还提醒"请单独标记"。改为说清是「剩余」几台，
+     并给出全科总数与异常数，和列表一致 */
+  toast(n?`剩余 ${n} 台已标为正常，全科 ${total} 台已巡检完${ng?`（异常 ${ng} 台）`:''}`
+    :`全科 ${total} 台都已勾选，无需再标`,2600)};
 window.saveBack=async()=>{await autosave();openDept(S.deptId)};
 async function autosave(){if(S.me)await API.saveChecks(S.deptId,S.date,S.checks,S.notes,S.me)}
 async function patchDev(id){
