@@ -153,48 +153,67 @@ async function main() {
   assert.equal(r.status, 401, '无凭证应 401');
   ok('签名图 Bearer/Cookie 双通道，PNG 魔数正确');
 
-  step = '周签 NOT_READY（本周未签齐时）';
+  /* 业务规则：周签需该周「周一到周日 7 天」日签齐；月签需归属该月的「全部」周都已周签。
+     旧版断言「补齐本周已过日期就能周签本周」——那正是允许提前签的 bug，已改为必须被拒绝。 */
   const weekSignBody = { name: '王护士长', title: '护士长', opinion: '本周正常', dataUrl: PNG };
-  if (today !== week) { // 非周一：本周还有已过日期未日签
-    expectErr(await api('POST', `/api/weeksigns/${deptId}/${week}/sign`, { token: dept, body: weekSignBody }), 409, 'NOT_READY');
-    ok('周签在日签未齐时 NOT_READY');
-  } else ok('今天是周一，跳过 NOT_READY 分支');
-  // inspector 无权周签
-  expectErr(await api('POST', `/api/weeksigns/${deptId}/${week}/sign`, { token: insp, body: weekSignBody }), 403, 'FORBIDDEN');
-
-  step = '补齐本周已过日期的日签';
-  for (let d = week; d < today; d = P.addDay(d, 1)) { await putDay(d); await signDay(d); }
-  ok('本周已过日期全部日签');
-
-  step = '月签 NOT_READY（本周尚未周签）';
   const monthSignBody = { name: '赵设备科', title: '工程师', opinion: '当月合格', dataUrl: PNG };
-  expectErr(await api('POST', `/api/monthsigns/${deptId}/${month}/sign`, { token: equip, body: monthSignBody }), 409, 'NOT_READY');
-  ok('本月存在未周签的已开始周 → NOT_READY');
+  const rec = async d => (await api('GET', `/api/records/${deptId}/${d}`, { token: insp })).json;
+  const ensureDay = async d => { const x = await rec(d); if (!(x && x.sign)) { await putDay(d); await signDay(d); } };
+  const weekSigned = async w => (await api('GET', `/api/weeksigns?deptId=${deptId}&from=${w}&to=${w}`, { token: dept })).json.length > 0;
 
-  step = '周签走通';
-  r = await api('POST', `/api/weeksigns/${deptId}/${week}/sign`, { token: dept, body: weekSignBody });
-  expectOk(r);
-  assert.equal(r.json.stat.days, P.wkDays(week).filter(d => d <= today).length);
-  expectErr(await api('POST', `/api/weeksigns/${deptId}/${week}/sign`, { token: dept, body: weekSignBody }), 409, 'LOCKED');
-  // 周签后该周日期 PUT 锁定
-  expectErr(await api('PUT', `/api/records/${deptId}/${week}`, { token: insp, body: { checks: {} } }), 409, 'LOCKED');
-  ok('周签 + 重复 LOCKED + 周内记录锁定');
+  step = 'inspector 无权周签';
+  expectErr(await api('POST', `/api/weeksigns/${deptId}/${week}/sign`, { token: insp, body: weekSignBody }), 403, 'FORBIDDEN');
+  ok('inspector 周签 → FORBIDDEN');
+
+  step = '本周：已到的天全部日签后仍不能周签（不可提前签）';
+  for (let d = week; d <= today; d = P.addDay(d, 1)) await ensureDay(d);
+  if (P.addDay(week, 6) > today) {
+    expectErr(await api('POST', `/api/weeksigns/${deptId}/${week}/sign`, { token: dept, body: weekSignBody }), 400, 'EARLY');
+    ok(`本周（${week} 起）只到 ${today}，已到的天全签 → 周签 EARLY`);
+  } else ok('今天是周日：本周 7 天可在今天签齐，跳过 EARLY 分支');
+
+  step = '本月：未全部周签 → 月签被拒';
+  r = await api('POST', `/api/monthsigns/${deptId}/${month}/sign`, { token: equip, body: monthSignBody });
+  assert.ok((r.status === 409 && r.json.error.code === 'NOT_READY') || (r.status === 400 && r.json.error.code === 'EARLY'),
+    `本月月签应被拒，实际 ${r.status} ${r.text}`);
+  ok(`本月（${month}）月签被拒：${r.json.error.code}`);
+
+  step = '上周：漏签一天 → NOT_READY；补签后周签走通';
+  const lastWeek = P.addDay(week, -7);
+  if (!(await weekSigned(lastWeek))) {
+    const gap = P.addDay(lastWeek, 3);
+    for (const d of P.wkDays(lastWeek)) if (d !== gap) await ensureDay(d);
+    const gapRec = await rec(gap);
+    if (!(gapRec && gapRec.sign)) {
+      r = await api('POST', `/api/weeksigns/${deptId}/${lastWeek}/sign`, { token: dept, body: weekSignBody });
+      expectErr(r, 409, 'NOT_READY');
+      assert.ok(r.json.error.message.includes(gap.slice(5)), '错误信息应指出漏签的是哪天');
+      ok(`上周漏签 ${gap} → NOT_READY，并指明日期`);
+    }
+    await ensureDay(gap);
+    r = await api('POST', `/api/weeksigns/${deptId}/${lastWeek}/sign`, { token: dept, body: weekSignBody });
+    expectOk(r);
+    assert.equal(r.json.stat.days, 7, '周签覆盖天数应为 7');
+    expectErr(await api('POST', `/api/weeksigns/${deptId}/${lastWeek}/sign`, { token: dept, body: weekSignBody }), 409, 'LOCKED');
+    expectErr(await api('PUT', `/api/records/${deptId}/${lastWeek}`, { token: insp, body: { checks: {} } }), 409, 'LOCKED');
+    ok('上周补齐后周签 + 重复 LOCKED + 周内记录锁定');
+  } else ok('上周已周签（与月签用例重叠），跳过');
 
   step = '构造整月数据走通月签';
-  // 找最近一个「所有周都已结束」的月份（周一 ≤ today-7 才算结束周）
+  // 找最近一个「全部周都已结束」的月份；已签的天/周直接跳过（可能与上面的上周用例重叠）
   let M = P.prevMonth(month);
-  const allEnded = m => P.wksOfMonth(m, today).every(w => P.addDay(w, 6) < today);
-  while (!allEnded(M) || !P.wksOfMonth(M, today).length) M = P.prevMonth(M);
-  for (const w of P.wksOfMonth(M, today)) {
-    for (const d of P.wkDays(w)) { await putDay(d); await signDay(d); }
-    r = await api('POST', `/api/weeksigns/${deptId}/${w}/sign`, { token: dept, body: weekSignBody });
-    expectOk(r);
+  const allEnded = m => P.wksOfMonth(m).every(w => P.addDay(w, 6) < today);
+  while (!allEnded(M)) M = P.prevMonth(M);
+  const wksM = P.wksOfMonth(M);
+  for (const w of wksM) {
+    for (const d of P.wkDays(w)) await ensureDay(d);
+    if (!(await weekSigned(w))) expectOk(await api('POST', `/api/weeksigns/${deptId}/${w}/sign`, { token: dept, body: weekSignBody }));
   }
   r = await api('POST', `/api/monthsigns/${deptId}/${M}/sign`, { token: equip, body: monthSignBody });
   expectOk(r);
-  assert.equal(r.json.stat.weeks, P.wksOfMonth(M, today).length);
+  assert.equal(r.json.stat.weeks, wksM.length);
   expectErr(await api('POST', `/api/monthsigns/${deptId}/${M}/sign`, { token: equip, body: monthSignBody }), 409, 'LOCKED');
-  ok(`月签走通（${M}，${P.wksOfMonth(M, today).length} 周）`);
+  ok(`月签走通（${M}，${wksM.length} 周）`);
 
   step = '导出 monthly.xlsx';
   r = await api('GET', `/api/export/monthly.xlsx?deptId=${deptId}&month=${M}`, { token: equip, raw: true });

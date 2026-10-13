@@ -7,6 +7,7 @@ const authSvc = require('../services/auth.service');
 const importSvc = require('../services/import.service');
 const exportSvc = require('../services/export.service');
 const expirySvc = require('../services/expiry.service');
+const P = require('../services/period.service');
 
 const nowIso = () => new Date().toISOString();
 const ROLES = ['inspector', 'dept', 'equip', 'admin'];
@@ -240,13 +241,14 @@ module.exports = async function adminRoutes(app) {
 
   app.post('/api/admin/members', { preHandler: guard }, async req => {
     const b = req.body || {};
-    if (!b.deptId || !b.name) throw E.badInput('deptId/name 必填');
+    const name = String(b.name || '').trim();
+    if (!b.deptId || !name) throw E.badInput('科室和姓名必填');
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
-    if (db().prepare('SELECT 1 FROM members WHERE dept_id = ? AND name = ?').get(+b.deptId, String(b.name))) {
+    if (db().prepare('SELECT 1 FROM members WHERE dept_id = ? AND name = ?').get(+b.deptId, name)) {
       throw E.conflict('该科室已有同名签字人');
     }
     const id = db().prepare('INSERT INTO members (dept_id, name, title, status, sort) VALUES (?, ?, ?, ?, ?)')
-      .run(+b.deptId, String(b.name), String(b.title || ''), b.status === 'off' ? 'off' : 'on', +b.sort || 0).lastInsertRowid;
+      .run(+b.deptId, name, String(b.title || '').trim(), b.status === 'off' ? 'off' : 'on', +b.sort || 0).lastInsertRowid;
     return memberJson(db().prepare('SELECT * FROM members WHERE id = ?').get(id));
   });
 
@@ -254,9 +256,23 @@ module.exports = async function adminRoutes(app) {
     const m = db().prepare('SELECT * FROM members WHERE id = ?').get(+req.params.id);
     if (!m) throw E.notFound('签字人不存在');
     const b = req.body || {};
-    db().prepare('UPDATE members SET name = ?, title = ?, status = ?, sort = ? WHERE id = ?')
-      .run(String(b.name ?? m.name), String(b.title ?? m.title),
-        ['on', 'off'].includes(b.status) ? b.status : m.status, +(b.sort ?? m.sort), m.id);
+    const name = String(b.name ?? m.name).trim();
+    const title = String(b.title ?? m.title).trim();
+    if (!name) throw E.badInput('姓名不能为空');
+    // 以前不查重，改成同科室已有的名字会撞上数据库唯一约束，接口直接报 500
+    if (name !== m.name && db().prepare('SELECT 1 FROM members WHERE dept_id = ? AND name = ? AND id <> ?').get(m.dept_id, name, m.id)) {
+      throw E.conflict('该科室已有同名签字人');
+    }
+    db().transaction(() => {
+      db().prepare('UPDATE members SET name = ?, title = ?, status = ?, sort = ? WHERE id = ?')
+        .run(name, title, ['on', 'off'].includes(b.status) ? b.status : m.status, +(b.sort ?? m.sort), m.id);
+      /* 历史周签的快照跟着最新姓名走：页面本来就按 ID 显示当前姓名，这里同步快照，
+         是为了这个签字人以后被删除时，历史记录仍显示最新姓名而不是早已改掉的旧名。
+         同时把升级前签的、还没建立关联的周签（同科室、签的是原姓名）一并关联上。 */
+      db().prepare(`UPDATE week_signs SET sign_member_id = ?, sign_name = ?, sign_title = ?
+        WHERE dept_id = ? AND (sign_member_id = ? OR (sign_member_id IS NULL AND sign_name = ?))`)
+        .run(m.id, name, title, m.dept_id, m.id, m.name);
+    })();
     return memberJson(db().prepare('SELECT * FROM members WHERE id = ?').get(m.id));
   });
 
@@ -272,14 +288,24 @@ module.exports = async function adminRoutes(app) {
     if (!['day', 'week', 'month'].includes(type)) throw E.badInput('type 必须是 day/week/month');
     if (!deptId || !key || !reason) throw E.badInput('deptId/key/reason 必填');
     const did = +deptId;
+    /* 作废必须「自上而下」：上级签字建立在下级签字之上，且上级签字会锁定下级记录。
+       若允许先作废下级（如周签还在时作废日签），就会出现「周签已签、其中一天却没有日签」，
+       而那一天又因周签锁定永远补签不了——数据进入无法自愈的矛盾状态。 */
+    const monthSigned = m => db().prepare('SELECT 1 FROM month_signs WHERE dept_id = ? AND month = ?').get(did, m);
+    const weekSigned = w => db().prepare('SELECT 1 FROM week_signs WHERE dept_id = ? AND week_start = ?').get(did, w);
     if (type === 'day') {
       const r = db().prepare('SELECT * FROM records WHERE dept_id = ? AND date = ?').get(did, String(key));
       if (!r || !r.sign_at) throw E.notFound('该日无签字');
+      const w = P.wkOf(r.date);
+      if (weekSigned(w)) throw E.locked(`${w} 起的这一周已周签，请先作废周签，再作废这一天的日签`);
+      if (monthSigned(P.moOf(r.date))) throw E.locked(`${P.moOf(r.date)} 已月签，请先作废月签`);
       db().prepare(`UPDATE records SET sign_name = NULL, sign_title = NULL, sign_opinion = NULL,
-        sign_file_id = NULL, sign_at = NULL, updated_at = ? WHERE id = ?`).run(nowIso(), r.id);
+        sign_file_id = NULL, sign_user_id = NULL, sign_at = NULL, updated_at = ? WHERE id = ?`).run(nowIso(), r.id);
     } else if (type === 'week') {
       const r = db().prepare('SELECT * FROM week_signs WHERE dept_id = ? AND week_start = ?').get(did, String(key));
       if (!r) throw E.notFound('该周无签字');
+      const m = P.moOf(r.week_start);   // 周按周一所在月份归属
+      if (monthSigned(m)) throw E.locked(`这一周归属的 ${m} 已月签，请先作废月签，再作废周签`);
       db().prepare('DELETE FROM week_signs WHERE id = ?').run(r.id);
     } else {
       const r = db().prepare('SELECT * FROM month_signs WHERE dept_id = ? AND month = ?').get(did, String(key));

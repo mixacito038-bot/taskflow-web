@@ -46,13 +46,16 @@ test('2 月：平年/闰年', () => {
     ['2024-02-05', '2024-02-12', '2024-02-19', '2024-02-26']);
 });
 
-test('wksOfMonth 只含已开始的周（周一 ≤ today）', () => {
+test('wksOfMonth：传 today 只含已开始的周；不传则返回全月的周', () => {
   assert.deepEqual(P.wksOfMonth('2026-08', '2026-08-01'), []); // 首个周一 08-03 还没到
   assert.deepEqual(P.wksOfMonth('2026-08', '2026-08-03'), ['2026-08-03']);
   assert.deepEqual(P.wksOfMonth('2026-08', '2026-08-04'), ['2026-08-03']);
   assert.deepEqual(P.wksOfMonth('2026-08', '2026-08-16'), ['2026-08-03', '2026-08-10']);
-  assert.deepEqual(P.wksOfMonth('2026-08', '2026-09-15'),
-    ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31']);
+  const all = ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31'];
+  assert.deepEqual(P.wksOfMonth('2026-08', '2026-09-15'), all);
+  assert.deepEqual(P.wksOfMonth('2026-08'), all);              // 不传 today：全月 5 周
+  assert.deepEqual(P.wksOfMonth('2026-10'),                     // 10-01 是周四，归 9 月最后一周
+    ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']);
 });
 
 test('prevMonth：跨年回退', () => {
@@ -66,66 +69,109 @@ test('dayDone：sign 非空才算完成', () => {
   assert.equal(P.dayDone({ sign: { name: '张三' } }), true);
 });
 
-test('weekState：所有已过去日期都已日签才 ready', () => {
-  const week = '2026-08-03';
-  const rec = (date, sign) => ({ date, sign, checks: { 1: 'ok', 2: 'ng' } });
-  // 周中（today=周二）：只签了周一 → 缺周二
-  let st = P.weekState({ week, today: '2026-08-04', recs: [rec('2026-08-03', true)], ws: null });
-  assert.deepEqual(st.days, ['2026-08-03', '2026-08-04']);
-  assert.deepEqual(st.miss, ['2026-08-04']);
+/* ---------- 业务规则：周签前提 = 周一到周日 7 天全部日签（不可提前签） ---------- */
+const rec = (date, sign, checks = { 1: 'ok', 2: 'ng' }) => ({ date, sign, checks });
+const allSigned = week => P.wkDays(week).map(d => rec(d, true));
+
+test('规则：周一只签了当天，不能周签本周（用户截图里的 bug）', () => {
+  const st = P.weekState({ week: '2026-10-12', today: '2026-10-12', recs: [rec('2026-10-12', true)], ws: null });
   assert.equal(st.ready, false);
-  assert.equal(st.started, true);
-  assert.equal(st.ended, false);
-  // 周一、周二都签 → ready；统计正确
-  st = P.weekState({ week, today: '2026-08-04',
-    recs: [rec('2026-08-03', true), rec('2026-08-04', true)], ws: null });
+  assert.equal(st.days.length, 7);
+  assert.deepEqual(st.signed, ['2026-10-12']);
+  assert.equal(st.missDue.length, 0);           // 已到的天都签了……
+  assert.equal(st.future.length, 6);            // ……但还有 6 天没到
+});
+
+test('规则：周中已到的天全签了也不行，必须 7 天齐', () => {
+  const recs = ['2026-08-03', '2026-08-04', '2026-08-05'].map(d => rec(d, true));
+  const st = P.weekState({ week: '2026-08-03', today: '2026-08-05', recs, ws: null });
+  assert.equal(st.ready, false);
+  assert.deepEqual(st.future, ['2026-08-06', '2026-08-07', '2026-08-08', '2026-08-09']);
+});
+
+test('规则：周日签完第 7 天，当天就可以周签', () => {
+  const st = P.weekState({ week: '2026-08-03', today: '2026-08-09', recs: allSigned('2026-08-03'), ws: null });
   assert.equal(st.ready, true);
-  assert.equal(st.checked, 4);
-  assert.equal(st.ng, 2);
-  // 有记录但未签 → 不 ready（sign 才算）
-  st = P.weekState({ week, today: '2026-08-04',
-    recs: [rec('2026-08-03', true), rec('2026-08-04', false)], ws: null });
+  assert.equal(st.future.length, 0);
+  assert.equal(st.signed.length, 7);
+});
+
+test('规则：周已结束但中间漏签一天 → 不能周签，missDue 指出漏的是哪天（可补签）', () => {
+  const recs = allSigned('2026-08-03').filter(r => r.date !== '2026-08-05');
+  const st = P.weekState({ week: '2026-08-03', today: '2026-08-12', recs, ws: null });
   assert.equal(st.ready, false);
-  // 未开始的周
+  assert.deepEqual(st.missDue, ['2026-08-05']);
+  assert.deepEqual(st.future, []);
+  assert.equal(st.ended, true);
+});
+
+test('规则：有巡检记录但没日签的天不算完成', () => {
+  const recs = allSigned('2026-08-03').map(r => r.date === '2026-08-09' ? rec(r.date, false) : r);
+  const st = P.weekState({ week: '2026-08-03', today: '2026-08-12', recs, ws: null });
+  assert.equal(st.ready, false);
+  assert.deepEqual(st.missDue, ['2026-08-09']);
+});
+
+test('weekState：统计、未开始的周、已周签锁定', () => {
+  let st = P.weekState({ week: '2026-08-03', today: '2026-08-12', recs: allSigned('2026-08-03'), ws: null });
+  assert.equal(st.checked, 14);
+  assert.equal(st.ng, 7);
   st = P.weekState({ week: '2026-08-10', today: '2026-08-04', recs: [], ws: null });
   assert.equal(st.started, false);
-  assert.equal(st.ready, false); // days 为空 → 不 ready
-  // 已周签 → locked
-  st = P.weekState({ week, today: '2026-08-20', recs: [], ws: { id: 1 } });
+  assert.equal(st.ready, false);
+  assert.equal(st.future.length, 7);
+  st = P.weekState({ week: '2026-08-03', today: '2026-08-20', recs: [], ws: { id: 1 } });
   assert.equal(st.locked, true);
   assert.equal(st.ended, true);
 });
 
-test('weekState：跨年周在 today 位于新年时天数正确', () => {
+test('weekState：跨年周（2025-12-29 起）在新年期间仍按整周 7 天判断', () => {
   const st = P.weekState({ week: '2025-12-29', today: '2026-01-02', recs: [], ws: null });
-  assert.deepEqual(st.days, ['2025-12-29', '2025-12-30', '2025-12-31', '2026-01-01', '2026-01-02']);
-  assert.deepEqual(st.miss, st.days);
+  assert.equal(st.days.length, 7);
+  assert.deepEqual(st.missDue, ['2025-12-29', '2025-12-30', '2025-12-31', '2026-01-01', '2026-01-02']);
+  assert.deepEqual(st.future, ['2026-01-03', '2026-01-04']);
 });
 
-test('monthState：所有已开始的周都周签才 ready', () => {
-  const month = '2026-07'; // 周：07-06/13/20/27
-  const allWeeks = ['2026-07-06', '2026-07-13', '2026-07-20', '2026-07-27'];
-  let st = P.monthState({ month, today: '2026-08-04', weekSignWeeks: allWeeks.slice(0, 3), recs: [], ms: null });
-  assert.deepEqual(st.weeks, allWeeks);
-  assert.deepEqual(st.miss, ['2026-07-27']);
+/* ---------- 业务规则：月签前提 = 归属该月的全部周都已周签 ---------- */
+test('规则：月初只签了第一周，不能月签（旧版会放行，并锁死整月记录）', () => {
+  const st = P.monthState({ month: '2026-10', today: '2026-10-12',
+    weekSignWeeks: ['2026-10-05', '2026-10-12'], recs: [], ms: null });
   assert.equal(st.ready, false);
-  st = P.monthState({ month, today: '2026-08-04', weekSignWeeks: allWeeks,
+  assert.deepEqual(st.weeks, ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']);
+  assert.deepEqual(st.miss, ['2026-10-19', '2026-10-26']);
+  assert.deepEqual(st.openWeeks, ['2026-10-12', '2026-10-19', '2026-10-26']);
+  assert.deepEqual(st.missDue, []);
+});
+
+test('规则：月签要等最后一周（可能跨到下个月）周签完成', () => {
+  const all = ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31']; // 最后一周到 09-06
+  let st = P.monthState({ month: '2026-08', today: '2026-09-03', weekSignWeeks: all.slice(0, 4), recs: [], ms: null });
+  assert.equal(st.ready, false);
+  assert.deepEqual(st.openWeeks, ['2026-08-31']);
+  st = P.monthState({ month: '2026-08', today: '2026-09-06', weekSignWeeks: all, recs: [], ms: null });
+  assert.equal(st.ready, true);
+  assert.deepEqual(st.openWeeks, []);
+});
+
+test('规则：月已结束但漏了一周周签 → 不能月签，missDue 指出是哪周', () => {
+  const all = ['2026-07-06', '2026-07-13', '2026-07-20', '2026-07-27'];
+  const st = P.monthState({ month: '2026-07', today: '2026-08-12',
+    weekSignWeeks: all.filter(w => w !== '2026-07-13'), recs: [], ms: null });
+  assert.equal(st.ready, false);
+  assert.deepEqual(st.missDue, ['2026-07-13']);
+});
+
+test('monthState：全部周签齐 → ready；统计；已月签锁定；其它月份的周签不计入', () => {
+  const month = '2026-07';
+  const allWeeks = ['2026-07-06', '2026-07-13', '2026-07-20', '2026-07-27'];
+  let st = P.monthState({ month, today: '2026-08-04', weekSignWeeks: ['2026-06-29', ...allWeeks, '2026-08-03'],
     recs: [{ date: '2026-07-06', sign: true, checks: { 1: 'ok' } }, { date: '2026-07-07', sign: false, checks: { 1: 'ng' } }], ms: null });
   assert.equal(st.ready, true);
+  assert.equal(st.signedWeeks, 4);
   assert.equal(st.checked, 2);
   assert.equal(st.ng, 1);
   assert.equal(st.dsign, 1);
   assert.equal(st.ended, true);
-  // 该月尚无已开始的周 → 不 ready（wks 为空）
-  st = P.monthState({ month: '2026-08', today: '2026-08-01', weekSignWeeks: [], recs: [], ms: null });
-  assert.deepEqual(st.weeks, []);
-  assert.equal(st.ready, false);
-  assert.equal(st.started, true);
-  // 月中：只有已开始的周计入
-  st = P.monthState({ month: '2026-08', today: '2026-08-04', weekSignWeeks: ['2026-08-03'], recs: [], ms: null });
-  assert.deepEqual(st.weeks, ['2026-08-03']);
-  assert.equal(st.ready, true);
-  // 已月签 → locked
   st = P.monthState({ month, today: '2026-08-04', weekSignWeeks: allWeeks, recs: [], ms: { id: 9 } });
   assert.equal(st.locked, true);
 });

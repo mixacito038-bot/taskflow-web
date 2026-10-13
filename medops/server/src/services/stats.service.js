@@ -52,7 +52,9 @@ function completion(deptIds, month, deptId) {
   const t = P.today();
   let depts = scopedDepts(deptIds);
   if (deptId != null) depts = depts.filter(d => d.id === +deptId);
-  const wks = P.wksOfMonth(month, t);
+  /* 周签进度的分母 = 归属该月的全部周（与月签就绪条件一致）；
+     旧版只算已开始的周，本月中途会显示 1/2 这种"看着快齐了"的假进度 */
+  const wks = P.wksOfMonth(month);
   // 应巡天数：该月内 ≤今天 的天数
   const last = +P.addDay(P.moOf(t) === month ? t : `${month}-01`, 0).slice(8, 10);
   let dueDays = 0;
@@ -91,11 +93,12 @@ function ngList(deptIds, { from, to, deptId }) {
   if (to) { cond.push('r.date <= ?'); args.push(to); }
   return db.prepare(`
     SELECT r.date, r.dept_id, dp.name AS dept_name, dv.code, dv.name AS dev_name, dv.cat_name,
-           ri.note, r.inspector_name
+           ri.note, COALESCE(iu.display_name, r.inspector_name) AS inspector_name
     FROM record_items ri
     JOIN records r ON r.id = ri.record_id
     JOIN devices dv ON dv.id = ri.device_id
     JOIN depts dp ON dp.id = r.dept_id
+    LEFT JOIN users iu ON iu.id = r.inspector_id
     WHERE ${cond.join(' AND ')}
     ORDER BY r.date, r.dept_id, dv.code`).all(...args)
     .map(x => ({
@@ -105,29 +108,38 @@ function ngList(deptIds, { from, to, deptId }) {
     }));
 }
 
-/* GET /api/stats/signatures?month= —— 各科室签字人 × 日/周/月签次数 */
+/* GET /api/stats/signatures?month= —— 各科室签字人 × 日/周/月签次数
+   按「人」聚合（账号 ID / 签字人名单 ID），显示当前名字；改名后不会被拆成两行。
+   关联不上的历史签字（对象已删除）按签字当时的姓名单独成行。 */
 function signatures(deptIds, month) {
   const db = getDb();
   const depts = scopedDepts(deptIds);
   const out = [];
   for (const d of depts) {
-    const acc = new Map(); // name → {title, day, week, month}
-    const bump = (name, title, kind) => {
+    const acc = new Map(); // key → {name, title, day, week, month}
+    const bump = (key, name, title, kind) => {
       if (!name) return;
-      if (!acc.has(name)) acc.set(name, { title: title || '', day: 0, week: 0, month: 0 });
-      acc.get(name)[kind]++;
+      if (!acc.has(key)) acc.set(key, { name, title: title || '', day: 0, week: 0, month: 0 });
+      acc.get(key)[kind]++;
     };
-    for (const r of db.prepare("SELECT sign_name, sign_title FROM records WHERE dept_id = ? AND sign_at IS NOT NULL AND date LIKE ? || '-%'").all(d.id, month)) {
-      bump(r.sign_name, r.sign_title, 'day');
+    for (const r of db.prepare(`SELECT r.sign_user_id AS uid, COALESCE(u.display_name, r.sign_name) AS name, r.sign_title AS title
+        FROM records r LEFT JOIN users u ON u.id = r.sign_user_id
+        WHERE r.dept_id = ? AND r.sign_at IS NOT NULL AND r.date LIKE ? || '-%'`).all(d.id, month)) {
+      bump(r.uid != null ? `u${r.uid}` : `n:${r.name}`, r.name, r.title, 'day');
     }
-    for (const r of db.prepare("SELECT sign_name, sign_title FROM week_signs WHERE dept_id = ? AND week_start LIKE ? || '-%'").all(d.id, month)) {
-      bump(r.sign_name, r.sign_title, 'week');
+    for (const r of db.prepare(`SELECT w.sign_member_id AS mid, COALESCE(m.name, w.sign_name) AS name,
+        CASE WHEN m.id IS NULL THEN w.sign_title ELSE m.title END AS title
+        FROM week_signs w LEFT JOIN members m ON m.id = w.sign_member_id
+        WHERE w.dept_id = ? AND w.week_start LIKE ? || '-%'`).all(d.id, month)) {
+      bump(r.mid != null ? `m${r.mid}` : `n:${r.name}`, r.name, r.title, 'week');
     }
-    for (const r of db.prepare('SELECT sign_name, sign_title FROM month_signs WHERE dept_id = ? AND month = ?').all(d.id, month)) {
-      bump(r.sign_name, r.sign_title, 'month');
+    for (const r of db.prepare(`SELECT ms.signed_by AS uid, COALESCE(u.display_name, ms.sign_name) AS name, ms.sign_title AS title
+        FROM month_signs ms LEFT JOIN users u ON u.id = ms.signed_by
+        WHERE ms.dept_id = ? AND ms.month = ?`).all(d.id, month)) {
+      bump(r.uid != null ? `u${r.uid}` : `n:${r.name}`, r.name, r.title, 'month');
     }
-    for (const [name, v] of acc) {
-      out.push({ deptId: String(d.id), deptName: d.name, name, title: v.title,
+    for (const v of acc.values()) {
+      out.push({ deptId: String(d.id), deptName: d.name, name: v.name, title: v.title,
         daySigns: v.day, weekSigns: v.week, monthSigns: v.month });
     }
   }

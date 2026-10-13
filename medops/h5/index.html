@@ -399,11 +399,12 @@ const wkDays=w=>Array.from({length:7},(_,i)=>addDay(w,i));
 const wkLab=w=>`${dShort(w)}–${dShort(addDay(w,6))}`;
 const moOf=s=>s.slice(0,7);
 const moLab=m=>`${+m.slice(5,7)}月`;
-/* 某月包含的周（以周一归属月份计），仅返回已开始的 */
-const wksOfMonth=m=>{
+/* 某月包含的周（以周一归属月份计）。不传 upto → 全月的周（月签就绪用）；
+   传 upto → 只含周一 ≤ upto 的（已开始的） */
+const wksOfMonth=(m,upto)=>{
   const out=[];let w=wkOf(m+'-01');
   if(moOf(w)!==m) w=addDay(w,7);
-  while(moOf(w)===m){ if(w<=today()) out.push(w); w=addDay(w,7); }
+  while(moOf(w)===m){ if(!upto||w<=upto) out.push(w); w=addDay(w,7); }
   return out;
 };
 const prevMonth=m=>{let y=+m.slice(0,4),mm=+m.slice(5,7)-1;if(mm<1){mm=12;y--}return `${y}-${pad(mm)}`};
@@ -646,32 +647,38 @@ const API={
 async function dayDone(deptId,date){
   const r=await API.record(deptId,date);return !!(r&&r.sign);
 }
-/* 某周状态：需要该周所有「已过去的日期」都完成日签 */
+/* 某周状态。周签前提：周一到周日 7 天全部日签（与服务端 period.service.js 同一规则）。
+   旧版只检查「今天及以前」的天，周一签完当天就能签本周——违反「不可提前签」。
+   missDue = 已经到了却没日签的天（可补签）；future = 还没到的天。 */
 async function weekState(deptId,week){
-  const days=wkDays(week).filter(d=>d<=today());
+  const days=wkDays(week);
   const recs=await API.recordsRange(week,addDay(week,6),deptId);
   const map=new Map(recs.map(r=>[r.date,r]));
   const signed=days.filter(d=>{const r=map.get(d);return r&&r.sign});
   const miss=days.filter(d=>!signed.includes(d));
+  const future=days.filter(d=>d>today()), missDue=miss.filter(d=>d<=today());
   let checked=0,ng=0;
   recs.forEach(r=>{const v=Object.values(r.checks||{});checked+=v.length;ng+=v.filter(x=>x==='ng').length});
   const ws=await API.weekSign(deptId,week);
-  return {week,days,signed,miss,checked,ng,ws,
+  return {week,days,signed,miss,missDue,future,checked,ng,ws,
     started:week<=today(), ended:addDay(week,6)<today(),
-    ready:days.length>0&&miss.length===0, locked:!!ws};
+    ready:miss.length===0, locked:!!ws};
 }
-/* 某月状态：需要该月所有「已开始的周」都完成周签 */
+/* 某月状态。月签前提：归属该月的「全部」周都已周签（与服务端同一规则）。
+   旧版只要求「已开始的周」，月初就能把整月签掉并锁死整月记录。
+   openWeeks = 周日还没到的周；missDue = 已经可以签却没周签的周。 */
 async function monthState(deptId,month){
   const wks=wksOfMonth(month);
   const signs=(await API.weekSigns(deptId)).filter(x=>wks.includes(x.week));
   const miss=wks.filter(w=>!signs.find(s=>s.week===w));
+  const openWeeks=wks.filter(w=>addDay(w,6)>today()), missDue=miss.filter(w=>addDay(w,6)<=today());
   const from=month+'-01',to=month+'-31';
   const recs=await API.recordsRange(from,to,deptId);
   let checked=0,ng=0,dsign=0;
   recs.forEach(r=>{const v=Object.values(r.checks||{});checked+=v.length;
     ng+=v.filter(x=>x==='ng').length;if(r.sign)dsign++});
   const ms=await API.monthSign(deptId,month);
-  return {month,weeks:wks,signedWeeks:signs.length,miss,checked,ng,dsign,ms,
+  return {month,weeks:wks,signedWeeks:signs.length,miss,missDue,openWeeks,checked,ng,dsign,ms,
     started:month<=moOf(today()), ended:month<moOf(today()),
     ready:wks.length>0&&miss.length===0, locked:!!ms};
 }
@@ -1037,7 +1044,7 @@ async function viewDeptHome(){
     if(!st.checked&&wk!==cur) continue;
     sts.push(st); if(sts.length>=6) break;
   }
-  const now=sts.find(x=>x.week===cur)||sts[0]||{days:[],signed:[],miss:[],checked:0,ng:0,locked:false,ready:false};
+  const now=sts.find(x=>x.week===cur)||sts[0]||{days:[],signed:[],miss:[],missDue:[],future:[],checked:0,ng:0,locked:false,ready:false};
   const canSign=sts.filter(x=>!x.locked&&x.ready);
   const mo=moOf(today());
   const moRecs=await API.recordsRange(mo+'-01',mo+'-31',S.me.deptId);
@@ -1052,10 +1059,14 @@ async function viewDeptHome(){
   }else if(now.ready){
     badge=`<span class="hbadge on">可以签字了</span>`;
     btn=`<button class="hbtn" onclick="openWeek('${now.week}')">${svg('pen')} 去周签</button>`;
-  }else{
-    badge=`<span class="hbadge warn">还差 ${now.miss.length} 天</span>`;
+  }else if(now.missDue.length){
+    badge=`<span class="hbadge warn">漏签 ${now.missDue.length} 天</span>`;
     btn=`<button class="hbtn" onclick="openWeek('${now.week}')">${svg('cal')} 查看本周明细</button>`;
-    note=`<div class="hnote">${svg('warn')}<div>还有 ${now.miss.length} 天的日签没完成，等巡检员补签后才能周签</div></div>`;
+    note=`<div class="hnote">${svg('warn')}<div>有 ${now.missDue.length} 天的日签没完成，等巡检员补签后才能周签</div></div>`;
+  }else{
+    badge=`<span class="hbadge">本周进行中</span>`;
+    btn=`<button class="hbtn" onclick="openWeek('${now.week}')">${svg('cal')} 查看本周明细</button>`;
+    note=`<div class="hnote">${svg('cal')}<div>本周还没结束，周一到周日 7 天日签全部完成后才能周签</div></div>`;
   }
   const hero=`<div class="hero">
     <div class="row"><div class="grow">
@@ -1076,7 +1087,8 @@ async function viewDeptHome(){
         <b>${+dt.slice(8,10)}</b>${fut?'':done?'已签':'未签'}</div>`}).join('');
     const bg=st.locked?`<span class="pill p-ok">${svg('ok')} 已周签</span>`
       :st.ready?`<span class="pill p-br">可签字</span>`
-      :`<span class="pill p-go">还差 ${st.miss.length} 天日签</span>`;
+      :st.missDue.length?`<span class="pill p-go">漏签 ${st.missDue.length} 天</span>`
+      :`<span class="pill p-no">进行中</span>`;
     return `<button class="card" style="display:block;width:100%;text-align:left" onclick="openWeek('${st.week}')">
       <div class="row"><div class="grow"><div class="tt">${wkLab(st.week)}${st.week===cur?' · 本周':''}</div>
         <div class="st">巡检 ${st.checked} 台次${st.ng?` · <span style="color:var(--bad)">异常 ${st.ng}</span>`:''}</div></div>
@@ -1315,7 +1327,7 @@ window.showSigns=async(deptId,kind,key)=>{
     rows.push({lab:'本周汇总',lv:'周签',s:ws?ws.sign:null});
   }else{
     title=moLab(key);
-    const wks=wksOfMonth(key);
+    const wks=wksOfMonth(key,today());
     const all=await API.weekSigns(deptId);
     rows=wks.map(w=>{const x=all.find(y=>y.week===w);return {lab:wkLab(w),lv:'周签',s:x?x.sign:null}});
     const ms=await API.monthSign(deptId,key);
@@ -1355,7 +1367,9 @@ async function viewWeek(){
   if(st.locked) bar=`<div class="bar"><div class="info"><b>已周签</b><br>${H(st.ws.sign.name)} · ${H(st.ws.at)}</div>
     <button class="btn" onclick="viewSignOf('week')">查看签名</button></div>`;
   else if(!st.started) bar=`<div class="bar"><div class="info">这一周还没开始<br>不能提前签字</div></div>`;
-  else if(!st.ready) bar=`<div class="bar"><div class="info">还有 <b>${st.miss.length}</b> 天没有日签<br>等巡检员补签后才能周签</div>
+  else if(st.missDue.length) bar=`<div class="bar"><div class="info">有 <b>${st.missDue.length}</b> 天没有日签<br>等巡检员补签后才能周签</div>
+    <button class="btn" disabled>周签</button></div>`;
+  else if(!st.ready) bar=`<div class="bar"><div class="info">本周还没结束<br>7 天日签全部完成后才能周签</div>
     <button class="btn" disabled>周签</button></div>`;
   else bar=`<div class="bar"><div class="info">本周日签已齐<br>核对后签字确认</div>
     <button class="btn pri lg" onclick="goSign('week')">周签</button></div>`;
@@ -1383,6 +1397,9 @@ async function viewMonth(){
   const signs=await API.weekSigns(d.id);
   const rows=st.weeks.map(w=>{
     const ws=signs.find(x=>x.week===w);
+    if(!ws&&w>today()) return `<div class="card"><div class="row"><div class="grow">
+      <div class="tt" style="font-size:14.5px">${wkLab(w)}</div><div class="st">未开始</div></div>
+      <span class="pill p-no">—</span></div></div>`;
     return `<button class="card" style="display:block;width:100%;text-align:left" onclick="showNg('${d.id}','${w}','${addDay(w,6)}','${wkLab(w)}')">
       <div class="row"><div class="grow">
       <div class="tt" style="font-size:14.5px">${wkLab(w)}</div>
@@ -1394,7 +1411,9 @@ async function viewMonth(){
   if(st.locked) bar=`<div class="bar"><div class="info"><b>已月签</b><br>${H(st.ms.sign.name)} · ${H(st.ms.at)}</div>
     <button class="btn" onclick="viewSignOf('month')">查看签名</button></div>`;
   else if(!st.started) bar=`<div class="bar"><div class="info">这个月还没开始<br>不能提前签字</div></div>`;
-  else if(!st.ready) bar=`<div class="bar"><div class="info">还有 <b>${st.miss.length}</b> 周没有周签<br>等科室签字后才能月签</div>
+  else if(st.missDue.length) bar=`<div class="bar"><div class="info">有 <b>${st.missDue.length}</b> 周没有周签<br>等科室签字后才能月签</div>
+    <button class="btn" disabled>月签</button></div>`;
+  else if(!st.ready) bar=`<div class="bar"><div class="info">本月还没结束<br>最后一周周签完成后才能月签</div>
     <button class="btn" disabled>月签</button></div>`;
   else bar=`<div class="bar"><div class="info">本月周签已齐<br>核对后签字确认</div>
     <button class="btn pri lg" onclick="goSign('month')">月签</button></div>`;
@@ -1426,7 +1445,7 @@ window.pickSigner=()=>{
     <div>${its}</div>
     <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">取消</button>`);
 };
-window.chooseSigner=i=>{const m=SIGN_MEMBERS[i];SIGNER={name:m.name,title:m.title||''};closeSheet();render()};
+window.chooseSigner=i=>{const m=SIGN_MEMBERS[i];SIGNER={id:m.id,name:m.name,title:m.title||''};closeSheet();render()};
 async function viewSignPage(){
   const k=S.signKind;
   const d=await API.dept(S.deptId||S.me.deptId);
@@ -1450,18 +1469,22 @@ async function viewSignPage(){
   }else{
     const st=await monthState(d.id,S.month);
     title='月签 · 设备科确认';sub=`${d.name} · ${moLab(S.month)}`;
-    members=[{name:'设备科',title:'设备科'}];
+    members=[{name:S.me.displayName,title:'设备科'}];
     sum=`<div class="kv"><span>本月周签</span><b>${st.signedWeeks}/${st.weeks.length} 周</b></div>
       <div class="kv"><span>日签天数</span><b>${st.dsign} 天</b></div>
       <div class="kv"><span>巡检台次</span><b>${st.checked}</b></div>
       <div class="kv"><span>异常台次</span><b style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</b></div>`;
   }
   SIGN_MEMBERS=members;
-  if(members.length===1&&!SIGNER.name) SIGNER={name:members[0].name,title:members[0].title||''};
+  /* 上一次签字（或中途返回）留下的确认人不在本次可选名单里 → 清掉，避免带着别人的名字提交 */
+  if(SIGNER.name&&!members.some(m=>m.name===SIGNER.name)) SIGNER={name:'',title:''};
+  if(members.length===1&&!SIGNER.name) SIGNER={id:members[0].id,name:members[0].name,title:members[0].title||''};
+  const noRoster=k==='week'&&!members.length;
   const backTo=k==='day'?'dept':k==='week'?'week':'month';
   return header(title,sub,`S.view='${backTo}';render()`)+
   `<main class="pad-bar">
     <div class="card" style="margin-bottom:14px">${sum}</div>
+    ${noRoster?`<div class="lock" style="margin-bottom:12px">${svg('warn')} 本科室「签字人名单」还是空的，无法选择周签确认人。请联系设备科在管理后台「签字人名单」里添加护士长等签字人后再周签。</div>`:''}
     <div class="fld"><label class="lb">确认人<i>*</i></label>
       <button class="pick ${SIGNER.name?'':'ph'}" id="signer" onclick="pickSigner()">
         <span class="grow">${SIGNER.name?H(SIGNER.name)+(SIGNER.title?`（${H(SIGNER.title)}）`:''):'请选择确认人'}</span>
@@ -1541,15 +1564,17 @@ window.goSign=async k=>{
       <div class="d">未勾选的设备不计入本次巡检。确定现在签字吗？</div>
       <div class="row" style="gap:10px;justify-content:flex-end">
         <button class="btn" onclick="closeSheet()">继续巡检</button>
-        <button class="btn pri" onclick="closeSheet();S.signKind='day';S.view='sign';render()">仍要签字</button></div>`);return}
+        <button class="btn pri" onclick="closeSheet();startSign('day')">仍要签字</button></div>`);return}
   }
-  S.signKind=k;SIGNER={name:'',title:''};S.view='sign';render();
+  startSign(k);
 };
+/* 进入签字页的唯一入口：每次都清空上一次的确认人 */
+window.startSign=k=>{S.signKind=k;SIGNER={name:'',title:''};S.view='sign';render()};
 window.submitSign=async()=>{
   if(!SIGNER.name) return toast('请选择确认人');
   if(!SIG.drawn) return toast('请手写签名后再提交');
   const name=SIGNER.name,title=SIGNER.title||'';
-  const sign={name,title,dataUrl:SIG.cv.toDataURL('image/png'),opinion:$('#opinion').value.trim()};
+  const sign={name,title,memberId:SIGNER.id,dataUrl:SIG.cv.toDataURL('image/png'),opinion:$('#opinion').value.trim()};
   const d=S.deptId||S.me.deptId;
   try{
     if(S.signKind==='day'){await API.signDay(d,S.date,sign);toast('已日签');SIGNER={name:'',title:''};S.view='dept'}

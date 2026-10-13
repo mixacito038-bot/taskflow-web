@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "test": "node --test \"test/**/*.test.js\"",
     "smoke": "node scripts/smoke.js",
+    "regress": "node scripts/regress.js",
     "create-admin": "node src/scripts/create-admin.js",
     "backup": "node src/scripts/backup.js"
   },

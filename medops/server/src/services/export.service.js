@@ -6,6 +6,7 @@ const { E } = require('../plugins/error');
 const P = require('./period.service');
 const fileSvc = require('./file.service');
 const statsSvc = require('./stats.service');
+const { REC_SELECT, WS_SELECT, MS_SELECT } = require('./record.service');
 
 function daysOfMonth(month) {
   const d = P.D(`${month}-01`); d.setMonth(d.getMonth() + 1); d.setDate(0);
@@ -32,7 +33,7 @@ async function monthlyXlsx(deptId, month) {
 
   const devices = db.prepare('SELECT * FROM devices WHERE dept_id = ? ORDER BY sort, code').all(deptId);
   const days = daysOfMonth(month);
-  const recs = db.prepare("SELECT * FROM records WHERE dept_id = ? AND date LIKE ? || '-%'").all(deptId, month);
+  const recs = db.prepare(`${REC_SELECT} WHERE r.dept_id = ? AND r.date LIKE ? || '-%'`).all(deptId, month);
   const recByDate = new Map(recs.map(r => [r.date, r]));
   const itemMap = new Map(); // `${date}|${deviceId}` → result
   for (const r of recs) {
@@ -76,16 +77,16 @@ async function monthlyXlsx(deptId, month) {
   for (const d of days) {
     const rec = recByDate.get(d);
     if (!rec || !rec.sign_at) continue;
-    r = ws3.addRow(['日签', d, rec.sign_name, rec.sign_opinion || '', rec.sign_at, '']).number;
+    r = ws3.addRow(['日签', d, rec.sign_user_live || rec.sign_name, rec.sign_opinion || '', rec.sign_at, '']).number;
     embedSign(wb, ws3, rec.sign_file_id, r, 5);
   }
-  for (const w of db.prepare("SELECT * FROM week_signs WHERE dept_id = ? AND week_start LIKE ? || '-%' ORDER BY week_start").all(deptId, month)) {
-    r = ws3.addRow(['周签', `${w.week_start} 起`, w.sign_name, w.sign_opinion || '', w.sign_at, '']).number;
+  for (const w of db.prepare(`${WS_SELECT} WHERE w.dept_id = ? AND w.week_start LIKE ? || '-%' ORDER BY w.week_start`).all(deptId, month)) {
+    r = ws3.addRow(['周签', `${w.week_start} 起`, w.member_live != null ? w.member_live : w.sign_name, w.sign_opinion || '', w.sign_at, '']).number;
     embedSign(wb, ws3, w.sign_file_id, r, 5);
   }
-  const ms = db.prepare('SELECT * FROM month_signs WHERE dept_id = ? AND month = ?').get(deptId, month);
+  const ms = db.prepare(`${MS_SELECT} WHERE ms.dept_id = ? AND ms.month = ?`).get(deptId, month);
   if (ms) {
-    r = ws3.addRow(['月签', month, ms.sign_name, ms.sign_opinion || '', ms.sign_at, '']).number;
+    r = ws3.addRow(['月签', month, ms.signer_live || ms.sign_name, ms.sign_opinion || '', ms.sign_at, '']).number;
     embedSign(wb, ws3, ms.sign_file_id, r, 5);
   }
 
