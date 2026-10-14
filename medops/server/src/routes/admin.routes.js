@@ -303,6 +303,44 @@ module.exports = async function adminRoutes(app) {
     return { ok: true };
   });
 
+  /* 批量处理：勾选多台设备，一次改状态或删除（导错一批设备时不用一台台点）。
+     body { ids:[...], action:'status'|'delete', status? }
+     删除同单台规则：巡检过的设备不删（保留历史），列在 blocked 里，后台据此提供一键改停用 / 报废。 */
+  app.post('/api/admin/devices/batch', { preHandler: guard }, async req => {
+    const b = req.body || {};
+    if (!Array.isArray(b.ids) || !b.ids.length) throw E.badInput('请先勾选设备');
+    if (b.ids.length > 2000) throw E.badInput('一次最多处理 2000 台');
+    const ids = [...new Set(b.ids.map(Number))];
+    if (ids.some(n => !Number.isInteger(n) || n <= 0)) throw E.badInput('设备 id 不正确');
+    if (!['status', 'delete'].includes(b.action)) throw E.badInput('action 只能是 status / delete');
+    const status = b.action === 'status' ? devStatus(b.status, null) : null;
+    if (b.action === 'status' && !status) throw E.badInput('请选择要改成的状态');
+    const get = db().prepare('SELECT id, code, name FROM devices WHERE id = ?');
+    const used = db().prepare(`SELECT COUNT(*) AS n, MAX(r.date) AS last FROM record_items i
+      JOIN records r ON r.id = i.record_id WHERE i.device_id = ?`);
+    const out = { updated: [], deleted: [], blocked: [], missing: [] };
+    db().transaction(() => {
+      for (const id of ids) {
+        const v = get.get(id);
+        if (!v) { out.missing.push(String(id)); continue; }
+        const one = { id: String(v.id), code: v.code, name: v.name };
+        if (status) {
+          db().prepare('UPDATE devices SET status = ?, updated_at = ? WHERE id = ?').run(status, nowIso(), id);
+          out.updated.push(one);
+          continue;
+        }
+        const u = used.get(id);
+        if (u.n) { out.blocked.push({ ...one, days: u.n, last: u.last }); continue; }
+        db().prepare('DELETE FROM devices WHERE id = ?').run(id);
+        out.deleted.push(one);
+      }
+    })();
+    const codes = l => l.map(x => x.code).slice(0, 100).join(',') + (l.length > 100 ? ` 等 ${l.length} 台` : '');
+    if (out.updated.length) authSvc.audit(req.user.id, 'device_batch_status', `status=${status} n=${out.updated.length} codes=${codes(out.updated)}`, req.ip);
+    if (out.deleted.length) authSvc.audit(req.user.id, 'device_batch_delete', `n=${out.deleted.length} codes=${codes(out.deleted)}`, req.ip);
+    return out;
+  });
+
   /* 设备导入模板 / 导入 */
   app.get('/api/admin/devices/import-template', { preHandler: guard }, async (req, reply) => {
     const buf = await exportSvc.importTemplateXlsx();
@@ -423,8 +461,10 @@ module.exports = async function adminRoutes(app) {
   app.post('/api/admin/import/legacy', {
     preHandler: adminOnly, bodyLimit: 50 * 1024 * 1024
   }, async req => {
-    const out = importSvc.importLegacy(req.body);
-    authSvc.audit(req.user.id, 'import_legacy', JSON.stringify(out.imported), req.ip);
+    // dryRun=1：「先检查」——完整走一遍、整体回滚，不写任何数据
+    const dryRun = req.query.dryRun === '1';
+    const out = importSvc.importLegacy(req.body, { dryRun });
+    if (!dryRun) authSvc.audit(req.user.id, 'import_legacy', JSON.stringify(out.imported), req.ip);
     return out;
   });
 

@@ -114,7 +114,8 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。→ `{created,updated,errors:[{row,message}]}`。有效期两列的写入语义：**列不存在或该格留空 = 本次不改动**（老 7 列模板重导入不会清空已录到期日），填「无/-/清空」= 清空，填日期 = 覆盖。日期必须年月日填全（不做 `new Date()` 宽松兜底），状态须命中白名单否则整行报错 |
 | GET/POST/PATCH/DELETE /api/admin/members[/:id] | 签字人名单。同科室重名 → 409；不能改科室（400）；改名后历史周签显示新名 |
 | POST /api/admin/signs/void (admin) | Body `{type:'day'|'week'|'month',deptId,key,reason}`。作废签字（记录退回未签态）。**必须自上而下**：周签在时不能作废其中的日签，月签在时不能作废其中的周签（409 LOCKED）。reason 去空白后不能为空。审计记下原签字人、时间、签名图、统计 |
-| POST /api/admin/import/legacy (admin) | Body = H5 导出的 `{depts,devices,members,users,records,weeksigns,monthsigns}` JSON，事务导入（users 密码重置为随机+mustChange） |
+| POST /api/admin/import/legacy[?dryRun=1] (admin) | Body = H5 导出的 `{depts,devices,members,users,records,weeksigns,monthsigns}` JSON，事务导入（users 密码重置为随机+mustChange）。返回 `{imported:{各类新增条数},passwords:{账号:初始密码},errors:[{where,message}] 跳过的,warnings:[{where,message}] 导入了但要留意的,dryRun}`。每条一个保存点：缺必填项（科室名/设备编码/签字人姓名/账号名）或单条出错只跳过该条，不整单失败。不导入：今天以后的记录、周日在今天之后的周签、最后一周周日在今天之后的月签（会锁住本周/本月）。已结束周期里不符合签字规则的周签/月签照原样导入并逐条 warning。设备状态按同义词换算（active→in_use、inactive/停用→retired、报废→scrapped，表同迁移 005），认不出的新设备按 in_use + warning、已有设备保持原状态；空品类记「未分类」；已有设备只更新 JSON 里给了值的字段。巡检人/日签人关联账号（旧 id 映射，或显示名全库唯一匹配），周签人关联本科室签字人名单，月签人按显示名关联设备科/管理员账号；周签/月签没带 stat 时按库里记录现算。dryRun=1 完整执行后整体回滚，不写数据和签名图文件、不生成密码、不记审计 |
+| POST /api/admin/devices/batch (equip/admin) | Body `{ids:[...],action:'status'\|'delete',status?}`，ids ≤2000。status：全部改为该状态（只认四个值）；delete：没有巡检记录的删除，有记录的不删、放进 `blocked:[{id,code,name,days,last}]`。返回 `{updated,deleted,blocked,missing}`，单个事务；记审计 device_batch_status / device_batch_delete |
 | GET /api/admin/audit?from=&to= | 审计日志 |
 
 ## 4. 统计与导出（equip/admin；dept 可查本科室 stats）

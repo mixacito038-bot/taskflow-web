@@ -642,6 +642,137 @@ async function main() {
   }
   ok('作废日签：异常保留并标「签字已作废，待重签」、可按签字状态筛选/导出，改正重签后消失；报废设备的历史异常标出现状');
   ok('删除巡检过的设备 → 409 说明记录天数与改停用的办法，一键停用可用；无效状态报出原值、体检列出、改好后手机端可巡检');
+
+  step = '历史数据导入：手工编的 JSON（状态写法、缺项、未结束周期的签字、关联账号）';
+  {
+    const w = P.wkOf(today), lw = P.addDay(w, -7);
+    const sg = (name, at) => ({ name, title: '', dataUrl: PNG, opinion: '', at });
+    const recs = [];
+    for (let d = lw; d <= P.addDay(lw, 6); d = P.addDay(d, 1)) {
+      if (d === P.addDay(lw, 2)) continue; // 上周少一天日签 → 上周的周签不符合规则
+      recs.push({ id: 'r' + d, deptId: 'h1', date: d, checks: { hv1: 'ok', hv2: 'ok', hvX: 'ok' },
+        inspectorId: 'hu1', inspectorName: '导入巡检员', sign: sg('导入巡检员', d + ' 09:00') });
+    }
+    recs.push({ deptId: 'h1', date: P.addDay(today, 2), checks: { hv1: 'ok' }, sign: sg('导入巡检员', 'x') });
+    const data = {
+      depts: [{ id: 'h1', name: '导入一科', status: 'active' }, { id: 'h2', name: '导入二科', status: 'inactive' }, { id: 'h3' }],
+      devices: [
+        { id: 'hv1', deptId: 'h1', code: 'HX-001', name: '除颤仪', status: 'active' },
+        { id: 'hv2', deptId: 'h1', code: 'HX-002', name: '监护仪', catName: '监护类', status: 'inactive' },
+        { id: 'hv3', deptId: 'h1', code: 'HX-003', name: '吸引器', catName: '吸引类', status: '报废' },
+        { id: 'hv4', deptId: 'h1', code: 'HX-004', catName: '吸引类', status: '借出' },
+        { id: 'hv5', deptId: 'h1', name: '没编码' }
+      ],
+      members: [{ id: 'hm1', deptId: 'h1', name: '导入护士长', title: '护士长' }, { id: 'hm2', deptId: 'h1' }],
+      users: [{ id: 'hu1', username: 'imp-insp', displayName: '导入巡检员', role: '巡检员', deptIds: ['h1'] }, { id: 'hu2', displayName: '无账号名' }],
+      records: recs,
+      weeksigns: [{ deptId: 'h1', week: lw, sign: sg('导入护士长', P.addDay(lw, 7) + ' 09:00') },
+        { deptId: 'h1', week: w, sign: sg('导入护士长', today + ' 09:00') }],
+      monthsigns: [{ deptId: 'h1', month: P.moOf(today), sign: sg('设备科', today + ' 10:00') }]
+    };
+    const cnt = () => ['devices', 'files', 'records', 'users'].map(t => sql.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c);
+    const before = cnt();
+    errj(await api('POST', '/api/admin/import/legacy?dryRun=1', { token: Q, body: data }), 403, 'FORBIDDEN', '设备科不能导入历史数据');
+    const dry = okj(await api('POST', '/api/admin/import/legacy?dryRun=1', { token: A, body: data }));
+    assert.equal(dry.dryRun, true);
+    assert.deepEqual(cnt(), before, '先检查不应写入任何设备、签名图、记录、账号');
+    assert.deepEqual(dry.passwords, {}, '先检查不生成密码');
+    const res = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: data }));
+    assert.equal(res.dryRun, false);
+    assert.deepEqual([res.imported, res.errors, res.warnings], [dry.imported, dry.errors, dry.warnings], '先检查与正式导入的结果应一致');
+    assert.deepEqual(res.imported, { depts: 2, devices: 4, members: 1, users: 1, records: 6, weeksigns: 1, monthsigns: 0 });
+    const msgs = l => l.map(e => `${e.where}：${e.message}`).join('\n');
+    const has = (l, where, frag) => assert.ok(l.some(e => e.where.includes(where) && e.message.includes(frag)), `缺少「${where} … ${frag}」：\n${msgs(l)}`);
+    has(res.errors, '科室 id=h3', '缺少科室名称');
+    has(res.errors, '设备 没编码', '缺少设备编码');
+    has(res.errors, '签字人', '缺少姓名');
+    has(res.errors, '账号 无账号名', '缺少登录账号名');
+    has(res.errors, `日巡检 导入一科 ${P.addDay(today, 2)}`, '不能提前录入');
+    has(res.errors, `周签 导入一科 ${w} 起`, '不能提前周签');
+    has(res.errors, `月签 导入一科 ${P.moOf(today)}`, '不能提前月签');
+    has(res.warnings, '设备状态', '「active」→ 在用 1 台');
+    has(res.warnings, '设备状态', '「inactive」→ 已停用 1 台');
+    has(res.warnings, '设备状态', '「报废」→ 已报废 1 台');
+    has(res.warnings, '设备 HX-004', '状态「借出」认不出');
+    has(res.warnings, '设备 HX-004', '没有设备名称');
+    has(res.warnings, '设备品类', '1 台设备没有品类');
+    has(res.warnings, '日巡检 导入一科', '6 天的记录里共有 6 项结果对应不上设备');
+    has(res.warnings, `周签 导入一科 ${lw} 起`, '有 1 天没有日签');
+    const st = Object.fromEntries(sql.prepare("SELECT code, status, cat_name FROM devices WHERE code LIKE 'HX-%'").all().map(r => [r.code, `${r.status}/${r.cat_name}`]));
+    assert.deepEqual(st, { 'HX-001': 'in_use/未分类', 'HX-002': 'retired/监护类', 'HX-003': 'scrapped/吸引类', 'HX-004': 'in_use/吸引类' },
+      'active→在用、inactive→停用、报废→报废（以前一律变成在用）');
+    assert.equal(sql.prepare("SELECT status FROM depts WHERE name = '导入二科'").get().status, 'off');
+    const iu = sql.prepare("SELECT id FROM users WHERE username = 'imp-insp'").get().id;
+    const hd = sql.prepare("SELECT id FROM depts WHERE name = '导入一科'").get().id;
+    const r1 = sql.prepare('SELECT inspector_id, sign_user_id FROM records WHERE dept_id = ? AND date = ?').get(hd, lw);
+    assert.deepEqual([r1.inspector_id, r1.sign_user_id], [iu, iu], '巡检人、日签人关联到导入的账号');
+    const rec = okj(await api('GET', `/api/records?deptId=${hd}&from=${lw}&to=${lw}`, { token: A }))[0];
+    assert.equal(rec.sign.userId, String(iu), '手机端「我的签字记录」按 sign.userId 认人');
+    const ws = sql.prepare(`SELECT m.name, w.stat_checked, w.stat_ng, w.stat_days FROM week_signs w
+      LEFT JOIN members m ON m.id = w.sign_member_id WHERE w.dept_id = ? AND w.week_start = ?`).get(hd, lw);
+    assert.deepEqual([ws.name, ws.stat_checked, ws.stat_ng, ws.stat_days], ['导入护士长', 12, 0, 6], '周签人关联名单；没带统计时按记录算');
+    assert.ok(!sql.prepare('SELECT 1 FROM week_signs WHERE dept_id = ? AND week_start = ?').get(hd, w), '本周的周签没有导入（不锁本周）');
+    // 重新导入同一份：已有记录合并成一条提示；管理员改好的品类不被冲掉
+    sql.prepare("UPDATE devices SET cat_name = '除颤仪' WHERE code = 'HX-001'").run();
+    const again = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: data }));
+    assert.equal(again.imported.records, 0);
+    has(again.errors, '日巡检 导入一科', '6 天系统里已有记录');
+    assert.equal(again.errors.filter(e => e.message.includes('系统里已有记录')).length, 1, '同一科室的重复记录合并成一条提示');
+    assert.equal(sql.prepare("SELECT cat_name FROM devices WHERE code = 'HX-001'").get().cat_name, '除颤仪', '重新导入不冲掉管理员改好的品类');
+    // 结构不对的整体数据：明确报错
+    errj(await api('POST', '/api/admin/import/legacy', { token: A, body: [1, 2] }), 400, 'BAD_INPUT', '顶层是数组');
+    // 某一条在数据库里意外出错：只跳过这一条，其余照常导入，已存的签名图不留孤儿文件
+    sql.exec(`CREATE TRIGGER regress_boom_dev BEFORE INSERT ON devices WHEN NEW.code = 'BOOM-1'
+      BEGIN SELECT RAISE(ABORT, '模拟数据库出错'); END;
+      CREATE TRIGGER regress_boom_ws BEFORE INSERT ON week_signs WHEN NEW.sign_name = '炸'
+      BEGIN SELECT RAISE(ABORT, '模拟数据库出错'); END;`);
+    const pngs = () => { let n = 0; const walk = d => { for (const f of fs.readdirSync(d, { withFileTypes: true })) f.isDirectory() ? walk(path.join(d, f.name)) : n++; }; walk(path.join(DATA_DIR, 'files')); return n; };
+    const p0 = pngs();
+    const boom = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: {
+      depts: [{ id: 'b1', name: '导入一科' }],
+      devices: [{ id: 'x1', deptId: 'b1', code: 'BOOM-1', name: '炸' }, { id: 'x2', deptId: 'b1', code: 'BOOM-2', name: '好的' }],
+      weeksigns: [{ deptId: 'b1', week: P.addDay(lw, -7), sign: sg('炸', 'x') }]
+    } }), '单条出错不应让整单失败');
+    sql.exec('DROP TRIGGER regress_boom_dev; DROP TRIGGER regress_boom_ws;');
+    has(boom.errors, '设备 BOOM-1', '导入出错，已跳过：模拟数据库出错');
+    has(boom.errors, `周签 导入一科 ${P.addDay(lw, -7)} 起`, '导入出错，已跳过');
+    assert.equal(boom.imported.devices, 1, 'BOOM-2 照常导入');
+    assert.equal(pngs(), p0, '出错那条的签名图已删除，不留孤儿文件');
+  }
+  ok('历史导入：先检查不写数据、与正式导入结果一致；缺项逐条跳过（以前整单 500）；active / inactive / 报废 按同义词换算');
+  ok('今天以后的记录、未结束的周签月签不导入；不合规则的周签照导并提示；巡检人 / 日签人关联账号、周签人关联名单、统计按记录算；重复导入合并提示、不冲掉已改的品类');
+
+  step = '设备台账批量处理';
+  {
+    const kb = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '批量测试科' } }));
+    const ids = [];
+    for (const code of ['PL-001', 'PL-002', 'PL-003', 'PL-004']) {
+      ids.push(okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: kb.id, catName: '测试', code, name: code } })).id);
+    }
+    okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'plinsp', password: 'Pass@123', displayName: '批量测试员', role: 'inspector', deptIds: [kb.id] } }));
+    const B = await login('plinsp');
+    okj(await api('PUT', `/api/records/${kb.id}/${today}`, { token: B, body: { checks: { [ids[0]]: 'ok' }, notes: {} } }), 'PL-001 巡检一次');
+    const batch = (token, body) => api('POST', '/api/admin/devices/batch', { token, body });
+    errj(await batch(A, { ids: [], action: 'delete' }), 400, 'BAD_INPUT', '没勾选');
+    errj(await batch(A, { ids, action: 'move' }), 400, 'BAD_INPUT', '动作不对');
+    errj(await batch(A, { ids, action: 'status', status: 'active' }), 400, 'BAD_INPUT', '状态不对');
+    errj(await batch(A, { ids, action: 'status' }), 400, 'BAD_INPUT', '没选状态');
+    errj(await batch(A, { ids: ['abc'], action: 'delete' }), 400, 'BAD_INPUT', 'id 不对');
+    errj(await batch(A, { ids: Array.from({ length: 2001 }, (_, i) => i + 1), action: 'delete' }), 400, 'BAD_INPUT', '超过 2000 台');
+    errj(await batch(B, { ids, action: 'delete' }), 403, 'FORBIDDEN', '巡检员批量处理');
+    let r = okj(await batch(Q, { ids: [ids[2], ids[3]], action: 'status', status: 'retired' }), '设备科批量停用');
+    assert.deepEqual(r.updated.map(x => x.code), ['PL-003', 'PL-004']);
+    r = okj(await batch(A, { ids: [...ids, '999999'], action: 'delete' }));
+    assert.deepEqual(r.deleted.map(x => x.code), ['PL-002', 'PL-003', 'PL-004'], '没巡检过的删掉（停用的也能删）');
+    assert.deepEqual(r.blocked.map(x => [x.code, x.days, x.last]), [['PL-001', 1, today]], '巡检过的不删，带记录天数和最近日期');
+    assert.deepEqual(r.missing, ['999999']);
+    okj(await batch(A, { ids: r.blocked.map(x => x.id), action: 'status', status: 'retired' }), '删不掉的一键改停用');
+    assert.equal(sql.prepare('SELECT status FROM devices WHERE id = ?').get(+ids[0]).status, 'retired');
+    const audits = okj(await api('GET', '/api/admin/audit', { token: A })).filter(a => a.action.startsWith('device_batch_'));
+    assert.ok(audits.some(a => a.action === 'device_batch_delete' && a.detail.includes('n=3') && a.detail.includes('PL-002')), JSON.stringify(audits));
+    assert.ok(audits.some(a => a.action === 'device_batch_status' && a.detail.includes('status=retired') && a.detail.includes('PL-001')), JSON.stringify(audits));
+  }
+  ok('批量改状态 / 批量删除：巡检过的不删、列出天数和最近日期，可一键改停用；校验勾选、动作、状态、数量；记审计；巡检员无权');
   sql.close();
 
   console.log('\nREGRESS PASS');

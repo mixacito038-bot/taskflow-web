@@ -196,6 +196,48 @@ function DeleteBlockedModal({ blocked, onClose, onDone }) {
   )
 }
 
+/* 批量删除的结果：巡检过的设备删不掉（保留历史），列出来并一键改为「已停用 / 已报废」 */
+function BatchDeleteResult({ result, onClose, onDone }) {
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setErr(null) }, [result])
+  if (!result) return null
+  const { deleted = [], blocked = [] } = result
+
+  async function setStatus(status) {
+    setErr(null)
+    setBusy(true)
+    try {
+      await api('/admin/devices/batch', { method: 'POST', body: { ids: blocked.map(b => b.id), action: 'status', status } })
+      onDone(`已把 ${blocked.length} 台设备改为「${devStatusText(status)}」`)
+      onClose()
+    } catch (e) { setErr(e) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal open title="批量删除结果" onClose={onClose}>
+      <p className="text-sm leading-relaxed text-slate-700">
+        已删除 <b>{deleted.length}</b> 台。下面 <b>{blocked.length}</b> 台有巡检记录，为保留巡检历史不能删除（作废签字也不会删除巡检记录）：
+      </p>
+      <ul className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-slate-200 text-sm">
+        {blocked.map(b => (
+          <li key={b.id} className="flex justify-between gap-3 border-b border-slate-100 px-3 py-1.5 last:border-0">
+            <span><span className="font-mono text-slate-600">{b.code}</span> {b.name}</span>
+            <span className="whitespace-nowrap text-xs text-slate-500">{b.days} 天记录，最近 {b.last}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-sm text-slate-600">不再使用的改为「已停用」或「已报废」即可：手机端不再列出，历史记录和报表照常保留。</p>
+      <ErrorTip error={err} className="mt-3" />
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button type="button" className="btn-ghost" onClick={onClose}>关闭</button>
+        <button type="button" className="btn-ghost" disabled={busy} onClick={() => setStatus('scrapped')}>这 {blocked.length} 台改为「已报废」</button>
+        <button type="button" className="btn-primary" disabled={busy} onClick={() => setStatus('retired')}>这 {blocked.length} 台改为「已停用」</button>
+      </div>
+    </Modal>
+  )
+}
+
 function ImportModal({ open, onClose, onDone }) {
   const fileRef = useRef(null)
   const [err, setErr] = useState(null)
@@ -292,6 +334,11 @@ export default function Devices() {
   const [modal, setModal] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
   const [blocked, setBlocked] = useState(null) // 有巡检记录删不掉：{ device, message }
+  const [filterStatus, setFilterStatus] = useState('') // '' 全部 / 四个状态 / bad 状态无效
+  const [sel, setSel] = useState(() => new Set())     // 勾选的设备 id
+  const [batchResult, setBatchResult] = useState(null) // 批量删除后有删不掉的：{ deleted, blocked }
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
 
   function load() {
     api('/admin/devices').then(res => setList(asList(res).map(normDevice))).catch(setErr)
@@ -314,8 +361,48 @@ export default function Devices() {
 
   const shown = (list || []).filter(d =>
     (!filterDept || d.deptId === filterDept) &&
+    (!filterStatus || (filterStatus === 'bad' ? !isDevStatus(d.status) : d.status === filterStatus)) &&
     (!kw || [d.code, d.name, d.catName, d.model, d.location].join(' ').toLowerCase().includes(kw.toLowerCase()))
   )
+
+  /* 勾选只对当前列表里看得见的设备生效：换了筛选条件，看不见的自动取消勾选，免得批量操作误伤别的科室 */
+  const shownKey = shown.map(d => d.id).join(',')
+  useEffect(() => {
+    const ids = new Set(shown.map(d => d.id))
+    setSel(prev => {
+      const next = new Set([...prev].filter(id => ids.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [shownKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const allOn = shown.length > 0 && shown.every(d => sel.has(d.id))
+  const someOn = shown.some(d => sel.has(d.id))
+  const toggleAll = () => setSel(allOn ? new Set() : new Set(shown.map(d => d.id)))
+  const toggle = id => setSel(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
+  async function batch(action, status) {
+    const ids = [...sel]
+    if (!ids.length) return
+    const ask = action === 'delete'
+      ? `删除选中的 ${ids.length} 台设备？\n没有巡检记录的直接删除；巡检过的不能删，会列出来，可以一键改为停用或报废。`
+      : `把选中的 ${ids.length} 台设备改为「${devStatusText(status)}」？`
+    if (!confirm(ask)) return
+    setErr(null)
+    setNotice('')
+    setBusy(true)
+    try {
+      const res = await api('/admin/devices/batch', { method: 'POST', body: { ids, action, status } })
+      setSel(new Set())
+      if (action === 'delete') {
+        if (res.blocked?.length) setBatchResult(res)
+        else setNotice(`已删除 ${res.deleted.length} 台设备`)
+      } else setNotice(`已把 ${res.updated.length} 台设备改为「${devStatusText(status)}」`)
+      load()
+    } catch (e) { setErr(e) } finally { setBusy(false) }
+  }
 
   return (
     <div>
@@ -333,6 +420,11 @@ export default function Devices() {
           <option value="">全部科室</option>
           {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
         </select>
+        <select className="inp !w-36" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} aria-label="按状态筛选">
+          <option value="">全部状态</option>
+          {DEVICE_STATUS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+          <option value="bad">状态无效</option>
+        </select>
         <input className="inp !w-64" placeholder="搜索编码 / 名称 / 品类 / 位置" value={kw} onChange={e => setKw(e.target.value)} />
         <span className="self-center text-sm text-slate-600">共 {shown.length} 台</span>
       </div>
@@ -340,7 +432,22 @@ export default function Devices() {
       {badCount > 0 && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           有 {badCount} 台设备的状态无效（下面红色标出）：手机端巡检清单里没有它们，有效期也不会提醒。
-          请点「编辑」重新选择状态后保存。
+          请点「编辑」重新选择状态后保存；多的话
+          <button className="mx-1 font-medium underline" onClick={() => { setFilterStatus('bad'); setFilterDept(''); setKw('') }}>只看这些</button>
+          ，全选后批量改。
+        </div>
+      )}
+      {notice && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div>}
+      {sel.size > 0 && (
+        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary-light px-3 py-2 text-sm shadow-sm">
+          <span className="mr-1 font-medium text-primary">已选 {sel.size} 台</span>
+          <span className="text-slate-600">改为</span>
+          {DEVICE_STATUS.map(([v, t]) => (
+            <button key={v} className="btn-ghost !bg-white !px-2.5 !py-1 text-xs" disabled={busy} onClick={() => batch('status', v)}>{t}</button>
+          ))}
+          <span className="mx-1 h-4 w-px bg-slate-300" aria-hidden="true" />
+          <button className="btn-danger !px-2.5 !py-1 text-xs" disabled={busy} onClick={() => batch('delete')}>批量删除</button>
+          <button className="ml-auto text-xs text-slate-600 hover:text-slate-800" onClick={() => setSel(new Set())}>取消选择</button>
         </div>
       )}
 
@@ -348,11 +455,18 @@ export default function Devices() {
         {!list ? <Spinner /> : shown.length === 0 ? <Empty /> : (
           <table className="tbl">
             <thead>
-              <tr><th>编码</th><th>名称</th><th>品类</th><th>科室</th><th>位置</th><th>状态</th><th>有效期</th><th className="text-right">操作</th></tr>
+              <tr>
+                <th className="w-8">
+                  <input type="checkbox" aria-label="全选当前列表" checked={allOn} onChange={toggleAll}
+                    ref={el => { if (el) el.indeterminate = someOn && !allOn }} />
+                </th>
+                <th>编码</th><th>名称</th><th>品类</th><th>科室</th><th>位置</th><th>状态</th><th>有效期</th><th className="text-right">操作</th>
+              </tr>
             </thead>
             <tbody>
               {shown.map(d => (
-                <tr key={d.id}>
+                <tr key={d.id} className={sel.has(d.id) ? 'bg-primary-light/60' : ''}>
+                  <td><input type="checkbox" aria-label={`选择 ${d.code}`} checked={sel.has(d.id)} onChange={() => toggle(d.id)} /></td>
                   <td className="font-mono text-slate-600">{d.code}</td>
                   <td className="font-medium">{d.name}</td>
                   <td>{d.catName}</td>
@@ -389,6 +503,7 @@ export default function Devices() {
       <DeviceModal open={modal !== null} editing={modal} depts={onDepts} formDepts={formDepts} onClose={() => setModal(null)} onSaved={load} time={time} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
       <DeleteBlockedModal blocked={blocked} onClose={() => setBlocked(null)} onDone={load} />
+      <BatchDeleteResult result={batchResult} onClose={() => setBatchResult(null)} onDone={msg => { setNotice(msg); load() }} />
     </div>
   )
 }

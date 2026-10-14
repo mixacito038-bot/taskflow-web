@@ -14,12 +14,18 @@ function initFiles(dataDir) { DATA_DIR = dataDir; }
 function absPath(relPath) { return path.join(DATA_DIR, 'files', relPath); }
 
 /* 校验并落盘签名图：dataUrl(PNG) → DATA_DIR/files/signatures/YYYY/MM/<uuid>.png */
-function saveSignature(dataUrl) {
+/* 只校验不落盘（历史数据导入的「先检查」用），返回解码后的图片 */
+function checkSignature(dataUrl) {
   const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
   if (!m) throw E.badInput('签名必须是 PNG dataUrl');
   const buf = Buffer.from(m[1], 'base64');
   if (buf.length > MAX_SIGN_BYTES) throw E.badInput('签名图过大（超过 1MB）');
   if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_MAGIC)) throw E.badInput('签名图不是合法 PNG');
+  return buf;
+}
+
+function saveSignature(dataUrl) {
+  const buf = checkSignature(dataUrl);
   const id = crypto.randomUUID();
   const { date } = period.shNow();
   const rel = `signatures/${date.slice(0, 4)}/${date.slice(5, 7)}/${id}.png`;
@@ -29,7 +35,7 @@ function saveSignature(dataUrl) {
   getDb().prepare(`INSERT INTO files (id, kind, rel_path, mime, size, sha256, created_at)
     VALUES (?, 'signature', ?, 'image/png', ?, ?, ?)`)
     .run(id, rel, buf.length, crypto.createHash('sha256').update(buf).digest('hex'), new Date().toISOString());
-  return { id, url: `/api/files/${id}` };
+  return { id, url: `/api/files/${id}`, abs };
 }
 
 function getFile(id) {
@@ -47,4 +53,4 @@ function fileDeptId(id) {
   return r ? r.dept_id : null;
 }
 
-module.exports = { initFiles, absPath, saveSignature, getFile, fileDeptId };
+module.exports = { initFiles, absPath, checkSignature, saveSignature, getFile, fileDeptId };
