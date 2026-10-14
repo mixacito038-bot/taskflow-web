@@ -36,9 +36,12 @@ module.exports = async function statsRoutes(app) {
 
   app.get('/api/stats/ng', { preHandler: guard }, async req => {
     const { from, to } = req.query;
+    for (const v of [from, to]) if (v && !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw E.badInput('日期格式应为 YYYY-MM-DD');
     const deptId = req.query.deptId ? +req.query.deptId : null;
     if (deptId != null) app.assertDeptScope(req.user, deptId);
-    return statsSvc.ngList(scope(req.user), { from, to, deptId });
+    const sign = req.query.sign || undefined;
+    if (sign && !['signed', 'unsigned'].includes(sign)) throw E.badInput('sign 只能是 signed / unsigned');
+    return statsSvc.ngList(scope(req.user), { from, to, deptId, sign });
   });
 
   app.get('/api/stats/signatures', { preHandler: guard }, async req => {

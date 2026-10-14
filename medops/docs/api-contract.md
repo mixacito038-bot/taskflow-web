@@ -109,7 +109,7 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | POST /api/admin/users/:id/reset-password | → `{password:"一次性初始密码"}`，置 mustChange，清冻结，吊销其全部 refreshToken |
 | POST /api/admin/users/:id/unfreeze | 解除密码连错冻结（不改密码），冻结轮次清零 |
 | GET/POST/PATCH /api/admin/depts[/:id] | 有巡检或签字记录的科室禁删（改 status:off）；有护士长账号属于它时也禁删（先处理账号）。停用科室：不能再录入巡检/日签；历史统计、导出照常；在用的过期设备照常提醒 |
-| GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records） |
+| GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records）。status 只能是 in_use/repair/retired/scrapped，其它值 400（报错里带上原值）。DELETE devices：被巡检记录引用→409 CONFLICT，message 写明记录天数、最近日期，并提示改为停用/报废（作废签字不删巡检记录）；删除成功记审计 device_delete |
 | GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数） |
 | POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。→ `{created,updated,errors:[{row,message}]}`。有效期两列的写入语义：**列不存在或该格留空 = 本次不改动**（老 7 列模板重导入不会清空已录到期日），填「无/-/清空」= 清空，填日期 = 覆盖。日期必须年月日填全（不做 `new Date()` 宽松兜底），状态须命中白名单否则整行报错 |
 | GET/POST/PATCH/DELETE /api/admin/members[/:id] | 签字人名单。同科室重名 → 409；不能改科室（400）；改名后历史周签显示新名 |
@@ -123,12 +123,12 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 |---|---|
 | GET /api/stats/unsigned | → `{days:[{deptId,date}...最近7天未日签，不早于科室起算日，无在用设备的科室不算], weeks:[{deptId,week}上周及更早未周签，最多 12 周], months:[{deptId,month}最后一周已结束、覆盖范围内有记录、未月签的月，最多 12 个月]}`。只含启用中的科室 |
 | GET /api/stats/completion?month=&deptId= | 按科室：应巡天数（从科室起算日算）/已日签天数/巡检台次/异常台次/周签进度（分母=全部周）/月签状态/deptStatus。全院范围含「该月有记录」的停用科室 |
-| GET /api/stats/ng?from=&to=&deptId= | 异常明细：[{date,deptId,deptName,deviceCode,deviceName,catName,note,inspectorName}] |
+| GET /api/stats/ng?from=&to=&deptId=&sign= | 异常明细：[{date,deptId,deptName,deviceCode,deviceName,catName,deviceStatus,note,inspectorName,signed,signVoided}]。列出巡检员记下的全部 ng 结果（作废日签不删结果）；signed=当天是否已日签，signVoided=未签且这天的日签被作废过（据审计 sign_void）；deviceStatus=设备现在的状态。sign 可选 signed/unsigned 只看已日签/未日签，其它值 400；日期须为 YYYY-MM-DD |
 | GET /api/stats/signatures?month= | 各科室签字人 × 日/周/月签次数 |
 | GET /api/stats/expiry?all=&deptId= | 有效期清单：`[{deviceId,deptId,deptName,code,name,catName,location,expiryDate,expiryNote,level,days,remindDays}]`。level ∈ expired/soon/ok；默认只回 expired+soon，`all=1` 回全部已设有效期的。按紧急度→剩余天数→科室→编码排序。全角色可访问（巡检员也要看到本科室），范围由 visibleDeptIds 收窄 |
 | GET /api/stats/expiry/summary | → `{expired,soon,total}`，首页角标用 |
 | GET /api/export/monthly.xlsx?deptId=&month= | exceljs 生成：设备×日期矩阵(✓/✗/空) + 异常清单 + 三级签名图(嵌图)。矩阵设备行 = 该月在本科室实际巡检过的设备（调走的注明现属科室）∪ 本科室当前在用、该月前已建档、且该月没在别的科室被巡检的设备。文件名 `巡检月报_科室_月份.xlsx`（filename*） |
-| GET /api/export/ng.xlsx?from=&to=&deptId= | 异常清单表，deptId 可选 |
+| GET /api/export/ng.xlsx?from=&to=&deptId=&sign= | 异常清单表，deptId、sign 可选（同 /api/stats/ng）；末两列「当日签字」「设备现状」 |
 
 ## 5. 资产系统云同步网关（equip/admin 账号）
 

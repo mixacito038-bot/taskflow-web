@@ -168,6 +168,8 @@ function importLegacy(data) {
   };
   const isDay = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s)) && P.fmt(P.D(s)) === s;
   const STATUS_SET = new Set(Object.values(STATUS_MAP));
+  /* 品类为空时记成「未分类」：空品类在手机端是一个没有名字的分组，后台编辑也保存不了 */
+  const catOf = v => String(v.catName || '').trim() || '未分类';
   // 旧数据没带签字时间时用上海时间（库里约定的格式），不再写 UTC ISO
   const at = v => (typeof v === 'string' && v ? v : P.stamp());
 
@@ -190,12 +192,12 @@ function importLegacy(data) {
       let id;
       if (old) {
         db.prepare('UPDATE devices SET dept_id = ?, cat_name = ?, name = ?, model = ?, location = ?, status = ?, updated_at = ? WHERE id = ?')
-          .run(deptId, v.catName || '', v.name || '', v.model || '', v.location || '', STATUS_SET.has(v.status) ? v.status : 'in_use', nowIso(), old.id);
+          .run(deptId, catOf(v), v.name || '', v.model || '', v.location || '', STATUS_SET.has(v.status) ? v.status : 'in_use', nowIso(), old.id);
         id = old.id;
       } else {
         id = db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(deptId, v.catName || '', v.code, v.name || '', v.model || '', v.location || '', STATUS_SET.has(v.status) ? v.status : 'in_use', nowIso(), nowIso()).lastInsertRowid;
+          .run(deptId, catOf(v), v.code, v.name || '', v.model || '', v.location || '', STATUS_SET.has(v.status) ? v.status : 'in_use', nowIso(), nowIso()).lastInsertRowid;
         counts.devices++;
       }
       deviceMap.set(String(v.id), id);

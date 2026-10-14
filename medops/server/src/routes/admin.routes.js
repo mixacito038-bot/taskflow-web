@@ -16,7 +16,7 @@ const ROLES = ['inspector', 'dept', 'equip', 'admin'];
 const DEVICE_STATUS = ['in_use', 'repair', 'retired', 'scrapped'];
 function devStatus(v, fallback) {
   if (v == null || v === '') return fallback;
-  if (!DEVICE_STATUS.includes(v)) throw E.badInput('设备状态只能是：在用 / 维修 / 停用 / 报废');
+  if (!DEVICE_STATUS.includes(v)) throw E.badInput(`设备状态「${v}」系统不认识，请在「状态」里重新选择：在用 / 维修中 / 已停用 / 已报废`);
   return v;
 }
 /* 排序号：留空沿用原值；非整数报 400（以前 'abc' 变成 NaN 撞 NOT NULL，返回 500） */
@@ -284,13 +284,22 @@ module.exports = async function adminRoutes(app) {
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(v.id));
   });
 
+  /* 巡检过的设备不能删：删了它，历史巡检记录、月报、异常清单里这台设备就没了着落。
+     作废签字只撤销签字、不删巡检记录，所以「日签作废了」也照样删不掉——提示里说清楚，
+     并给出该怎么做（停用 / 报废：手机端不再列出，历史保留）；管理后台据此提供一键改状态。 */
   app.delete('/api/admin/devices/:id', { preHandler: guard }, async req => {
     const id = +req.params.id;
-    if (!db().prepare('SELECT 1 FROM devices WHERE id = ?').get(id)) throw E.notFound('设备不存在');
-    if (db().prepare('SELECT 1 FROM record_items WHERE device_id = ? LIMIT 1').get(id)) {
-      throw E.conflict('该设备已有巡检记录，禁止删除，请改为停用');
+    const v = db().prepare('SELECT * FROM devices WHERE id = ?').get(id);
+    if (!v) throw E.notFound('设备不存在');
+    const used = db().prepare(`SELECT COUNT(*) AS n, MAX(r.date) AS last FROM record_items i
+      JOIN records r ON r.id = i.record_id WHERE i.device_id = ?`).get(id);
+    if (used.n) {
+      throw E.conflict(`「${v.code} ${v.name}」有 ${used.n} 天的巡检记录（最近一次 ${used.last}），为保留巡检历史不能删除`
+        + '（作废签字只撤销签字，巡检记录仍在）。不再使用请改为「已停用」，已报废请改为「已报废」：'
+        + '手机端不再列出这台设备，历史记录和报表照常保留。');
     }
     db().prepare('DELETE FROM devices WHERE id = ?').run(id);
+    authSvc.audit(req.user.id, 'device_delete', `code=${v.code} name=${v.name}`, req.ip);
     return { ok: true };
   });
 

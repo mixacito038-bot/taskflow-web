@@ -4,6 +4,12 @@ import { api } from '../api/client'
 import { ErrorTip, Field, Modal } from './ui'
 
 const TYPE_TEXT = { day: '日签', week: '周签', month: '月签' }
+/* 作废只撤销这一级签字，不删除任何巡检数据——说清楚，免得以为作废后异常记录会消失 */
+const KEEP_TEXT = {
+  day: '只撤销签字，这一天勾选的巡检结果（包括异常）保留不动；巡检员核对、改正后重新签字即可。',
+  week: '只撤销周签，这一周各天的日签和巡检结果都不变。',
+  month: '只撤销月签，这个月各周的周签都不变。'
+}
 
 /** target: {type:'day'|'week'|'month', deptId, key, label} */
 export default function VoidSignModal({ target, onClose, onDone }) {
@@ -33,7 +39,8 @@ export default function VoidSignModal({ target, onClose, onDone }) {
       {target && (
         <form onSubmit={submit}>
           <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
-            将作废 <b>{target.label}</b> 的{TYPE_TEXT[target.type]}，记录退回未签状态，操作会写入审计日志。
+            将作废 <b>{target.label}</b> 的{TYPE_TEXT[target.type]}，退回未签状态，操作会写入审计日志。
+            <div className="mt-1 text-xs text-amber-800">{KEEP_TEXT[target.type]}</div>
           </div>
           <ErrorTip error={err} className="mb-3" />
           <Field label="作废原因" required>

@@ -133,7 +133,7 @@ case "${1:-帮助}" in
     ;;
 
   体检|check)
-    say "签字数据体检（只读，不改任何数据）"
+    say "数据体检：签字 + 设备状态（只读，不改任何数据）"
     docker compose exec -T api node src/scripts/check-signs.js
     ;;
 
@@ -185,7 +185,7 @@ case "${1:-帮助}" in
   bash manage.sh 备份 [文件路径]  立即备份，并打印把它拉回本地的命令
   bash manage.sh 恢复 <备份文件>  用备份覆盖当前数据
   bash manage.sh 升级            上传新代码后重新构建启动
-  bash manage.sh 体检            检查有没有不符合签字规则的周签/月签（如旧版提前签的），只读
+  bash manage.sh 体检            检查不符合签字规则的周签/月签（如旧版提前签的）、状态无效的设备，只读
   bash manage.sh 重置管理员       忘记管理员密码时用
   bash manage.sh 改端口 <新端口>  换对外端口（会先查端口是否被占用）
 

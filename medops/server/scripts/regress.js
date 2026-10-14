@@ -564,6 +564,84 @@ async function main() {
   report = require('child_process').execFileSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV, encoding: 'utf8' });
   assert.ok(!report.includes(`${curW} 起的一周`), '作废后不应再报');
   ok('体检脚本能找出旧版留下的提前周签，作废后不再报');
+
+  step = '作废日签后的异常清单、报废设备的历史异常、删除被挡时的提示';
+  {
+    const kv = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '作废测试科' } }));
+    const va = okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: kv.id, catName: '除颤类', code: 'VD-001', name: '除颤仪' } }));
+    const vb = okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: kv.id, catName: '除颤类', code: 'VD-002', name: '吸引器' } }));
+    okj(await api('POST', '/api/admin/users', { token: A, body: { username: 'vdinsp', password: 'Pass@123', displayName: '作废测试员', role: 'inspector', deptIds: [kv.id] } }));
+    const V = await login('vdinsp');
+    const y1 = P.addDay(today, -1), y2 = P.addDay(today, -2);
+    okj(await api('PUT', `/api/records/${kv.id}/${y2}`, { token: V, body: { checks: { [va.id]: 'ok', [vb.id]: 'ng' }, notes: { [vb.id]: '负压不足' } } }));
+    okj(await api('POST', `/api/records/${kv.id}/${y2}/sign`, { token: V, body: { dataUrl: PNG } }));
+    okj(await api('PUT', `/api/records/${kv.id}/${y1}`, { token: V, body: { checks: { [va.id]: 'ng', [vb.id]: 'ok' }, notes: { [va.id]: '电池不蓄电' } } }));
+    okj(await api('POST', `/api/records/${kv.id}/${y1}/sign`, { token: V, body: { dataUrl: PNG } }));
+    const ngOf = async (q = '') => okj(await api('GET', `/api/stats/ng?from=${y2}&to=${y1}&deptId=${kv.id}${q}`, { token: A }));
+    const brief = l => l.map(x => [x.date, x.deviceCode, x.signed, x.signVoided, x.deviceStatus]);
+    assert.deepEqual(brief(await ngOf()), [[y2, 'VD-002', true, false, 'in_use'], [y1, 'VD-001', true, false, 'in_use']]);
+
+    // ① 作废日签：结果保留（异常还在），但标明「签字已作废」；可按签字状态筛选
+    okj(await api('POST', '/api/admin/signs/void', { token: A, body: { type: 'day', deptId: kv.id, key: y1, reason: '测试' } }));
+    assert.deepEqual(brief(await ngOf()), [[y2, 'VD-002', true, false, 'in_use'], [y1, 'VD-001', false, true, 'in_use']],
+      '作废后异常仍在（巡检结果不删），但要标明这天的签字已作废');
+    assert.deepEqual((await ngOf('&sign=signed')).map(x => x.date), [y2], '只看已日签：作废的那天不出现');
+    assert.deepEqual((await ngOf('&sign=unsigned')).map(x => x.date), [y1], '只看未日签：只有作废的那天');
+    errj(await api('GET', '/api/stats/ng?sign=abc', { token: A }), 400, 'BAD_INPUT', 'sign 参数非法');
+    errj(await api('GET', '/api/stats/ng?from=2026-1-1', { token: A }), 400, 'BAD_INPUT', '日期格式非法');
+    errj(await api('GET', '/api/export/ng.xlsx?sign=abc', { token: Q }), 400, 'BAD_INPUT', '导出 sign 参数非法');
+    let rows = await xlsxRows(await api('GET', `/api/export/ng.xlsx?from=${y2}&to=${y1}&deptId=${kv.id}`, { token: Q, raw: true }), '异常清单');
+    assert.deepEqual(rows[0].slice(-2), ['当日签字', '设备现状']);
+    assert.deepEqual(rows.slice(1).map(r => r.slice(-2)), [['已日签', '在用'], ['签字已作废，待重签', '在用']]);
+    rows = await xlsxRows(await api('GET', `/api/export/ng.xlsx?from=${y2}&to=${y1}&deptId=${kv.id}&sign=unsigned`, { token: Q, raw: true }), '异常清单');
+    assert.equal(rows.length, 2, '导出与页面同一套「签字状态」筛选');
+    const mrows = await xlsxRows(await api('GET', `/api/export/monthly.xlsx?deptId=${kv.id}&month=${P.moOf(y1)}`, { token: Q, raw: true }), '异常清单');
+    assert.equal(mrows[0][6], '日签');
+    assert.equal(mrows.find(r => r[0] === y1)[6], '签字已作废，待重签', '月报的异常清单也标出签字已作废');
+    // 巡检员核对改正后重签：异常从清单消失
+    okj(await api('PUT', `/api/records/${kv.id}/${y1}`, { token: V, body: { checks: { [va.id]: 'ok', [vb.id]: 'ok' }, notes: {} } }));
+    okj(await api('POST', `/api/records/${kv.id}/${y1}/sign`, { token: V, body: { dataUrl: PNG } }));
+    assert.deepEqual((await ngOf()).map(x => x.date), [y2], '改正为正常并重签后，那天的异常不再出现');
+
+    // ② 报废设备：以前的异常作为历史保留，标出设备现状
+    okj(await api('PATCH', `/api/admin/devices/${vb.id}`, { token: A, body: { status: 'scrapped' } }));
+    assert.equal((await ngOf())[0].deviceStatus, 'scrapped');
+    rows = await xlsxRows(await api('GET', `/api/export/ng.xlsx?from=${y2}&to=${y1}&deptId=${kv.id}`, { token: Q, raw: true }), '异常清单');
+    assert.equal(rows[1][8], '已报废');
+
+    // ③ 删除巡检过的设备：409，说明有几天记录、作废签字不删记录、该怎么做；改为停用可以
+    let e = errj(await api('DELETE', `/api/admin/devices/${vb.id}`, { token: A }), 409, 'CONFLICT', '删除巡检过的设备');
+    assert.ok(e.message.includes('有 2 天的巡检记录') && e.message.includes(`最近一次 ${y1}`)
+      && e.message.includes('作废签字只撤销签字') && e.message.includes('已停用'), e.message);
+    okj(await api('PATCH', `/api/admin/devices/${vb.id}`, { token: A, body: { status: 'retired' } }), '一键改为停用');
+    const vc = okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: kv.id, catName: '除颤类', code: 'VD-003', name: '录错的设备' } }));
+    okj(await api('DELETE', `/api/admin/devices/${vc.id}`, { token: A }), '没巡检过的设备可以删');
+    assert.ok(okj(await api('GET', '/api/admin/audit', { token: A })).some(a => a.action === 'device_delete' && a.detail.includes('VD-003')), '删除设备记审计');
+
+    // ④ 状态无效的旧数据：报错说清是哪个值；体检列出；改好后手机端能巡检
+    e = errj(await api('PATCH', `/api/admin/devices/${va.id}`, { token: A, body: { status: 'active' } }), 400, 'BAD_INPUT', '改成 active');
+    assert.ok(e.message.includes('「active」'), e.message);
+    sql.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, status, created_at, updated_at)
+      VALUES (?, '除颤类', 'VD-010', '备用除颤仪', '备用', 'x', 'x')`).run(+kv.id);
+    report = require('child_process').execFileSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+    assert.ok(report.includes('✗ 设备状态无效 · 1 台') && report.includes('VD-010 备用除颤仪 · 状态「备用」'), report);
+    let h5 = okj(await api('GET', `/api/devices?deptId=${kv.id}`, { token: V }));
+    assert.ok(!h5.some(x => x.code === 'VD-010' && x.status === 'in_use'));
+    const v10 = okj(await api('GET', '/api/admin/devices', { token: A })).find(x => x.code === 'VD-010');
+    okj(await api('PATCH', `/api/admin/devices/${v10.id}`, { token: A, body: { ...v10, status: 'in_use' } }), '后台编辑：重新选了状态');
+    report = require('child_process').execFileSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+    assert.ok(!report.includes('设备状态无效'), report);
+    h5 = okj(await api('GET', `/api/devices?deptId=${kv.id}`, { token: V }));
+    assert.ok(h5.some(x => x.code === 'VD-010' && x.status === 'in_use'), '改好后手机端能巡检');
+
+    // 旧数据导入：品类为空 → 未分类，状态认不出 → 在用
+    okj(await api('POST', '/api/admin/import/legacy', { token: A, body: {
+      depts: [{ id: 'c1', name: '作废测试科' }], devices: [{ id: 'v9', deptId: 'c1', code: 'VD-009', name: '吸痰器', status: 'active' }] } }));
+    const v9 = okj(await api('GET', '/api/admin/devices', { token: A })).find(x => x.code === 'VD-009');
+    assert.deepEqual([v9.catName, v9.status], ['未分类', 'in_use']);
+  }
+  ok('作废日签：异常保留并标「签字已作废，待重签」、可按签字状态筛选/导出，改正重签后消失；报废设备的历史异常标出现状');
+  ok('删除巡检过的设备 → 409 说明记录天数与改停用的办法，一键停用可用；无效状态报出原值、体检列出、改好后手机端可巡检');
   sql.close();
 
   console.log('\nREGRESS PASS');

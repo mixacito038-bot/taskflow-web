@@ -118,15 +118,34 @@ function completion(deptIds, month, deptId) {
 }
 
 /* GET /api/stats/ng?from=&to=&deptId= —— 异常明细 */
-function ngList(deptIds, { from, to, deptId }) {
+/* 被作废过日签的「科室|日期」。作废会清空记录上的签字字段，痕迹只留在审计日志里
+   （detail 以 `type=day deptId=<id> key=<日期> ` 开头，见 admin.routes 作废接口） */
+function voidedDays() {
+  const out = new Set();
+  for (const a of getDb().prepare("SELECT detail FROM audit_log WHERE action = 'sign_void' AND detail LIKE 'type=day %'").all()) {
+    const m = /^type=day deptId=(\d+) key=(\d{4}-\d{2}-\d{2}) /.exec(a.detail);
+    if (m) out.add(`${m[1]}|${m[2]}`);
+  }
+  return out;
+}
+
+/* GET /api/stats/ng：巡检员记下的全部「异常」结果。
+   ⚠ 作废日签只撤销签字、不删巡检结果（结果是巡检员当天看到的事实，由他核对改正后重签）；
+   设备停用/报废后，它以前的异常作为历史保留。为免误会「作废了怎么还在」「报废了怎么还在」，
+   每条带上当天的签字状态和设备现在的状态，页面和导出都显示出来。
+   sign：'signed' 只看已日签的，'unsigned' 只看还没签（含签字被作废）的，不传为全部。 */
+function ngList(deptIds, { from, to, deptId, sign }) {
   const db = getDb();
   const cond = ["ri.result = 'ng'"]; const args = [];
   if (deptId != null) { cond.push('r.dept_id = ?'); args.push(+deptId); }
   else if (deptIds) { cond.push(`r.dept_id IN (${deptIds.map(() => '?').join(',') || 'NULL'})`); args.push(...deptIds); }
   if (from) { cond.push('r.date >= ?'); args.push(from); }
   if (to) { cond.push('r.date <= ?'); args.push(to); }
-  return db.prepare(`
+  if (sign === 'signed') cond.push('r.sign_at IS NOT NULL');
+  if (sign === 'unsigned') cond.push('r.sign_at IS NULL');
+  const rows = db.prepare(`
     SELECT r.date, r.dept_id, dp.name AS dept_name, dv.code, dv.name AS dev_name, dv.cat_name,
+           dv.status AS dev_status, r.sign_at,
            ri.note, COALESCE(iu.display_name, r.inspector_name) AS inspector_name
     FROM record_items ri
     JOIN records r ON r.id = ri.record_id
@@ -134,13 +153,20 @@ function ngList(deptIds, { from, to, deptId }) {
     JOIN depts dp ON dp.id = r.dept_id
     LEFT JOIN users iu ON iu.id = r.inspector_id
     WHERE ${cond.join(' AND ')}
-    ORDER BY r.date, r.dept_id, dv.code`).all(...args)
-    .map(x => ({
-      date: x.date, deptId: String(x.dept_id), deptName: x.dept_name,
-      deviceCode: x.code, deviceName: x.dev_name, catName: x.cat_name,
-      note: x.note, inspectorName: x.inspector_name || ''
-    }));
+    ORDER BY r.date, r.dept_id, dv.code`).all(...args);
+  const voided = rows.some(x => !x.sign_at) ? voidedDays() : null;
+  return rows.map(x => ({
+    date: x.date, deptId: String(x.dept_id), deptName: x.dept_name,
+    deviceCode: x.code, deviceName: x.dev_name, catName: x.cat_name, deviceStatus: x.dev_status,
+    note: x.note, inspectorName: x.inspector_name || '',
+    signed: !!x.sign_at,
+    signVoided: !x.sign_at && voided.has(`${x.dept_id}|${x.date}`)
+  }));
 }
+/* 签字状态 / 设备状态的中文（导出用；页面上的写法与此一致） */
+const NG_SIGN_TEXT = x => (x.signed ? '已日签' : x.signVoided ? '签字已作废，待重签' : '未日签');
+const DEV_STATUS_TEXT = { in_use: '在用', repair: '维修中', retired: '已停用', scrapped: '已报废' };
+const devStatusText = s => DEV_STATUS_TEXT[s] || `状态无效（${s || '空'}）`;
 
 /* GET /api/stats/signatures?month= —— 各科室签字人 × 日/周/月签次数
    按「人」聚合（账号 ID / 签字人名单 ID），显示当前名字；改名后不会被拆成两行。
@@ -180,4 +206,4 @@ function signatures(deptIds, month) {
   return out;
 }
 
-module.exports = { unsigned, completion, ngList, signatures, scopedDepts, deptStart };
+module.exports = { unsigned, completion, ngList, NG_SIGN_TEXT, devStatusText, signatures, scopedDepts, deptStart };

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, download } from '../api/client'
 import { useDepts, useServerTime, deptOptLabel } from '../hooks'
-import { asList, nz, DEVICE_STATUS, devStatusText } from '../utils'
+import { asList, nz, DEVICE_STATUS, devStatusText, isDevStatus } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 
 function normDevice(d) {
@@ -45,9 +45,11 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
   useEffect(() => {
     if (open) {
       setErr(null)
+      /* 状态无效的旧数据（如 active）：下拉框里没有这一项，浏览器会显示成第一项「在用」，
+         看着选好了、保存时却把 active 原样提交上去被拒。这里清空，逼着重新选一次 */
       setForm(isNew
         ? { deptId: depts[0]?.id ? String(depts[0].id) : '', catName: '', code: '', name: '', model: '', location: '', status: 'in_use', expiryDate: '', expiryNote: '', remindDays: 0 }
-        : { ...editing })
+        : { ...editing, status: isDevStatus(editing.status) ? editing.status : '' })
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -101,10 +103,16 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
             <input className="inp" value={form.location || ''} onChange={e => set('location', e.target.value)} />
           </Field>
         </div>
-        <Field label="状态">
-          <select className="inp" value={form.status || 'in_use'} onChange={e => set('status', e.target.value)}>
+        <Field label="状态" required>
+          <select className="inp" value={form.status || ''} onChange={e => set('status', e.target.value)} required>
+            {!form.status && <option value="" disabled>请选择</option>}
             {DEVICE_STATUS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
           </select>
+          {!isNew && !isDevStatus(editing?.status) && (
+            <span className="mt-1 block text-xs text-red-600">
+              原来的状态「{editing?.status || '空'}」系统不认识（手机端巡检清单里没有这台设备，有效期也不提醒），请重新选择
+            </span>
+          )}
         </Field>
 
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3.5">
@@ -142,6 +150,48 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
           <button className="btn-primary" disabled={busy}>{busy ? '保存中…' : '保存'}</button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+/* 删除被挡住（设备已有巡检记录）：说明原因，并一键改为「已停用 / 已报废」。
+   两者在手机端都不再列出、都不进有效期提醒，历史巡检记录与报表照常保留 */
+function DeleteBlockedModal({ blocked, onClose, onDone }) {
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setErr(null) }, [blocked])
+  if (!blocked) return null
+  const d = blocked.device
+  const off = d.status === 'retired' || d.status === 'scrapped'
+
+  async function setStatus(status) {
+    setErr(null)
+    setBusy(true)
+    try {
+      await api(`/admin/devices/${d.id}`, { method: 'PATCH', body: { status } })
+      onDone()
+      onClose()
+    } catch (e) { setErr(e) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal open title={`不能删除：${d.code} ${d.name}`} onClose={onClose} width="max-w-md">
+      <p className="text-sm leading-relaxed text-slate-700">{blocked.message}</p>
+      {off && (
+        <p className="mt-2 text-sm text-slate-600">
+          这台设备现在已经是「{devStatusText(d.status)}」，手机端不会再列出它，不需要删除。
+        </p>
+      )}
+      <ErrorTip error={err} className="mt-3" />
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button type="button" className="btn-ghost" onClick={onClose}>{off ? '知道了' : '取消'}</button>
+        {d.status !== 'scrapped' && (
+          <button type="button" className="btn-ghost" disabled={busy} onClick={() => setStatus('scrapped')}>改为「已报废」</button>
+        )}
+        {!off && (
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => setStatus('retired')}>改为「已停用」</button>
+        )}
+      </div>
     </Modal>
   )
 }
@@ -241,6 +291,7 @@ export default function Devices() {
   const [kw, setKw] = useState('')
   const [modal, setModal] = useState(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [blocked, setBlocked] = useState(null) // 有巡检记录删不掉：{ device, message }
 
   function load() {
     api('/admin/devices').then(res => setList(asList(res).map(normDevice))).catch(setErr)
@@ -249,11 +300,17 @@ export default function Devices() {
 
   async function remove(d) {
     if (!confirm(`确定删除设备「${d.code} ${d.name}」？`)) return
+    setErr(null)
     try {
       await api(`/admin/devices/${d.id}`, { method: 'DELETE' })
       load()
-    } catch (e) { setErr(e) }
+    } catch (e) {
+      // 巡检过的设备不能删（保留历史），直接给出「改为停用 / 报废」，不用再去编辑框里找
+      if (e.code === 'CONFLICT') setBlocked({ device: d, message: e.message })
+      else setErr(e)
+    }
   }
+  const badCount = (list || []).filter(d => !isDevStatus(d.status)).length
 
   const shown = (list || []).filter(d =>
     (!filterDept || d.deptId === filterDept) &&
@@ -280,6 +337,12 @@ export default function Devices() {
         <span className="self-center text-sm text-slate-600">共 {shown.length} 台</span>
       </div>
       <ErrorTip error={err || deptErr} className="mb-4" />
+      {badCount > 0 && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          有 {badCount} 台设备的状态无效（下面红色标出）：手机端巡检清单里没有它们，有效期也不会提醒。
+          请点「编辑」重新选择状态后保存。
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         {!list ? <Spinner /> : shown.length === 0 ? <Empty /> : (
@@ -295,7 +358,9 @@ export default function Devices() {
                   <td>{d.catName}</td>
                   <td>{deptName(d.deptId)}</td>
                   <td className="text-slate-500">{d.location || '—'}</td>
-                  <td>{d.status === 'in_use' ? <Badge color="green">在用</Badge> : <Badge color="amber">{devStatusText(d.status)}</Badge>}</td>
+                  <td className="whitespace-nowrap">{d.status === 'in_use' ? <Badge color="green">在用</Badge>
+                    : isDevStatus(d.status) ? <Badge color="amber">{devStatusText(d.status)}</Badge>
+                    : <span title="系统不认识这个状态：手机端巡检清单里没有这台设备，有效期也不会提醒。点「编辑」重新选择状态"><Badge color="red">{devStatusText(d.status)}</Badge></span>}</td>
                   <td className="whitespace-nowrap">{(() => {
                     if (!d.expiryDate) return <span className="text-slate-500">—</span>
                     const st = expiryState(d.expiryDate, d.remindDays, time?.date)
@@ -323,6 +388,7 @@ export default function Devices() {
 
       <DeviceModal open={modal !== null} editing={modal} depts={onDepts} formDepts={formDepts} onClose={() => setModal(null)} onSaved={load} time={time} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      <DeleteBlockedModal blocked={blocked} onClose={() => setBlocked(null)} onDone={load} />
     </div>
   )
 }

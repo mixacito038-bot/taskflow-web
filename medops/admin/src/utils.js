@@ -41,4 +41,7 @@ export const DEVICE_STATUS = [
   ['retired', '已停用'],
   ['scrapped', '已报废']
 ]
-export const devStatusText = s => (DEVICE_STATUS.find(([k]) => k === s) || [s, s === 'on' ? '在用' : s])[1]
+export const isDevStatus = s => DEVICE_STATUS.some(([k]) => k === s)
+/* 认不出的状态（旧数据导入留下的 active、on 等）如实显示「状态无效」。
+   以前把 on 显示成「在用」：台账上看着正常，手机端却不列出它、有效期也不提醒，根本发现不了 */
+export const devStatusText = s => isDevStatus(s) ? DEVICE_STATUS.find(([k]) => k === s)[1] : `状态无效（${s || '空'}）`

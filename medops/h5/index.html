@@ -544,6 +544,7 @@ function refreshSession(){
    缓存 3 分钟：后台新增、调拨、停用设备后，巡检员不用重新登录也能看到
    （以前只在登录/退出时清空，App 常驻时可能连续几天看不到新设备）。 */
 const DEVCACHE=new Map(), DEV_TTL=3*60*1000;
+const catOf=d=>String(d.catName||'').trim()||'未分类';
 function devList(deptId){
   const c=DEVCACHE.get(deptId);
   if(!c||Date.now()-c.at>DEV_TTL){
@@ -629,13 +630,14 @@ const API={
   async dept(id){return req('/depts/'+encodeURIComponent(id))},
   async members(deptId){return (await req('/members?deptId='+encodeURIComponent(deptId))).filter(m=>m.status!=='off')},
   async allDevices(deptId){return devList(deptId)},
+  /* 品类为空的设备归到「未分类」：以前会出现一个没有名字的分组，点进去也对不上 */
   async cats(deptId){
     const ds=(await devList(deptId)).filter(d=>d.status==='in_use');
     const map=new Map();
-    ds.forEach(d=>{const c=map.get(d.catName)||{name:d.catName,devices:[]};c.devices.push(d);map.set(d.catName,c)});
+    ds.forEach(d=>{const k=catOf(d);const c=map.get(k)||{name:k,devices:[]};c.devices.push(d);map.set(k,c)});
     return [...map.values()].sort((a,b)=>b.devices.length-a.devices.length);
   },
-  async devices(deptId,cat){return (await devList(deptId)).filter(d=>d.catName===cat&&d.status==='in_use').sort((a,b)=>a.code.localeCompare(b.code))},
+  async devices(deptId,cat){return (await devList(deptId)).filter(d=>catOf(d)===cat&&d.status==='in_use').sort((a,b)=>a.code.localeCompare(b.code))},
   async devCount(deptId){return (await devList(deptId)).filter(d=>d.status==='in_use').length},
 
   /* ---------- 日巡检 + 日签 ---------- */

@@ -33,7 +33,9 @@ module.exports = async function exportRoutes(app, opts) {
     for (const v of [from, to]) if (v && !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw E.badInput('日期格式应为 YYYY-MM-DD');
     const deptId = req.query.deptId ? +req.query.deptId : null;
     if (deptId != null && !getDb().prepare('SELECT 1 FROM depts WHERE id = ?').get(deptId)) throw E.notFound('科室不存在');
-    const buf = await exportSvc.ngXlsx(null, { from, to, deptId });
+    const sign = req.query.sign || undefined;
+    if (sign && !['signed', 'unsigned'].includes(sign)) throw E.badInput('sign 只能是 signed / unsigned');
+    const buf = await exportSvc.ngXlsx(null, { from, to, deptId, sign });
     const span = `${from || '全部'}_${to || '全部'}`;
     reply.header('Content-Disposition', disposition(`ng-${deptId || 'all'}-${from || 'all'}-${to || 'all'}.xlsx`,
       `异常清单_${deptId != null ? deptName(deptId) + '_' : ''}${span}.xlsx`)).type(XLSX_MIME);

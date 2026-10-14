@@ -85,10 +85,11 @@ async function monthlyXlsx(deptId, month) {
 
   /* Sheet2 异常清单 */
   const ws2 = wb.addWorksheet('异常清单');
-  ws2.addRow(['日期', '设备编码', '设备名称', '品类', '异常说明', '巡检员']).font = { bold: true };
-  [12, 14, 20, 12, 40, 12].forEach((w, i) => { ws2.getColumn(i + 1).width = w; });
+  /* 「日签」列：月报随时都能导，月中导出时有些天还没签或签字被作废，异常要能看出是不是已签字确认的 */
+  ws2.addRow(['日期', '设备编码', '设备名称', '品类', '异常说明', '巡检员', '日签']).font = { bold: true };
+  [12, 14, 20, 12, 40, 12, 18].forEach((w, i) => { ws2.getColumn(i + 1).width = w; });
   for (const x of statsSvc.ngList(null, { from: `${month}-01`, to: `${month}-31`, deptId })) {
-    ws2.addRow([x.date, x.deviceCode, x.deviceName, x.catName, x.note, x.inspectorName]);
+    ws2.addRow([x.date, x.deviceCode, x.deviceName, x.catName, x.note, x.inspectorName, statsSvc.NG_SIGN_TEXT(x)]);
   }
 
   /* Sheet3 签字（三级，嵌图） */
@@ -119,13 +120,14 @@ async function monthlyXlsx(deptId, month) {
 }
 
 /* 异常清单表（deptId 可选：与页面上的科室筛选一致，旧版忽略科室条件、总是导出全院） */
-async function ngXlsx(deptIds, { from, to, deptId }) {
+async function ngXlsx(deptIds, { from, to, deptId, sign }) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('异常清单');
-  ws.addRow(['日期', '科室', '设备编码', '设备名称', '品类', '异常说明', '巡检员']).font = { bold: true };
-  [12, 14, 14, 20, 12, 40, 12].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
-  for (const x of statsSvc.ngList(deptIds, { from, to, deptId })) {
-    ws.addRow([x.date, x.deptName, x.deviceCode, x.deviceName, x.catName, x.note, x.inspectorName]);
+  ws.addRow(['日期', '科室', '设备编码', '设备名称', '品类', '异常说明', '巡检员', '当日签字', '设备现状']).font = { bold: true };
+  [12, 14, 14, 20, 12, 40, 12, 18, 16].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  for (const x of statsSvc.ngList(deptIds, { from, to, deptId, sign })) {
+    ws.addRow([x.date, x.deptName, x.deviceCode, x.deviceName, x.catName, x.note, x.inspectorName,
+      statsSvc.NG_SIGN_TEXT(x), statsSvc.devStatusText(x.deviceStatus)]);
   }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
