@@ -89,6 +89,7 @@ main{flex:1;padding:4px 16px 16px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .chev{width:18px;height:18px;color:#C3CFCC;stroke-width:2.4}
 .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dvname{margin-left:8px}
 
 /* ===== 按钮 ===== */
 .btn svg{width:17px;height:17px}
@@ -1332,8 +1333,8 @@ async function viewCat(){
     return `<div class="dev ${st==='ok'?'ok':''} ${st==='ng'?'ng':''}" id="dev_${dv.id}">
       <button class="tick" onclick="tick('${dv.id}')">${svg('check')}</button>
       <div class="grow" onclick="tick('${dv.id}')">
-        <div class="tt mono trunc" style="font-size:14.5px;letter-spacing:.3px">${H(dv.code)}</div>
-        <div class="st trunc">${H(dv.model||dv.name)}${dv.location?' · '+H(dv.location):''}</div>
+        <div class="tt trunc"><span class="mono" style="font-size:14.5px;letter-spacing:.3px">${H(dv.code)}</span><span class="dvname">${H(dv.name)}</span></div>
+        ${dv.model||dv.location?`<div class="st trunc">${[dv.model,dv.location].filter(Boolean).map(H).join(' · ')}</div>`:''}
         ${st==='ng'&&S.notes[dv.id]?`<div class="ngnote">${H(S.notes[dv.id])}</div>`:''}
       </div><button class="ngbtn" onclick="markNg('${dv.id}')">异常</button></div>`}).join('');
   const bar=signed||S.date>today()?'':`<div class="bar"><div class="info"><b>${done}/${devs.length}</b> 台已勾选</div>
@@ -1398,7 +1399,7 @@ window.markNg=async id=>{
   if(S.lock) return toast(S.lock.msg,3000);
   const devs=await API.devices(S.deptId,S.catName);const dv=devs.find(x=>x.id===id);
   if(!dv) return toast('找不到这台设备，请返回刷新');
-  sheet(`<h3>标记异常</h3><div class="d">${H(dv.code)} · ${H(dv.model||dv.name)}<br>请简要描述异常情况，科室周签时会看到。</div>
+  sheet(`<h3>标记异常</h3><div class="d">${H(dv.code)} · ${H(dv.name)}${dv.model?'（'+H(dv.model)+'）':''}<br>请简要描述异常情况，科室周签时会看到。</div>
     <div class="fld"><textarea class="in" id="ngtxt" maxlength="500" placeholder="例如：显示屏偶发闪烁，已通知厂家">${H(S.notes[id]||'')}</textarea></div>
     <div class="chips" style="margin-bottom:16px">${['外观破损','无法开机','报警异常','按键失灵','管路老化','电池不蓄电'].map(t=>
       `<button class="chip" onclick="document.getElementById('ngtxt').value='${t}'">${t}</button>`).join('')}</div>
@@ -1455,7 +1456,7 @@ async function ngList(deptId,from,to){
   recs.sort((a,b)=>b.date<a.date?-1:1).forEach(r=>{
     Object.entries(r.checks||{}).forEach(([id,v])=>{
       if(v!=='ng')return;const d=dm.get(id);
-      out.push({date:r.date,code:d?d.code:id,name:d?(d.model||d.name):'',cat:d?d.catName:'',
+      out.push({date:r.date,code:d?d.code:id,name:d?d.name:'',cat:d?d.catName:'',
         loc:d?d.location:'',note:(r.notes||{})[id]||'异常',by:r.inspectorName||'',
         signed:!!r.sign,signer:r.sign?r.sign.name:''});
     });
@@ -1466,7 +1467,7 @@ window.showNg=async(deptId,from,to,title)=>{
   const list=await ngList(deptId,from,to);
   const d=await API.dept(deptId);
   const body=list.length?list.map(x=>`<div class="dtl"><div class="dot"></div><div class="grow">
-      <div class="h"><span class="mono">${H(x.code)}</span> · ${H(x.cat)}</div>
+      <div class="h"><span class="mono">${H(x.code)}</span> · ${H(x.name||x.cat)}</div>
       <div class="m">${H(x.note)}</div>
       <div class="t">${dLab(x.date)}${x.loc?' · '+H(x.loc):''} · 巡检 ${H(x.by)}${x.signed?` · 已由 ${H(x.signer)} 日签`:' · <span style="color:var(--warn)">当日未签</span>'}</div>
     </div></div>`).join('')

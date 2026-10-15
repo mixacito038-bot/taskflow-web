@@ -160,4 +160,25 @@ async function importTemplateXlsx() {
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-module.exports = { monthlyXlsx, ngXlsx, importTemplateXlsx };
+/* 科室导入模板（示例同样放第 2 张表，导入只读第 1 张） */
+const DEPT_TPL_HEADER = ['科室名称', '编码', '排序', '状态'];
+const DEPT_TPL_WIDTHS = [18, 14, 8, 8];
+async function deptTemplateXlsx() {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('科室导入');
+  ws.addRow(DEPT_TPL_HEADER).font = { bold: true };
+  DEPT_TPL_WIDTHS.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  const demo = wb.addWorksheet('填写示例（勿改此表）');
+  demo.addRow(DEPT_TPL_HEADER).font = { bold: true };
+  DEPT_TPL_WIDTHS.forEach((w, i) => { demo.getColumn(i + 1).width = w; });
+  demo.addRow(['急诊科', 'JZ', 1, '启用']);
+  demo.addRow(['重症医学科', 'ICU', 2, '启用']);
+  demo.addRow([]);
+  demo.addRow(['说明：请把科室填进第 1 张表「科室导入」，本表仅供参照，导入时不会被读取。']);
+  demo.addRow(['「科室名称」是唯一标识：系统里已有同名科室就更新它，没有就新建。']);
+  demo.addRow(['「编码」「排序」「状态」留空：新科室编码为空、排序 0、启用；已有科室不改动。要清空编码请填「无」。']);
+  demo.addRow(['「状态」可填：启用 / 停用。「排序」填整数，数字小的排在前面。']);
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+module.exports = { monthlyXlsx, ngXlsx, importTemplateXlsx, deptTemplateXlsx };

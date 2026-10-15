@@ -19,6 +19,14 @@ function devStatus(v, fallback) {
   if (!DEVICE_STATUS.includes(v)) throw E.badInput(`设备状态「${v}」系统不认识，请在「状态」里重新选择：在用 / 维修中 / 已停用 / 已报废`);
   return v;
 }
+/* 批量操作的 id 列表：非空、最多 2000 个、正整数，去重 */
+function batchIds(list, what) {
+  if (!Array.isArray(list) || !list.length) throw E.badInput(`请先勾选${what}`);
+  if (list.length > 2000) throw E.badInput('一次最多处理 2000 个');
+  const ids = [...new Set(list.map(Number))];
+  if (ids.some(n => !Number.isInteger(n) || n <= 0)) throw E.badInput(`${what} id 不正确`);
+  return ids;
+}
 /* 排序号：留空沿用原值；非整数报 400（以前 'abc' 变成 NaN 撞 NOT NULL，返回 500） */
 function sortOf(v, fallback) {
   if (v == null || v === '') return fallback;
@@ -206,34 +214,87 @@ module.exports = async function adminRoutes(app) {
     return deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(d.id));
   });
 
-  app.delete('/api/admin/depts/:id', { preHandler: guard }, async req => {
-    const id = +req.params.id;
-    if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(id)) throw E.notFound('科室不存在');
+  /* 科室能不能删：能删返回 null，不能删返回原因（单个删除和批量删除共用） */
+  function deptDeleteBlock(id) {
     if (db().prepare('SELECT 1 FROM records WHERE dept_id = ? LIMIT 1').get(id)
       || db().prepare('SELECT 1 FROM week_signs WHERE dept_id = ? LIMIT 1').get(id)
       || db().prepare('SELECT 1 FROM month_signs WHERE dept_id = ? LIMIT 1').get(id)) {
-      throw E.conflict('该科室已有巡检或签字记录，禁止删除，请改为停用');
+      return '该科室已有巡检或签字记录，禁止删除，请改为停用';
     }
     /* 护士长账号恰好绑定 1 个科室：删了科室它就变成「没有科室的护士长」，登录后什么都看不到 */
     const nurse = db().prepare(`SELECT u.username, u.display_name FROM users u JOIN user_depts ud ON ud.user_id = u.id
       WHERE ud.dept_id = ? AND u.role = 'dept' LIMIT 1`).get(id);
-    if (nurse) throw E.conflict(`护士长账号「${nurse.display_name}（${nurse.username}）」属于该科室，请先把它改到别的科室或停用后再删除`);
+    if (nurse) return `护士长账号「${nurse.display_name}（${nurse.username}）」属于该科室，请先把它改到别的科室或停用后再删除`;
     /* 设备可以在科室之间调拨，所以"本科室没有巡检记录"不等于"本科室的设备没被巡检过"。
-       漏了这一检查，下面 DELETE FROM devices 会撞 record_items 的外键约束，
-       事务回滚后用户只拿到一条没有信息量的 500。 */
+       漏了这一检查，删除时会撞 record_items 的外键约束，事务回滚后用户只拿到一条没有信息量的 500。 */
     const used = db().prepare(`SELECT v.code FROM devices v
       WHERE v.dept_id = ? AND EXISTS (SELECT 1 FROM record_items i WHERE i.device_id = v.id) LIMIT 1`).get(id);
-    if (used) {
-      throw E.conflict(`该科室的设备「${used.code}」已有巡检记录（可能是从别的科室调拨过来的），禁止删除，请改为停用`);
-    }
-    db().transaction(() => {
-      db().prepare('DELETE FROM members WHERE dept_id = ?').run(id);
-      db().prepare('DELETE FROM devices WHERE dept_id = ?').run(id);
-      db().prepare('DELETE FROM user_depts WHERE dept_id = ?').run(id);
-      db().prepare('DELETE FROM depts WHERE id = ?').run(id);
-    })();
+    if (used) return `该科室的设备「${used.code}」已有巡检记录（可能是从别的科室调拨过来的），禁止删除，请改为停用`;
+    return null;
+  }
+  /* 删除科室：连同它下面的签字人名单、（没巡检过的）设备、账号的科室关联 */
+  function deleteDept(id) {
+    db().prepare('DELETE FROM members WHERE dept_id = ?').run(id);
+    db().prepare('DELETE FROM devices WHERE dept_id = ?').run(id);
+    db().prepare('DELETE FROM user_depts WHERE dept_id = ?').run(id);
+    db().prepare('DELETE FROM depts WHERE id = ?').run(id);
+  }
+
+  app.delete('/api/admin/depts/:id', { preHandler: guard }, async req => {
+    const id = +req.params.id;
+    if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(id)) throw E.notFound('科室不存在');
+    const why = deptDeleteBlock(id);
+    if (why) throw E.conflict(why);
+    db().transaction(() => deleteDept(id))();
     authSvc.audit(req.user.id, 'dept_delete', `id=${id}`, req.ip);
     return { ok: true };
+  });
+
+  /* 科室导入模板 / 导入（按科室名称新增或更新） */
+  app.get('/api/admin/depts/import-template', { preHandler: guard }, async (req, reply) => {
+    const buf = await exportSvc.deptTemplateXlsx();
+    reply.header('Content-Disposition', 'attachment; filename="depts-template.xlsx"')
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return reply.send(buf);
+  });
+
+  app.post('/api/admin/depts/import', { preHandler: guard }, async req => {
+    const file = await req.file();
+    if (!file) throw E.badInput('缺少上传文件');
+    const out = await importSvc.importDepts(await file.toBuffer());
+    authSvc.audit(req.user.id, 'depts_import', `created=${out.created} updated=${out.updated} errors=${out.errors.length}`, req.ip);
+    return out;
+  });
+
+  /* 批量处理科室：body { ids:[...], action:'status'|'delete', status?:'on'|'off' }。
+     删除同单个删除的规则：用过的（有巡检/签字记录、有护士长账号、设备被巡检过）不删，列在 blocked 里并写明原因 */
+  app.post('/api/admin/depts/batch', { preHandler: guard }, async req => {
+    const b = req.body || {};
+    const ids = batchIds(b.ids, '科室');
+    if (!['status', 'delete'].includes(b.action)) throw E.badInput('action 只能是 status / delete');
+    if (b.action === 'status' && !['on', 'off'].includes(b.status)) throw E.badInput('请选择要改成的状态（启用 / 停用）');
+    const get = db().prepare('SELECT id, name FROM depts WHERE id = ?');
+    const out = { updated: [], deleted: [], blocked: [], missing: [] };
+    db().transaction(() => {
+      for (const id of ids) {
+        const d = get.get(id);
+        if (!d) { out.missing.push(String(id)); continue; }
+        const one = { id: String(d.id), name: d.name };
+        if (b.action === 'status') {
+          db().prepare('UPDATE depts SET status = ? WHERE id = ?').run(b.status, id);
+          out.updated.push(one);
+          continue;
+        }
+        const why = deptDeleteBlock(id);
+        if (why) { out.blocked.push({ ...one, reason: why }); continue; }
+        deleteDept(id);
+        out.deleted.push(one);
+      }
+    })();
+    const names = l => l.map(x => x.name).slice(0, 100).join(',') + (l.length > 100 ? ` 等 ${l.length} 个` : '');
+    if (out.updated.length) authSvc.audit(req.user.id, 'dept_batch_status', `status=${b.status} n=${out.updated.length} names=${names(out.updated)}`, req.ip);
+    if (out.deleted.length) authSvc.audit(req.user.id, 'dept_batch_delete', `n=${out.deleted.length} names=${names(out.deleted)}`, req.ip);
+    return out;
   });
 
   /* ---------- 设备台账 ---------- */
@@ -308,10 +369,7 @@ module.exports = async function adminRoutes(app) {
      删除同单台规则：巡检过的设备不删（保留历史），列在 blocked 里，后台据此提供一键改停用 / 报废。 */
   app.post('/api/admin/devices/batch', { preHandler: guard }, async req => {
     const b = req.body || {};
-    if (!Array.isArray(b.ids) || !b.ids.length) throw E.badInput('请先勾选设备');
-    if (b.ids.length > 2000) throw E.badInput('一次最多处理 2000 台');
-    const ids = [...new Set(b.ids.map(Number))];
-    if (ids.some(n => !Number.isInteger(n) || n <= 0)) throw E.badInput('设备 id 不正确');
+    const ids = batchIds(b.ids, '设备');
     if (!['status', 'delete'].includes(b.action)) throw E.badInput('action 只能是 status / delete');
     const status = b.action === 'status' ? devStatus(b.status, null) : null;
     if (b.action === 'status' && !status) throw E.badInput('请选择要改成的状态');

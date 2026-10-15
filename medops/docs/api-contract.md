@@ -109,6 +109,9 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | POST /api/admin/users/:id/reset-password | → `{password:"一次性初始密码"}`，置 mustChange，清冻结，吊销其全部 refreshToken |
 | POST /api/admin/users/:id/unfreeze | 解除密码连错冻结（不改密码），冻结轮次清零 |
 | GET/POST/PATCH /api/admin/depts[/:id] | 有巡检或签字记录的科室禁删（改 status:off）；有护士长账号属于它时也禁删（先处理账号）。停用科室：不能再录入巡检/日签；历史统计、导出照常；在用的过期设备照常提醒 |
+| GET /api/admin/depts/import-template (equip/admin) | 科室导入模板 xlsx：第 1 张表只有表头「科室名称 / 编码 / 排序 / 状态」，示例与说明在第 2 张表 |
+| POST /api/admin/depts/import (equip/admin) | multipart 上传 xlsx（只读第 1 张表）。按科室名称新增或更新；编码、排序、状态留空 = 已有科室不改动（编码填「无」清空）；新科室默认编码空、排序 0、启用。状态只认 启用 / 停用；排序须为整数；文件内重名、缺名称逐行报错。返回 `{created,updated,errors:[{row,message}]}`，记审计 depts_import |
+| POST /api/admin/depts/batch (equip/admin) | Body `{ids:[...],action:'status'\|'delete',status?:'on'\|'off'}`，ids ≤2000。delete 与单个删除同一规则：有巡检/签字记录、有护士长账号、本科室设备被巡检过的不删，放进 `blocked:[{id,name,reason}]`；能删的连同签字人名单、设备、账号科室关联一起删除。返回 `{updated,deleted,blocked,missing}`，单个事务；记审计 dept_batch_status / dept_batch_delete |
 | GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records）。status 只能是 in_use/repair/retired/scrapped，其它值 400（报错里带上原值）。DELETE devices：被巡检记录引用→409 CONFLICT，message 写明记录天数、最近日期，并提示改为停用/报废（作废签字不删巡检记录）；删除成功记审计 device_delete |
 | GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数） |
 | POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。→ `{created,updated,errors:[{row,message}]}`。有效期两列的写入语义：**列不存在或该格留空 = 本次不改动**（老 7 列模板重导入不会清空已录到期日），填「无/-/清空」= 清空，填日期 = 覆盖。日期必须年月日填全（不做 `new Date()` 宽松兜底），状态须命中白名单否则整行报错 |

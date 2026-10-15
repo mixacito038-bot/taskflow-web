@@ -773,6 +773,69 @@ async function main() {
     assert.ok(audits.some(a => a.action === 'device_batch_status' && a.detail.includes('status=retired') && a.detail.includes('PL-001')), JSON.stringify(audits));
   }
   ok('批量改状态 / 批量删除：巡检过的不删、列出天数和最近日期，可一键改停用；校验勾选、动作、状态、数量；记审计；巡检员无权');
+
+  step = '科室管理：导入模板、Excel 批量导入、批量启用停用删除';
+  {
+    // 模板
+    let res = await api('GET', '/api/admin/depts/import-template', { token: A, raw: true });
+    assert.equal(res.status, 200);
+    const tpl = await xlsxRows(res, '科室导入');
+    assert.deepEqual(tpl[0], ['科室名称', '编码', '排序', '状态'], '模板第 1 张表只有表头');
+    assert.equal(tpl.length, 1, '示例在第 2 张表，导入时不会被读到');
+    // 导入：新增 / 更新（留空不改动）/ 逐行报错
+    sql.prepare("UPDATE depts SET code = 'K2', sort = 3, status = 'on' WHERE id = ?").run(+dept.id);
+    const d2name = sql.prepare('SELECT name FROM depts WHERE id = ?').get(+dept.id).name; // 前面「改名同步」改过名
+    const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('科室导入');
+    ws.addRow(['科室名称', '编码', '排序', '状态']);
+    ws.addRow(['导入甲科', 'JA', 5, '启用']);
+    ws.addRow(['导入乙科', '', '', '停用']);
+    ws.addRow([d2name, '', 7, '']);            // 已有科室：只改排序，编码、状态不动
+    ws.addRow(['', 'X', '', '']);               // 缺名称
+    ws.addRow(['导入甲科', 'JB', '', '']);      // 文件内重复
+    ws.addRow(['导入丙科', '', 'abc', '']);     // 排序不是整数
+    ws.addRow(['导入丁科', '', '', '暂停']);    // 状态认不出
+    ws.addRow([]);                              // 空行忽略
+    const fd = new FormData();
+    fd.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'depts.xlsx');
+    const r = await fetch(BASE + '/api/admin/depts/import', { method: 'POST', headers: { authorization: `Bearer ${Q}`, 'x-device-id': 'regress-dev' }, body: fd });
+    const out = await r.json();
+    assert.equal(r.status, 200, JSON.stringify(out));
+    assert.deepEqual([out.created, out.updated, out.errors.map(e => e.row)], [2, 1, [5, 6, 7, 8]], JSON.stringify(out));
+    assert.ok(out.errors[1].message.includes('与第 2 行的科室名称重复') && out.errors[3].message.includes('启用 / 停用'), JSON.stringify(out.errors));
+    const dq = n => sql.prepare('SELECT code, sort, status FROM depts WHERE name = ?').get(n);
+    assert.deepEqual(dq('导入甲科'), { code: 'JA', sort: 5, status: 'on' });
+    assert.deepEqual(dq('导入乙科'), { code: '', sort: 0, status: 'off' });
+    assert.deepEqual(dq(d2name), { code: 'K2', sort: 7, status: 'on' }, '已有科室：留空的编码、状态不改动');
+    assert.ok(okj(await api('GET', '/api/admin/audit', { token: A })).some(a => a.action === 'depts_import' && a.detail.includes('created=2')));
+    // 批量：校验
+    const bat = (token, body) => api('POST', '/api/admin/depts/batch', { token, body });
+    errj(await bat(A, { ids: [], action: 'delete' }), 400, 'BAD_INPUT', '没勾选');
+    errj(await bat(A, { ids: [dept.id], action: 'move' }), 400, 'BAD_INPUT', '动作不对');
+    errj(await bat(A, { ids: [dept.id], action: 'status', status: 'x' }), 400, 'BAD_INPUT', '状态不对');
+    const I2 = await login('pjt');
+    errj(await bat(I2, { ids: [dept.id], action: 'status', status: 'off' }), 403, 'FORBIDDEN', '巡检员批量处理科室');
+    // 批量删除：没用过的删掉；有记录的、有护士长账号的不删并写明原因
+    const ja = sql.prepare("SELECT id FROM depts WHERE name = '导入甲科'").get().id;
+    const yi = sql.prepare("SELECT id FROM depts WHERE name = '导入乙科'").get().id;
+    const hd2 = sql.prepare("SELECT id FROM depts WHERE name = '待删科室'").get().id;
+    okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: String(ja), catName: '测试', code: 'JA-001', name: '没巡检过的设备' } }));
+    res = okj(await bat(A, { ids: [ja, yi, dept.id, hd2, 999999], action: 'delete' }));
+    assert.deepEqual(res.deleted.map(x => x.name).sort(), ['导入乙科', '导入甲科'], '没用过的科室删掉（连同没巡检过的设备）');
+    assert.ok(!sql.prepare("SELECT 1 FROM devices WHERE code = 'JA-001'").get(), '科室下没巡检过的设备一并删除');
+    const why = Object.fromEntries(res.blocked.map(x => [x.name, x.reason]));
+    assert.ok(why[d2name] && why[d2name].includes('巡检或签字记录'), JSON.stringify(why));
+    assert.ok(why['待删科室'] && why['待删科室'].includes('护士长账号'), JSON.stringify(why));
+    assert.deepEqual(res.missing, ['999999']);
+    // 删不掉的一键停用
+    res = okj(await bat(Q, { ids: res.blocked.map(x => x.id), action: 'status', status: 'off' }));
+    assert.equal(res.updated.length, 2);
+    assert.equal(dq('待删科室').status, 'off');
+    okj(await bat(A, { ids: [dept.id], action: 'status', status: 'on' }), '改回启用（后面不影响）');
+    const audits = okj(await api('GET', '/api/admin/audit', { token: A })).filter(a => a.action.startsWith('dept_batch_'));
+    assert.ok(audits.some(a => a.action === 'dept_batch_delete' && a.detail.includes('n=2')), JSON.stringify(audits));
+    assert.ok(audits.some(a => a.action === 'dept_batch_status' && a.detail.includes('status=off')), JSON.stringify(audits));
+  }
+  ok('科室：导入模板只有表头；Excel 按名称新增 / 更新（留空不改动）、逐行报错；批量删除只删没用过的、写明原因，可一键停用；校验与权限；记审计');
   sql.close();
 
   console.log('\nREGRESS PASS');

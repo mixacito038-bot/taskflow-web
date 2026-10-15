@@ -153,6 +153,54 @@ async function importDevices(buffer) {
   return { created, updated, errors };
 }
 
+/* 科室 xlsx 导入：按「科室名称」新增或更新（列：科室名称 / 编码 / 排序 / 状态）。
+   编码、排序、状态留空 = 已有科室本次不改动（与设备导入同一语义）；新科室：编码空、排序 0、启用。 */
+const DEPT_STATUS = { 启用: 'on', 停用: 'off', 已停用: 'off' };
+async function importDepts(buffer) {
+  const db = getDb();
+  const wb = new ExcelJS.Workbook();
+  try { await wb.xlsx.load(buffer); } catch { throw E.badInput('无法解析 xlsx 文件'); }
+  const ws = wb.worksheets[0];
+  if (!ws) throw E.badInput('xlsx 中没有工作表');
+  let created = 0, updated = 0;
+  const errors = [];
+  const rows = [];
+  ws.eachRow((row, n) => { if (n > 1) rows.push([row, n]); });
+  const seen = new Map(); // 同一个文件里科室名称重复
+  db.transaction(() => {
+    for (const [row, n] of rows) {
+      const [name, codeRaw, sortRaw, statusRaw] = [1, 2, 3, 4].map(i => cellStr(row, i));
+      if (!name && !codeRaw && !sortRaw && !statusRaw) continue; // 空行
+      if (!name) { errors.push({ row: n, message: '科室名称不能为空' }); continue; }
+      if (seen.has(name)) { errors.push({ row: n, message: `与第 ${seen.get(name)} 行的科室名称重复，本行未导入` }); continue; }
+      seen.set(name, n);
+      let sort;
+      if (sortRaw) {
+        const v = Number(sortRaw);
+        if (!Number.isInteger(v) || Math.abs(v) > 1e6) { errors.push({ row: n, message: `排序「${sortRaw}」应为整数；本行未导入` }); continue; }
+        sort = v;
+      }
+      let status;
+      if (statusRaw) {
+        status = DEPT_STATUS[statusRaw];
+        if (!status) { errors.push({ row: n, message: `状态「${statusRaw}」只能填：启用 / 停用（留空：新科室默认启用，已有科室不改动）` }); continue; }
+      }
+      const code = CLEAR_WORDS.has(codeRaw) ? '' : codeRaw || undefined;
+      const old = db.prepare('SELECT id FROM depts WHERE name = ?').get(name);
+      if (old) {
+        db.prepare('UPDATE depts SET code = COALESCE(?, code), sort = COALESCE(?, sort), status = COALESCE(?, status) WHERE id = ?')
+          .run(code ?? null, sort ?? null, status || null, old.id);
+        updated++;
+      } else {
+        db.prepare('INSERT INTO depts (name, code, sort, status, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(name, code || '', sort ?? 0, status || 'on', nowIso());
+        created++;
+      }
+    }
+  })();
+  return { created, updated, errors };
+}
+
 /* 历史数据导入：旧版 H5 导出的 JSON（{depts,devices,members,users,records,weeksigns,monthsigns}），
    或照这个格式手工整理的数据。账号密码一律重置为随机值 + 首次登录改密。
 
@@ -513,4 +561,4 @@ function monthStat(db, deptId, month, stat) {
   return { ...itemStats(db, deptId, span.from, span.to), weeks };
 }
 
-module.exports = { importDevices, importLegacy };
+module.exports = { importDevices, importDepts, importLegacy };
