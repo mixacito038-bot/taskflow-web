@@ -6,58 +6,77 @@
 <meta name="theme-color" content="#0F554D">
 <title>设备管理平台</title>
 <style>
-  /* 统一入口页：自包含单文件，无任何外部资源 */
+  /* 统一入口页：自包含单文件，无任何外部资源（图标都是内嵌 SVG） */
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   :root{
     --green:#0F554D; --green-deep:#0B423C; --green-soft:#E7F1EF;
-    --ink:#1C2B29; --muted:#5F736F; --line:#DCE7E4;
+    --ink:#1C2B29; --muted:#5F736F; --line:#DCE7E4; --bg:#F3F7F6;
   }
-  html,body{height:100%}
+  html,body{min-height:100%}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:#F3F7F6; color:var(--ink);
+    background:var(--bg); color:var(--ink);
     display:flex; flex-direction:column; min-height:100vh;
   }
   .hero{
     background:linear-gradient(160deg,var(--green) 0%,var(--green-deep) 100%);
-    color:#fff; padding:48px 20px 96px; text-align:center; position:relative;
+    color:#fff; padding:48px 20px 96px; text-align:center;
   }
   .hero .logo{
     width:64px;height:64px;margin:0 auto 16px;border-radius:18px;
     background:rgba(255,255,255,.12); display:flex;align-items:center;justify-content:center;
   }
   .hero h1{font-size:26px;font-weight:700;letter-spacing:2px}
-  .hero p{margin-top:10px;font-size:14px;opacity:.75;letter-spacing:1px}
-  .cards{
-    width:min(760px,calc(100% - 32px)); margin:-56px auto 0;
-    display:grid; grid-template-columns:1fr 1fr; gap:16px;
-  }
+  .hero p{margin-top:10px;font-size:14px;opacity:.8;letter-spacing:1px}
+
+  /* 四个入口一样大：宽屏一行四个，平板两行两个，手机一列 */
+  .wrap{width:min(1080px,calc(100% - 32px)); margin:0 auto}
+  .cards{margin-top:-56px; display:grid; grid-template-columns:repeat(4,1fr); gap:16px}
+  @media (max-width:960px){ .cards{grid-template-columns:repeat(2,1fr)} }
   @media (max-width:560px){ .cards{grid-template-columns:1fr} }
   .card{
     background:#fff; border:1px solid var(--line); border-radius:16px;
-    padding:28px 24px; text-decoration:none; color:var(--ink);
+    padding:28px 22px 24px; text-decoration:none; color:var(--ink);
     display:flex; flex-direction:column; align-items:center; text-align:center;
     box-shadow:0 6px 20px rgba(15,85,77,.08);
     transition:transform .15s ease, box-shadow .15s ease;
   }
   .card:hover{transform:translateY(-3px); box-shadow:0 12px 28px rgba(15,85,77,.14)}
+  .card:focus-visible{outline:3px solid #7FB8AE; outline-offset:2px}
   .card .icon{
     width:72px;height:72px;border-radius:20px;background:var(--green-soft);
     display:flex;align-items:center;justify-content:center;margin-bottom:16px;
   }
-  .card h2{font-size:19px;font-weight:700}
-  .card .sub{margin-top:8px;font-size:13px;color:var(--muted);line-height:1.7}
+  .card h2{font-size:19px;font-weight:700;letter-spacing:.5px}
+  .card .tag{
+    margin-top:8px;font-size:12px;color:var(--green);background:var(--green-soft);
+    border-radius:999px;padding:3px 10px;letter-spacing:.5px;
+  }
+  .card .sub{margin-top:12px;font-size:13px;color:var(--muted);line-height:1.75;flex:1}
   .card .go{
     margin-top:18px;font-size:14px;font-weight:600;color:var(--green);
     display:flex;align-items:center;gap:6px;
   }
-  .foot{margin:36px 0 28px;text-align:center}
-  .foot a{
-    font-size:13px;color:var(--muted);text-decoration:none;
-    border-bottom:1px dashed var(--line);padding-bottom:2px;
+  @media (prefers-reduced-motion:reduce){ .card{transition:none} .card:hover{transform:none} }
+
+  /* 第一次使用：真实的先后顺序，所以编号 */
+  .steps{
+    margin-top:24px; background:#fff; border:1px solid var(--line); border-radius:16px;
+    padding:20px 24px 22px;
   }
-  .foot a:hover{color:var(--green);border-color:var(--green)}
-  .copy{margin-top:14px;font-size:12px;color:#9AACA8}
+  .steps h3{font-size:15px;font-weight:700;margin-bottom:14px}
+  .steps ol{list-style:none; display:grid; grid-template-columns:repeat(4,1fr); gap:14px 20px; counter-reset:step}
+  @media (max-width:960px){ .steps ol{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:560px){ .steps ol{grid-template-columns:1fr} }
+  .steps li{counter-increment:step; display:flex; gap:10px; font-size:13px; line-height:1.65; color:var(--ink)}
+  .steps li::before{
+    content:counter(step); flex:none; width:22px; height:22px; margin-top:1px; border-radius:50%;
+    background:var(--green); color:#fff; font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .steps b{color:var(--green); font-weight:600}
+
+  .copy{margin:28px 0 24px;text-align:center;font-size:12px;color:#8A9E9A}
 </style>
 </head>
 <body>
@@ -72,43 +91,92 @@
     <p>急救设备巡检 · 资产盘点 · 统一入口</p>
   </header>
 
-  <main class="cards">
-    <a class="card" href="/xunjian/">
-      <div class="icon">
-        <!-- 手机 -->
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="7" y="2.5" width="10" height="19" rx="2.5" stroke="#0F554D" stroke-width="1.8"/>
-          <path d="M10.5 5h3" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round"/>
-          <circle cx="12" cy="18" r="1.1" fill="#0F554D"/>
-        </svg>
-      </div>
-      <h2>急救设备巡检</h2>
-      <p class="sub">手机扫码巡检、电子签名<br>日检 / 周签 / 月签</p>
-      <span class="go">进入巡检
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </span>
-    </a>
+  <main class="wrap">
+    <div class="cards">
+      <a class="card" href="/xunjian/">
+        <div class="icon">
+          <!-- 手机 + 勾 -->
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" stroke="#0F554D" stroke-width="1.8"/>
+            <path d="M10.5 5h3" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M9.4 12.4l1.8 1.8 3.5-3.7" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2>急救设备巡检</h2>
+        <span class="tag">巡检员 · 护士长 ｜ 手机</span>
+        <p class="sub">扫科室二维码进入<br>每天勾选设备、电子签名<br>护士长每周周签</p>
+        <span class="go">进入巡检
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
 
-    <a class="card" href="/pandian/">
-      <div class="icon">
-        <!-- 电脑 -->
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="3" y="4.5" width="18" height="12" rx="2" stroke="#0F554D" stroke-width="1.8"/>
-          <path d="M9 20h6M12 16.5V20" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <h2>资产盘点系统</h2>
-      <p class="sub">全院资产台账、盘点核对<br>多端云同步</p>
-      <span class="go">进入盘点
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </span>
-    </a>
-  </main>
+      <a class="card" href="/admin/">
+        <div class="icon">
+          <!-- 电脑 + 柱状图 -->
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="12.5" rx="2" stroke="#0F554D" stroke-width="1.8"/>
+            <path d="M9 20h6M12 16.5V20" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M8 13v-2.5M12 13V8M16 13V9.5" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h2>巡检管理后台</h2>
+        <span class="tag">设备科 · 护士长 ｜ 电脑</span>
+        <p class="sub">科室、设备台账、账号管理<br>统计分析、异常清单<br>月签与月报导出</p>
+        <span class="go">进入后台
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
 
-  <div class="foot">
-    <a href="/admin/">巡检管理后台（护士长 / 设备科）</a>
-    <a href="/qrcode.html">生成巡检二维码（打印贴墙）</a>
+      <a class="card" href="/qrcode.html">
+        <div class="icon">
+          <!-- 二维码 -->
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.3" stroke="#0F554D" stroke-width="1.8"/>
+            <rect x="14" y="3.5" width="6.5" height="6.5" rx="1.3" stroke="#0F554D" stroke-width="1.8"/>
+            <rect x="3.5" y="14" width="6.5" height="6.5" rx="1.3" stroke="#0F554D" stroke-width="1.8"/>
+            <rect x="5.9" y="5.9" width="1.7" height="1.7" fill="#0F554D"/>
+            <rect x="16.4" y="5.9" width="1.7" height="1.7" fill="#0F554D"/>
+            <rect x="5.9" y="16.4" width="1.7" height="1.7" fill="#0F554D"/>
+            <path d="M14 14h2.6v2.6M20.5 14v0M14 20.5h2.6M18.6 18.6h1.9v1.9" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2>巡检二维码</h2>
+        <span class="tag">设备科 ｜ 打印贴墙</span>
+        <p class="sub">按科室生成二维码<br>贴在抢救车或护士站<br>手机一扫直接进入巡检</p>
+        <span class="go">生成二维码
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+
+      <a class="card" href="/pandian/">
+        <div class="icon">
+          <!-- 盘点清单 -->
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="5" y="4" width="14" height="17" rx="2" stroke="#0F554D" stroke-width="1.8"/>
+            <rect x="9" y="2.5" width="6" height="3" rx="1" stroke="#0F554D" stroke-width="1.8"/>
+            <path d="M8.5 10.5l1 1 1.8-1.9M8.5 15.5l1 1 1.8-1.9M13.5 10.5h2.5M13.5 15.5h2.5" stroke="#0F554D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2>资产盘点系统</h2>
+        <span class="tag">设备科 ｜ 电脑 · 手机</span>
+        <p class="sub">全院资产台账<br>盘点核对<br>多端云同步</p>
+        <span class="go">进入盘点
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+    </div>
+
+    <section class="steps" aria-labelledby="steps-title">
+      <h3 id="steps-title">第一次使用，按这个顺序来</h3>
+      <ol>
+        <li><span>设备科登录<b>巡检管理后台</b>，建科室、导入设备、开账号</span></li>
+        <li><span>用<b>巡检二维码</b>按科室打印，贴在抢救车或护士站</span></li>
+        <li><span>巡检员手机扫码登录，每天勾选设备并日签</span></li>
+        <li><span>护士长每周周签；设备科每月月签、导出月报</span></li>
+      </ol>
+    </section>
+
     <div class="copy">设备科 · 内部系统</div>
-  </div>
+  </main>
 </body>
 </html>

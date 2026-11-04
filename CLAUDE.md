@@ -7,7 +7,8 @@
 - 服务器：腾讯云，公网 IP **49.234.179.153**，root 登录（SSH 22 端口）
 - 代码目录：`/opt/medops`（内容 = 仓库里的 `medops/` 目录）
 - 数据目录：`/opt/medops-data`（SQLite 数据库、签名图、每日 02:30 自动备份），升级不动它
-- 运维入口：`/opt/medops/deploy/tencent/manage.sh`（状态 / 日志 / 备份 / 恢复 / 升级 / 体检 / 重置管理员 / 改端口）
+- 运维入口：`/opt/medops/deploy/tencent/manage.sh`（状态 / 日志 / 备份 / 恢复 / 升级 / 体检 / 重置管理员 / 改端口 / reset-data 清空数据只留 admin）
+  给用户的命令尽量用英文子命令（reset-data、check 等）：中文在部分电脑的终端里会乱码
 - 对外地址：`https://xunjian.youhukang.com`（443 端口；`/xunjian/` 手机端、`/admin/` 管理后台、`/pandian/` 资产盘点）
 - 同一台机器还跑着别人的服务（8910/8911、flowdesk 等）：只动 medops 项目自己的容器，不要做影响全机的操作
 - 线上当前版本：**20261015-1013（提交 0dad48a）**，2026-10-15 用户确认升级成功、体检全部正常。

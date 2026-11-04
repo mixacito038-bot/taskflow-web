@@ -3,6 +3,7 @@
 # 不加命令或输入不认识的命令，都会打印帮助。
 set -euo pipefail
 cd "$(dirname "$0")"
+SELF="$(pwd)/$(basename "$0")"   # 自己调用自己（清空前先备份）用
 [ -f .env ] && . ./.env
 WEB_PORT="${WEB_PORT:-8912}"
 DATA_DIR="${DATA_DIR:-/opt/medops-data}"
@@ -137,6 +138,30 @@ case "${1:-帮助}" in
     docker compose exec -T api node src/scripts/check-signs.js
     ;;
 
+  清空数据|reset-data)
+    say "清空巡检数据，只保留原始管理员账号 admin"
+    # 1) 列出会清空什么（只读）；admin 账号不存在或不能用时这里就停下，什么都不改
+    docker compose exec -T api node src/scripts/reset-data.js || exit 1
+    echo
+    echo "  ⚠ 清空前会自动做一份完整备份；万一清错了，可以用备份找回。"
+    # 用英文 yes 确认：中文在部分电脑的终端里会变成乱码，输对了也对不上
+    read -r -p "  确认清空请输入 yes 后回车（输入别的都会取消）：" c || c=""
+    [ "${c}" = yes ] || { echo "  已取消，没有改动任何数据。"; exit 0; }
+    # 2) 先备份（备份失败就不清空）
+    OUT="${MEDOPS_OUT_DIR:-/root}/medops-before-reset-$(date +%Y%m%d-%H%M%S).tar.gz"
+    echo "  正在备份…"
+    if ! bash "${SELF}" backup "${OUT}" > /dev/null 2>&1 || [ ! -s "${OUT}" ]; then
+      echo "  ✗ 备份没有成功，为安全起见没有清空任何数据。"; exit 1
+    fi
+    echo "  ✓ 已备份：${OUT}"
+    # 3) 清空
+    docker compose exec -T api node src/scripts/reset-data.js --yes || { echo "  ✗ 清空没有完成，数据库保持原样（备份在 ${OUT}）"; exit 1; }
+    echo
+    echo "  接下来：用 admin 登录管理后台，重新建科室、导入设备、开账号。"
+    echo "  手机上原来登录的账号都已失效，开好新账号后重新登录即可。"
+    echo "  想找回清空前的数据：bash ${SELF} restore ${OUT}"
+    ;;
+
   重置管理员|reset-admin)
     say "重置/新建管理员账号"
     read -r -p "  账号名: " AU
@@ -187,6 +212,7 @@ case "${1:-帮助}" in
   bash manage.sh 升级            上传新代码后重新构建启动
   bash manage.sh 体检            检查不符合签字规则的周签/月签（如旧版提前签的）、状态无效的设备，只读
   bash manage.sh 重置管理员       忘记管理员密码时用
+  bash manage.sh reset-data       清空巡检数据（科室、设备、账号、记录、签字），只保留 admin 账号；会先自动备份
   bash manage.sh 改端口 <新端口>  换对外端口（会先查端口是否被占用）
 
 系统每天凌晨 2:30 会自动备份到数据目录里，但仍建议每周用「备份」命令拉一份到院内电脑。

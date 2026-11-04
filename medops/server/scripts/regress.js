@@ -836,6 +836,69 @@ async function main() {
     assert.ok(audits.some(a => a.action === 'dept_batch_status' && a.detail.includes('status=off')), JSON.stringify(audits));
   }
   ok('科室：导入模板只有表头；Excel 按名称新增 / 更新（留空不改动）、逐行报错；批量删除只删没用过的、写明原因，可一键停用；校验与权限；记审计');
+
+  /* 必须是最后一步：会清空数据 */
+  step = '清空数据（只保留 admin）';
+  {
+    const reset = args => require('child_process').spawnSync('node', ['src/scripts/reset-data.js', ...args], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+    const T = ['depts', 'devices', 'members', 'users', 'user_depts', 'records', 'record_items', 'week_signs', 'month_signs', 'files', 'audit_log', 'auth_throttle'];
+    const counts = () => Object.fromEntries(T.map(t => [t, sql.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c]));
+    const sigDir = path.join(DATA_DIR, 'files', 'signatures');
+    const sigFiles = () => { let n = 0; const walk = d => { if (!fs.existsSync(d)) return; for (const f of fs.readdirSync(d, { withFileTypes: true })) f.isDirectory() ? walk(path.join(d, f.name)) : n++; }; walk(sigDir); return n; };
+    // 资产盘点的数据、附件不该被动
+    sql.prepare("INSERT INTO ams_kv (key, value, version, seq, updated_at) VALUES ('ams:assets', '[\"资产A\"]', 1, 999, 'x')").run();
+    fs.mkdirSync(path.join(DATA_DIR, 'files', 'ams'), { recursive: true });
+    fs.writeFileSync(path.join(DATA_DIR, 'files', 'ams', 'keep.bin'), 'ams');
+    const migs = sql.prepare('SELECT COUNT(*) AS c FROM schema_migrations').get().c;
+    const before = counts();
+    const nSig = sigFiles();
+    assert.ok(before.depts > 3 && before.records > 10 && before.users > 5 && nSig > 5, '清空前应有一批数据：' + JSON.stringify(before) + ' 签名图 ' + nSig);
+    const maxDept = sql.prepare('SELECT MAX(id) AS m FROM depts').get().m;
+    // ① 不带 --yes：只列出，不改任何数据
+    let r = reset([]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.ok(r.stdout.includes('将清空以下数据') && r.stdout.includes(`科室`) && r.stdout.includes('没有改动任何数据'), r.stdout);
+    assert.deepEqual(counts(), before, '只列出时不能改数据');
+    // ② admin 被停用 / 不存在时拒绝（清空后就谁都进不来了）
+    sql.prepare("UPDATE users SET status = 'off' WHERE username = 'admin'").run();
+    r = reset(['--yes']);
+    assert.equal(r.status, 2, r.stdout);
+    assert.ok(r.stdout.includes('被停用') && r.stdout.includes('没有改动任何数据'), r.stdout);
+    assert.deepEqual(counts(), before, 'admin 停用时不能清空');
+    sql.prepare("UPDATE users SET status = 'on' WHERE username = 'admin'").run();
+    sql.prepare("UPDATE users SET username = 'admin-x' WHERE username = 'admin'").run();
+    r = reset(['--yes']);
+    assert.equal(r.status, 2);
+    assert.ok(r.stdout.includes('找不到原始管理员账号 admin'), r.stdout);
+    sql.prepare("UPDATE users SET username = 'admin' WHERE username = 'admin-x'").run();
+    // ③ 清空
+    r = reset(['--yes']);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.ok(r.stdout.includes('清空完成') && r.stdout.includes(`签名图文件删除 ${nSig} 个`), r.stdout);
+    const after = counts();
+    assert.deepEqual(after, { depts: 0, devices: 0, members: 0, users: 1, user_depts: 0, records: 0, record_items: 0,
+      week_signs: 0, month_signs: 0, files: 0, audit_log: 1, auth_throttle: 0 }, JSON.stringify(after));
+    assert.equal(sql.prepare('SELECT username FROM users').get().username, 'admin');
+    const log = sql.prepare('SELECT action, detail FROM audit_log').get();
+    assert.ok(log.action === 'data_reset' && log.detail.includes(`科室=${before.depts}`), JSON.stringify(log));
+    assert.equal(sigFiles(), 0, '签名图文件已删除');
+    assert.equal(sql.prepare("SELECT value FROM ams_kv WHERE key = 'ams:assets'").get().value, '["资产A"]', '资产盘点数据不动');
+    assert.ok(fs.existsSync(path.join(DATA_DIR, 'files', 'ams', 'keep.bin')), '资产盘点附件不动');
+    assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM schema_migrations').get().c, migs, '数据库结构记录不动');
+    // admin：原来的登录照常可用，密码没变
+    assert.deepEqual(okj(await api('GET', '/api/admin/depts', { token: A })), [], 'admin 原来的登录照常可用，看到的是空的');
+    okj(await loginAs('admin', 'Reset@2026', 'adm-after-reset'), 'admin 密码没变');
+    // 其他账号的登录已失效
+    errj(await api('GET', '/api/depts', { token: Q }), 401, 'UNAUTHORIZED', '被清掉的设备科账号');
+    errj(await api('POST', '/api/auth/login', { body: { username: 'sbk', password: 'Pass@123' } }), 401, 'UNAUTHORIZED', '被清掉的账号不能再登录');
+    // 新建的编号接着往后排，不和清空前重复（手机上残留的旧草稿对不上新科室）
+    const nd = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '清空后新建的科室' } }));
+    assert.ok(+nd.id > maxDept, `新科室编号 ${nd.id} 应大于清空前的最大编号 ${maxDept}`);
+    // 再跑一次：没东西可清也照样成功
+    r = reset(['--yes']);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  }
+  ok('清空数据：只列出时不改数据；admin 停用 / 不存在时拒绝；清空后只剩 admin（原登录和密码照常），签名图文件删除，资产盘点不动；新编号不与旧的重复');
   sql.close();
 
   console.log('\nREGRESS PASS');
