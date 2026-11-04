@@ -1,5 +1,5 @@
 /* =====================================================================
- * amssync shim — 资产盘点系统 v1.10.6 存储拦截 + 云同步垫片
+ * amssync shim — 资产盘点系统（v1.10.7 原件）存储拦截 + 云同步垫片
  *
  * 由 tools/inject-shim.js 注入：原件中最大的 <script>（React bundle）被抽出为
  * app.bundle.js，原位替换为本文件。因此本文件先于 bundle 执行，负责：
@@ -10,6 +10,10 @@
  *      防抖 2s POST /api/ams/push；冲突→服务端值覆盖+刷新+toast，被覆盖值留底
  *   5. 30s + focus 增量拉取 /api/ams/changes；IndexedDB ams-files 对账制同步；
  *      /api/ams/presence 60s 心跳 + 多设备黄条提示
+ *   6. 登录对账按每份数据上次同步的版本 + 指纹判断：本机只是旧了 → 直接用云端；
+ *      本机改过、云端没变 → 推本机；两边都变了才弹窗（显示两边条数，覆盖云端要二次确认）
+ *   7. 日期统一成 YYYY-MM-DD：包装 XLSX.utils.sheet_to_csv（Excel 导入），App 写资产 / 流转时、
+ *      拉到云端数据时、启动时都把旧写法（5/6/23、2023/5/6、2023年5月6日、45052…）改过来
  *
  * 无任何依赖，接口契约见 medops/docs/api-contract.md §0/§5。
  * ===================================================================== */
@@ -42,6 +46,11 @@
   var dirty = new Set();
 
   Storage.prototype.setItem = function (key, value) {
+    // App 写资产 / 流转：日期字段先统一成 YYYY-MM-DD（CSV 导入等进来的 2023/5/6 之类），再让 App 重读
+    if (this === window.localStorage && !applying && typeof DATE_FIELDS !== 'undefined' && DATE_FIELDS[key]) {
+      var fixed = normStored(key, value);
+      if (fixed !== value) { value = fixed; notifyLater(key); }
+    }
     rawSet.call(this, key, value);
     if (this === window.localStorage && !applying && syncable(key)) markDirty(key);
   };
@@ -57,6 +66,134 @@
     try { var v = lsGet(k); return v == null ? dft : JSON.parse(v); } catch (e) { return dft; }
   }
   function writeJSON(k, obj) { try { lsSet(k, JSON.stringify(obj)); } catch (e) { } }
+
+  /* ---------- 每份数据「上次和云端一致」时的版本 + 内容指纹 ----------
+     amssync.synced = { key: { v: 云端版本, h: 指纹 } }。登录对账靠它分清：
+       本机这份和上次同步时一样（只是旧了）→ 直接用云端；云端没变、本机改过（没来得及推）→ 推本机；
+       两边都变了才问人。以前只要两边不一样就弹窗，一台很久没开的电脑一选「使用本机数据」，
+       全院的资产数据就被它的旧数据整份覆盖了。 */
+  function fp(s) { // 53 位字符串哈希（cyrb53），null 单独记
+    if (s == null) return 'null';
+    var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return s.length + ':' + (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
+  var synced = readJSON('amssync.synced', {});
+  if (!synced || typeof synced !== 'object') synced = {};
+  function markSynced(k, version, value) {
+    if (value == null) delete synced[k]; else synced[k] = { v: version, h: fp(value) };
+    writeJSON('amssync.synced', synced);
+  }
+
+  /* ---------- 日期统一成 YYYY-MM-DD ----------
+     资产的签收 / 采购 / 维保 / 保修日期在编辑框里是 <input type="date">，只认 2023-05-06；
+     「保修到期早于采购日期」「日期晚于今天」这些提示、按年月算折旧也都假定是这个格式。
+     Excel 导入进来的却是单元格自己的显示格式：Excel 里直接敲 2023/5/6（内置日期格式）
+     经 SheetJS 转出来是 5/6/23，还有 2023/5/6、2023年5月6日、20230506、粘贴成数字的 45052……
+     结果编辑框是空的，提示却说「保修到期早于采购日期」（'4/27/26' < '4/28/23'），也不折旧。 */
+  var DATE_FIELDS = {
+    'ams:assets': ['receiveDate', 'purchaseDate', 'lastMaintain', 'warrantyEnd', 'disposeDate'],
+    'ams:otherAssets': ['receiveDate', 'purchaseDate', 'lastMaintain', 'warrantyEnd', 'disposeDate'],
+    'ams:movements': ['date']
+  };
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function ymd(y, m, d) {
+    if (!(y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+    var t = new Date(Date.UTC(y, m - 1, d));
+    if (t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return null; // 2 月 30 日这种不存在的
+    return y + '-' + pad2(m) + '-' + pad2(d);
+  }
+  function localYmd(d) { return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+  function serialToYmd(n) { // Excel 日期序号（1900 体系）；只认 1954～2119 年，别把别的数字当日期
+    if (!(n >= 20000 && n <= 80000)) return null;
+    var t = new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000);
+    return ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+  }
+  // 两位年份：今年往后 20 年以内算 20xx（保修到期常在几年后），再往后算 19xx
+  function fullYear(yy) { var cut = (new Date().getFullYear() % 100) + 20; return yy <= cut ? 2000 + yy : 1900 + yy; }
+  function normDate(v) {
+    if (v == null) return v;
+    var s = String(v).trim(), m;
+    if (!s) return v;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if ((m = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.exec(s))) { var dt = new Date(s); return isNaN(dt) ? v : (localYmd(dt) || v); }
+    // 2023-5-6、2023/5/6、2023.5.6、2023年5月6日，后面可以跟时间
+    if ((m = /^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.exec(s))) return ymd(+m[1], +m[2], +m[3]) || v;
+    if ((m = /^(\d{4})(\d{2})(\d{2})$/.exec(s))) return ymd(+m[1], +m[2], +m[3]) || v;
+    // 月/日/年：SheetJS 把 Excel 内置日期格式显示成 5/6/23、5/6/23 0:00；13/5/2023 这种只能是 日/月
+    if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.exec(s))) {
+      var a = +m[1], b = +m[2], y = m[3].length === 2 ? fullYear(+m[3]) : +m[3];
+      if (a > 12 && b <= 12) { var t2 = a; a = b; b = t2; }
+      return ymd(y, a, b) || v;
+    }
+    if (/^\d{5}(\.\d+)?$/.test(s)) return serialToYmd(+s) || v; // 粘贴成数字的日期
+    return v; // 认不出来的原样保留，不瞎猜
+  }
+  // 一份数据（JSON 数组串）里的日期字段统一；没改动返回原串
+  function normStored(key, s) {
+    var fields = DATE_FIELDS[key];
+    if (!fields || typeof s !== 'string' || !s) return s;
+    var arr;
+    try { arr = JSON.parse(s); } catch (e) { return s; }
+    if (!Array.isArray(arr)) return s;
+    var changed = false;
+    arr.forEach(function (it) {
+      if (!it || typeof it !== 'object') return;
+      fields.forEach(function (f) {
+        var v = it[f];
+        if (typeof v !== 'string' && typeof v !== 'number') return;
+        var nv = normDate(v);
+        if (nv != null && nv !== v && String(nv) !== String(v)) { it[f] = nv; changed = true; }
+      });
+    });
+    return changed ? JSON.stringify(arr) : s;
+  }
+  var notifyPending = {};
+  function notifyLater(key) { // App 内存里还是旧写法：让它从 localStorage 重新读一遍
+    if (notifyPending[key]) return;
+    notifyPending[key] = setTimeout(function () { delete notifyPending[key]; notifyApp(key); }, 0);
+  }
+
+  /* 导入：SheetJS 的 sheet_to_csv 按单元格自己的显示格式输出日期，把日期单元格的显示文本先改成 YYYY-MM-DD；
+     表头带「日期 / 到期」的列里，文本写的日期、粘贴成数字的日期也一并统一 */
+  function dateCellText(d) {
+    // SheetJS 0.18 按本地时区造日期，有的时区会差几十秒（上海是前一天 23:59:17），离零点 10 分钟以内的按零点算
+    var ms = ((d.getHours() * 60 + d.getMinutes()) * 60 + d.getSeconds()) * 1000 + d.getMilliseconds();
+    var t = ms > 86400000 - 600000 ? new Date(d.getTime() + (86400000 - ms)) : d;
+    return localYmd(t);
+  }
+  function fixSheetDates(ws) {
+    var X = window.XLSX;
+    if (!ws || !ws['!ref'] || !X || !X.utils) return;
+    var rg = X.utils.decode_range(ws['!ref']), dateCols = {}, c, r, cell;
+    for (c = rg.s.c; c <= rg.e.c; c++) {
+      var hc = ws[X.utils.encode_cell({ r: rg.s.r, c: c })];
+      if (hc && /日期|到期/.test(String(hc.w != null ? hc.w : hc.v))) dateCols[c] = 1;
+    }
+    for (r = rg.s.r + 1; r <= rg.e.r; r++) {
+      for (c = rg.s.c; c <= rg.e.c; c++) {
+        cell = ws[X.utils.encode_cell({ r: r, c: c })];
+        if (!cell) continue;
+        if (cell.t === 'd' && cell.v instanceof Date && !isNaN(cell.v)) { var tx = dateCellText(cell.v); if (tx) cell.w = tx; continue; }
+        if (!dateCols[c]) continue;
+        if (cell.t === 'n') { var sy = serialToYmd(cell.v); if (sy) cell.w = sy; }
+        else if (cell.t === 's') { var nd = normDate(cell.v); if (nd && nd !== cell.v) cell.w = nd; }
+      }
+    }
+  }
+  (function wrapXlsx() {
+    var X = window.XLSX;
+    if (!X || !X.utils || typeof X.utils.sheet_to_csv !== 'function' || X.utils.sheet_to_csv.__amsDates) return;
+    var raw = X.utils.sheet_to_csv;
+    var wrapped = function (ws) { try { fixSheetDates(ws); } catch (e) { } return raw.apply(this, arguments); };
+    wrapped.__amsDates = true;
+    X.utils.sheet_to_csv = wrapped;
+  })();
 
   /* ---------- 凭据与设备 id ---------- */
   var auth = { access: null, user: null };
@@ -298,6 +435,8 @@
     if (!dirty.size) return;
     flushing = true;
     var changes = buildChanges();
+    var sent = {};
+    changes.forEach(function (c) { sent[c.key] = c.value; });
     try {
       var res = await apiFetch('POST', '/ams/push', { deviceId: devid, changes: changes });
       if (!res.ok) throw new Error('push http ' + res.status);
@@ -305,7 +444,7 @@
       if (j && typeof j.seq === 'number') seq = Math.max(seq, j.seq);
       var conflicted = [];
       pushResults(j).forEach(function (r) {
-        if (r.ok) ver[r.key] = r.newVersion;
+        if (r.ok) { ver[r.key] = r.newVersion; markSynced(r.key, r.newVersion, sent[r.key]); }
         else if (r.conflict) conflicted.push(r);
       });
       if (conflicted.length) applyConflicts(conflicted);
@@ -335,6 +474,7 @@
       stashPush({ key: r.key, value: lsGet(r.key), serverVersion: r.conflict.version, at: new Date().toISOString(), reason: 'conflict' });
       if (r.conflict.value == null) lsDel(r.key); else lsSet(r.key, r.conflict.value);
       ver[r.key] = r.conflict.version;
+      markSynced(r.key, r.conflict.version, r.conflict.value);
     });
     lsSet('ams:_ts', String(Date.now()));
     applying = false;
@@ -370,17 +510,22 @@
         var changed = [];
         var keys = (j && j.keys) || {};
         applying = true;
+        var fixedKeys = [];
         Object.keys(keys).forEach(function (k) {
           if (!syncable(k)) return;
           var e = keys[k];
           ver[k] = e.version;
           if (dirty.has(k)) return; // 本地有待推改动，冲突交给 push 端裁决
+          markSynced(k, e.version, e.value);
           var cur = lsGet(k);
-          if (e.value == null) { if (cur != null) { lsDel(k); changed.push(k); } }
-          else if (cur !== e.value) { lsSet(k, e.value); changed.push(k); }
+          var val = e.value == null ? null : normStored(k, e.value); // 别的电脑（旧版页面）推上来的旧写法日期
+          if (val !== e.value) fixedKeys.push(k);
+          if (val == null) { if (cur != null) { lsDel(k); changed.push(k); } }
+          else if (cur !== val) { lsSet(k, val); changed.push(k); }
         });
         if (changed.length) lsSet('ams:_ts', String(Date.now()));
         applying = false;
+        fixedKeys.forEach(markDirty); // 统一后的写法推回云端
         if (j && typeof j.seq === 'number') seq = j.seq;
         if (changed.length) { notifyApp(changed[0]); toast('云端有更新，页面已刷新'); }
         if (j && j.files && j.files.length) scheduleFileSync(1000);
@@ -392,36 +537,57 @@
   /* ---------- 首次对账 ---------- */
   async function pushAll(entries) { // entries: [{key,value,baseVersion}]
     if (!entries.length) return;
+    var sent = {};
+    entries.forEach(function (c) { sent[c.key] = c.value; });
     try {
       var res = await apiFetch('POST', '/ams/push', { deviceId: devid, changes: entries });
-      if (!res.ok) return;
+      if (!res.ok) { entries.forEach(function (c) { dirty.add(c.key); }); return; } // 稍后由同步引擎重推
       var j = await res.json();
       if (j && typeof j.seq === 'number') seq = Math.max(seq, j.seq);
       pushResults(j).forEach(function (r) {
-        if (r.ok) ver[r.key] = r.newVersion;
+        if (r.ok) { ver[r.key] = r.newVersion; markSynced(r.key, r.newVersion, sent[r.key]); }
         else if (r.conflict) { // 并发抢先，按服务端为准
           applying = true;
           if (r.conflict.value == null) lsDel(r.key); else lsSet(r.key, r.conflict.value);
           applying = false;
           ver[r.key] = r.conflict.version;
+          markSynced(r.key, r.conflict.version, r.conflict.value);
         }
       });
-    } catch (e) { }
+    } catch (e) { entries.forEach(function (c) { dirty.add(c.key); }); }
   }
 
-  function applyCloudAll(cloudKeys) {
+  // 只换指定的几份数据（keys 省略 = 全部换成云端；云端没有的本机 key 一并清掉）
+  function applyCloudAll(cloudKeys, keys) {
     applying = true;
     var local = collectLocal();
+    var only = keys ? {} : null;
+    if (keys) keys.forEach(function (k) { only[k] = 1; });
     Object.keys(cloudKeys).forEach(function (k) {
-      if (!syncable(k)) return;
+      if (!syncable(k) || (only && !only[k])) return;
       var v = cloudKeys[k].value;
       if (v == null) lsDel(k); else lsSet(k, v);
+      markSynced(k, cloudKeys[k].version, v);
     });
     Object.keys(local).forEach(function (k) { // 云端没有的本地 key 一并清掉
-      if (!(k in cloudKeys)) lsDel(k);
+      if (!(k in cloudKeys) && (!only || only[k])) { lsDel(k); delete synced[k]; }
     });
+    writeJSON('amssync.synced', synced);
     lsSet('ams:_ts', String(Date.now()));
     applying = false;
+  }
+
+  /* 几份主要数据各有多少条，给人看：「电脑台账 220 台 · 部门 18 个 · 流转记录 340 条」 */
+  var SUM = [['ams:assets', '电脑台账', '台'], ['ams:otherAssets', '其他资产', '件'], ['ams:sites', '部门', '个'],
+    ['ams:movements', '流转记录', '条'], ['ams:inventories', '盘点任务', '个']];
+  function summarize(get) {
+    var out = [];
+    SUM.forEach(function (x) {
+      var v = get(x[0]), n = 0;
+      if (v != null) { try { var j = JSON.parse(v); n = Array.isArray(j) ? j.length : 0; } catch (e) { n = 0; } }
+      if (n || x[0] === 'ams:assets') out.push(x[1] + ' ' + n + ' ' + x[2]);
+    });
+    return out.join(' · ');
   }
 
   async function reconcile(snap) {
@@ -446,38 +612,66 @@
     if (cloudHas && !localHas) { applyCloudAll(cloudKeys); return; }
     if (!cloudHas && !localHas) return;
 
-    // 两边都有：比对是否一致（并集逐 key 比对原样串）
-    var diff = false;
+    // 两边都有：逐份数据看本机是「旧了」「改过」还是「两边都改了」（见 amssync.synced 的说明）
+    var take = [], send = [], clash = [];
     var union = {};
     Object.keys(local).forEach(function (k) { union[k] = 1; });
     Object.keys(cloudKeys).forEach(function (k) { union[k] = 1; });
     for (var k in union) {
       var lv = k in local ? local[k] : null;
       var cv = k in cloudKeys ? cloudKeys[k].value : null;
-      if (lv !== cv) { diff = true; break; }
+      var cVer = k in cloudKeys ? cloudKeys[k].version : 0;
+      if (lv === cv) { if (cv != null) markSynced(k, cVer, cv); continue; }
+      var s = synced[k];
+      if (s && s.h === fp(lv)) take.push(k);            // 本机没改过，只是旧了 → 用云端
+      else if (s && s.v === cVer && cVer) send.push(k); // 云端没变过，本机有没推上去的改动 → 推本机
+      else clash.push(k);                               // 两边都变了，或者这台电脑以前没记录（旧版页面）
     }
-    if (!diff) return;
+    if (take.length) applyCloudAll(cloudKeys, take);
+    if (send.length) {
+      await pushAll(send.map(function (k2) {
+        return { key: k2, value: k2 in local ? local[k2] : null, baseVersion: cloudKeys[k2] ? cloudKeys[k2].version : 0 };
+      }));
+    }
+    if (!clash.length) return;
 
-    var pick = await modal('数据不一致', '本机与云端的数据不一致，请选择保留哪一份。\n被覆盖的一方会先自动导出 JSON 文件留底。', [
-      { label: '使用云端数据（推荐）', hint: '本机数据将先导出备份，再被云端覆盖', value: 'cloud', primary: true },
-      { label: '使用本机数据', hint: '云端数据将先导出备份，再被本机覆盖', value: 'local' }
+    var sumC = summarize(function (k2) { return k2 in cloudKeys ? cloudKeys[k2].value : null; });
+    var sumL = summarize(function (k2) { return k2 in local ? local[k2] : null; });
+    var pick = await modal('数据不一致',
+      '这台电脑上的资产数据和云端（大家共用的那一份）对不上。\n一般应选「使用云端数据」：这台电脑多半是很久没打开、数据旧了。\n\n' +
+      '云端：' + sumC + '\n本机：' + sumL + '\n\n被换掉的那一份会先自动下载一个 JSON 文件留底。', [
+      { label: '使用云端数据（推荐）', hint: '这台电脑上的数据先下载备份，再换成云端的', value: 'cloud', primary: true },
+      { label: '用本机数据覆盖云端…', hint: '所有电脑看到的都会变成这台电脑的数据，下一步还要再确认', value: 'local' }
     ]);
+    if (pick === 'local') {
+      var sure = await modal('确定用本机数据覆盖云端？',
+        '覆盖以后，所有电脑上看到的资产数据都会变成这台电脑上的这一份。\n\n云端现在：' + sumC + '\n这台电脑：' + sumL +
+        '\n\n只有确定这台电脑上的才是最新、最全的数据时才这样做。拿不准就选「不覆盖」。', [
+        { label: '不覆盖，使用云端数据', value: 'cloud', primary: true },
+        { label: '确定覆盖云端', hint: '云端这份会先下载备份；服务器也保留着最近的版本，可让管理员还原', value: 'local' }
+      ]);
+      if (sure !== 'local') pick = 'cloud';
+    }
     if (pick === 'local') {
       var cloudDump = {};
       Object.keys(cloudKeys).forEach(function (k2) { cloudDump[k2] = cloudKeys[k2].value; });
       downloadJSON('ams-cloud-backup-' + ts() + '.json', { type: 'ams-cloud-backup', at: new Date().toISOString(), keys: cloudDump });
-      var ups = [];
-      Object.keys(local).forEach(function (k2) {
-        ups.push({ key: k2, value: local[k2], baseVersion: (cloudKeys[k2] && cloudKeys[k2].version) || 0 });
-      });
-      Object.keys(cloudKeys).forEach(function (k2) { // 云端多出的 key 删除
-        if (!(k2 in local)) ups.push({ key: k2, value: null, baseVersion: cloudKeys[k2].version });
-      });
-      await pushAll(ups);
+      await pushAll(clash.map(function (k2) {
+        return { key: k2, value: k2 in local ? local[k2] : null, baseVersion: (cloudKeys[k2] && cloudKeys[k2].version) || 0 };
+      }));
     } else { // 默认云端
       downloadJSON('ams-local-backup-' + ts() + '.json', { type: 'ams-local-backup', at: new Date().toISOString(), keys: local });
-      applyCloudAll(cloudKeys);
+      applyCloudAll(cloudKeys, clash);
     }
+  }
+
+  /* 本机已有数据里的旧写法日期统一一遍（统一后的会推回云端，其他电脑跟着更新） */
+  function normalizeAllStored() {
+    Object.keys(DATE_FIELDS).forEach(function (k) {
+      var cur = lsGet(k);
+      var fixed = normStored(k, cur);
+      if (fixed !== cur) { lsSet(k, fixed); markDirty(k); }
+    });
   }
 
   /* ---------- 鉴权 + snapshot 主循环 ---------- */
@@ -691,6 +885,7 @@
     } catch (e) {
       console.error('[amssync] 对账失败，转本地模式：', e);
     }
+    try { normalizeAllStored(); } catch (e) { }
     engineOn = true;
     releaseBundle();
     if (dirty.size) { clearTimeout(flushTimer); flushTimer = setTimeout(flush, 2000); }

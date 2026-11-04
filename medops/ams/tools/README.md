@@ -56,6 +56,10 @@ node tools/inject-shim.js
 
 ## 注意
 
+- shim 除了同步，还管两件事（都不改原件）：登录对账按每个 key 上次同步的版本 + 指纹判断本机是旧了还是改过；
+  资产日期字段统一成 YYYY-MM-DD（包装 `XLSX.utils.sheet_to_csv`，写入 / 拉取 / 启动时归一）。原件升级时要确认
+  `XLSX` 仍是全局变量、导入仍走 `sheet_to_csv`、日期字段名不变（见 shim 里 DATE_FIELDS）。
+
 - `shim.js?v=` 的版本号取 shim 内容 sha256 前 8 位，shim 改动即自动
   换 URL 破缓存；app.bundle.js 由 nginx 按 no-cache+ETag 下发（契约 §7）。
 - 原件 `original/*.html` 是唯一事实源，dist/ 全部可再生，不要手改 dist/。

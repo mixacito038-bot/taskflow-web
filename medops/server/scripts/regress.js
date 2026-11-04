@@ -1030,6 +1030,51 @@ async function main() {
   }
   ok('「/」= 没有编码 / 序列号，可以重复（「无」「、」「－」等同）；其他编码、序列号判重（序列号不分大小写），重了说清楚被哪台占用；同一文件内重复报错；「/」设备按序列号或科室+品类+名称+型号+位置对应，重复导入不重复新增、能补编码；历史导入同规则；排序、体检');
 
+  step = '资产盘点：另一台电脑误选「使用本机数据」整份覆盖 → 服务器命令还原';
+  {
+    const amsPush = (dev, kv) => api('POST', '/api/ams/push', { token: A, body: { deviceId: dev, changes: kv } });
+    const snapA = async () => okj(await api('GET', '/api/ams/snapshot', { token: A }));
+    const verOf = async k => ((await snapA()).keys[k] || {}).version || 0;
+    const arrN = n => JSON.stringify(Array.from({ length: n }, (_, i) => ({ id: 'as' + i, code: 'ZC-' + i })));
+    const good = { 'ams:assets': arrN(220), 'ams:sites': arrN(18), 'ams:movements': arrN(340) };
+    okj(await amsPush('pc-main', Object.entries(good).map(([key, value]) => ({ key, value, baseVersion: 0 }))));
+    await new Promise(r => setTimeout(r, 3200)); // 隔开，算两次改动
+    // 另一台电脑：本机是很久以前的数据，选了「使用本机数据」——每份都按云端版本号推上来，覆盖
+    const old = { 'ams:assets': arrN(12), 'ams:sites': arrN(3), 'ams:movements': arrN(5), 'ams:inventories': arrN(1) };
+    const ups = [];
+    for (const [key, value] of Object.entries(old)) ups.push({ key, value, baseVersion: await verOf(key) });
+    okj(await amsPush('pc-old', ups));
+    assert.equal(JSON.parse((await snapA()).keys['ams:assets'].value).length, 12, '云端被覆盖成 12 台（复现）');
+    const run = a => require('child_process').spawnSync('node', ['src/scripts/ams-restore.js', ...a], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+    const list = run([]);
+    assert.equal(list.status, 0, list.stderr);
+    assert.ok(/\[1\][^\n]*电脑 pc-old/.test(list.stdout) && list.stdout.includes('电脑台账 220 → 12') && list.stdout.includes('最像误操作的就是这次'), list.stdout);
+    assert.equal(run(['--suggest']).stdout.trim(), '1');
+    const show = run(['--show', '1']);
+    assert.ok(/电脑台账\s+现在\s+12 条\s+→\s+还原后\s+220 条/.test(show.stdout) && /部门\S*\s+现在\s+3 条\s+→\s+还原后\s+18 条/.test(show.stdout), show.stdout);
+    assert.equal(JSON.parse((await snapA()).keys['ams:assets'].value).length, 12, '--show 只读');
+    assert.equal(run(['--to', '1']).status, 2, '不加 --yes 不还原');
+    assert.equal(run(['--show', '99']).status, 2, '编号不对 → 报错');
+    const seq0 = (await snapA()).seq;
+    const res = run(['--to', '1', '--yes']);
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    assert.ok(res.stdout.includes('✓ 已还原 4 份数据'), res.stdout);
+    const s1 = await snapA();
+    for (const [k, v] of Object.entries(good)) assert.equal(s1.keys[k].value, v, `${k} 与覆盖前一字不差`);
+    assert.ok(!('ams:inventories' in s1.keys), '覆盖时带进来的盘点任务删掉');
+    const ch = okj(await api('GET', `/api/ams/changes?since=${seq0}`, { token: A }));
+    assert.ok(ch.keys['ams:assets'] && ch.keys['ams:inventories'] && ch.keys['ams:inventories'].value === null, '各电脑增量拉取能拉到还原后的数据');
+    // 撤销还原：最上面那条就是还原操作
+    const list2 = run([]);
+    assert.ok(/\[1\][^\n]*服务器上的还原操作/.test(list2.stdout), list2.stdout);
+    assert.equal(run(['--to', '1', '--yes']).status, 0);
+    assert.equal(JSON.parse((await snapA()).keys['ams:assets'].value).length, 12, '撤销还原 = 回到 12 台');
+    assert.equal(run(['--to', '2', '--yes']).status, 0, '再还原一次');
+    assert.equal(JSON.parse((await snapA()).keys['ams:assets'].value).length, 220);
+    assert.ok(sql.prepare("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'ams_restore'").get().c >= 3, '记审计');
+  }
+  ok('资产盘点误覆盖：还原命令列出改动、标出那次、先看前后条数、只读不加 --yes 不动；还原后与覆盖前一字不差、各端能增量拉到；还原可撤销；记审计');
+
   /* 必须是最后一步：会清空数据 */
   step = '清空数据（只保留 admin）';
   {
@@ -1039,7 +1084,7 @@ async function main() {
     const sigDir = path.join(DATA_DIR, 'files', 'signatures');
     const sigFiles = () => { let n = 0; const walk = d => { if (!fs.existsSync(d)) return; for (const f of fs.readdirSync(d, { withFileTypes: true })) f.isDirectory() ? walk(path.join(d, f.name)) : n++; }; walk(sigDir); return n; };
     // 资产盘点的数据、附件不该被动
-    sql.prepare("INSERT INTO ams_kv (key, value, version, seq, updated_at) VALUES ('ams:assets', '[\"资产A\"]', 1, 999, 'x')").run();
+    sql.prepare("INSERT OR REPLACE INTO ams_kv (key, value, version, seq, updated_at) VALUES ('ams:assets', '[\"资产A\"]', 1, 999, 'x')").run();
     fs.mkdirSync(path.join(DATA_DIR, 'files', 'ams'), { recursive: true });
     fs.writeFileSync(path.join(DATA_DIR, 'files', 'ams', 'keep.bin'), 'ams');
     const migs = sql.prepare('SELECT COUNT(*) AS c FROM schema_migrations').get().c;

@@ -149,6 +149,14 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 sites/areas/assets/movements/inventories/users/roles/approvals/cats/catCodes/otherCats/otherCatCodes/
 otherAssets/depreCfg/locations/tags/changelog。
 
+shim 登录对账（2026-11）：`amssync.synced`（不同步）记每个 key 上次与云端一致时的 `{v: 版本, h: 内容指纹}`。
+本机值 == 云端 → 一致；本机指纹 == 记录（本机没改过）→ 用云端；云端版本 == 记录且本机改过 → 推本机；
+其余（两边都变、或没有记录）→ 弹窗，显示两边条数，「用本机数据覆盖云端」需二次确认。
+shim 另把资产 `receiveDate/purchaseDate/lastMaintain/warrantyEnd/disposeDate`、流转 `date` 统一成 `YYYY-MM-DD`
+（包装 `XLSX.utils.sheet_to_csv`；App 写入、拉取云端、启动时各归一一次，改动推回云端）。
+服务器还原：`node src/scripts/ams-restore.js [--show N | --to N --yes | --suggest]`（manage.sh ams-restore），
+按 ams_kv_history 把各 key 退回到第 N 次改动（同一设备、同一账号、相邻 ≤3 秒的写入为一次）开始前的版本，走 push 同一写入路径。
+
 ## 6. 服务端技术栈与目录（server 组件）
 
 Fastify v4 + better-sqlite3(WAL) + bcryptjs + @fastify/jwt + @fastify/cookie + @fastify/rate-limit +
