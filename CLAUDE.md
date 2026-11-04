@@ -7,7 +7,8 @@
 - 服务器：腾讯云，公网 IP **49.234.179.153**，root 登录（SSH 22 端口）
 - 代码目录：`/opt/medops`（内容 = 仓库里的 `medops/` 目录）
 - 数据目录：`/opt/medops-data`（SQLite 数据库、签名图、每日 02:30 自动备份），升级不动它
-- 运维入口：`/opt/medops/deploy/tencent/manage.sh`（状态 / 日志 / 备份 / 恢复 / 升级 / 体检 / 重置管理员 / 改端口 / reset-data 清空数据只留 admin）
+- 运维入口：`/opt/medops/deploy/tencent/manage.sh`（状态 / 日志 / 备份 / 恢复 / 升级 / 体检 / 重置管理员 / 改端口 / reset-data 清空数据只留 admin /
+  ams-restore 资产盘点数据还原：服务器每份资产数据留 20 版，列出改动、撤销误覆盖，第 9 版起有）
   给用户的命令尽量用英文子命令（reset-data、check 等）：中文在部分电脑的终端里会乱码
 - 对外地址：`https://xunjian.youhukang.com`（443 端口；`/xunjian/` 手机端、`/admin/` 管理后台、`/pandian/` 资产盘点）
 - 同一台机器还跑着别人的服务（8910/8911、flowdesk 等）：只动 medops 项目自己的容器，不要做影响全机的操作
@@ -47,3 +48,7 @@
 - 业务规则以 `medops/docs/api-contract.md` 为准：可以补签过去、不能提前签；周签要 7 天日签齐；
   月签要该月（周一在本月的）全部周签齐；签字即锁定；作废自上而下。
 - 管理后台改了源码要重新构建并提交 `medops/admin/dist`（服务器直接用构建产物，不在服务器上构建前端）。
+- 资产盘点（`/pandian/`）是没有源码的打包应用：原件 `medops/ams/original/pandian-v1.10.7.html` 一个字节都不改，
+  所有修正只写在 `medops/ams/shim/shim.js`（登录对账、云同步、导入日期统一都在这里），然后
+  `cd medops/ams && node tools/inject-shim.js --src original/pandian-v1.10.7.html` 重新生成 `ams/dist` 并提交；
+  发版时 build-release.sh 后面要加 `ams/dist`。浏览器测试见会话里的 ams-ui.mjs 思路（多个浏览器上下文 = 多台电脑）。
