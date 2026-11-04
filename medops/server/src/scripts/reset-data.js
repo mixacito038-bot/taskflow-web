@@ -32,7 +32,7 @@ const plan = [
   ['科室', count('SELECT COUNT(*) AS c FROM depts')],
   ['设备', count('SELECT COUNT(*) AS c FROM devices')],
   ['签字人名单', count('SELECT COUNT(*) AS c FROM members')],
-  ['账号（admin 以外）', db.prepare('SELECT COUNT(*) AS c FROM users WHERE username <> ?').get(KEEP).c],
+  ['其他账号', db.prepare('SELECT COUNT(*) AS c FROM users WHERE username <> ?').get(KEEP).c],
   ['日巡检记录', count('SELECT COUNT(*) AS c FROM records')],
   ['周签', count('SELECT COUNT(*) AS c FROM week_signs')],
   ['月签', count('SELECT COUNT(*) AS c FROM month_signs')],
@@ -42,9 +42,9 @@ const plan = [
 
 console.log(yes ? '正在清空以下数据：' : '将清空以下数据：');
 for (const [k, n] of plan) console.log(`  ${k.padEnd(10, '　')} ${n}`);
-console.log('保留：admin 账号（密码不变）；资产盘点系统的数据不动；每日自动备份不动');
+console.log('保留：admin 账号（密码不变）；资产盘点系统的数据；每日自动备份');
 if (!yes) {
-  console.log('\n（这里只是列出来，没有改动任何数据）');
+  console.log('\n（到这里还没有改动任何数据）');
   process.exit(0);
 }
 
