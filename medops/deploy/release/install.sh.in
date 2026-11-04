@@ -29,11 +29,31 @@ OPS="$APP/deploy/tencent"                      # 运维目录（manage.sh、.env
 OUTDIR="${MEDOPS_OUT_DIR:-/root}"              # 记录、数据备份、回退脚本放这里
 SELF="$(readlink -f "$0")"
 
+# 同一时间只允许一个升级在跑（防止连按两次）。
+# 锁文件用 noclobber 原子地创建：两次几乎同时执行，只有一个能建成（以前是「先看有没有、再写」，
+# 两次相隔不到一秒时都看见「没有」，一起跑了起来，还共用同一个记录文件和备份名）。
+# 锁里记 PID；主人已经不在了（上次被强行中断留下的）就清掉重抢。不用 flock：
+# flock 的文件描述符会被启动的子进程继承，子进程不退出锁就一直不放。
+LOCK="$OUTDIR/.medops-upgrade.lock"
+take_lock() {
+  if ( set -o noclobber; echo "$$" > "$LOCK" ) 2>/dev/null; then return 0; fi
+  local holder
+  holder=$(cat "$LOCK" 2>/dev/null || true)
+  if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then return 1; fi
+  rm -f "$LOCK"
+  ( set -o noclobber; echo "$$" > "$LOCK" ) 2>/dev/null
+}
+
 # =============================================================================
 #  前台：把升级放到后台运行（nohup，SSH 断线不中断），自己只负责实时显示进度
 # =============================================================================
 if [ "${1:-}" != "--worker" ]; then
   mkdir -p "$OUTDIR"
+  # 先抢锁再做别的：抢不到就直接退出，不碰正在进行的那次的记录文件
+  if ! take_lock; then
+    echo "已经有一个升级正在进行，请等它结束（或查看 $OUTDIR 下最新的 medops-upgrade-*.log）"
+    exit 1
+  fi
   TS=$(date +%Y%m%d-%H%M%S)
   LOG="$OUTDIR/medops-upgrade-$VERSION-$TS.log"
   : > "$LOG"
@@ -45,6 +65,8 @@ if [ "${1:-}" != "--worker" ]; then
   echo
   tail -n +1 -f --pid="$WPID" "$LOG" 2>/dev/null || true
   set +e; wait "$WPID"; code=$?
+  # 后台没能接手锁（比如没起来）时，由前台放掉
+  if [ "$(cat "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi
   exit "$code"
 fi
 
@@ -72,7 +94,6 @@ die()  {
   echo "  完整记录：$LOG （有问题把这个文件或上面的输出发给 Claude）"
   exit 1
 }
-LOCK="$OUTDIR/.medops-upgrade.lock"
 cleanup() {
   if [ -n "$STAGE" ]; then rm -rf "$STAGE"; fi
   if [ "$(cat "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi
@@ -85,12 +106,14 @@ on_error() {
 }
 trap 'on_error $LINENO' ERR
 
-# 同一时间只允许一个升级在跑（防止连按两次）。用 PID 文件而不是 flock：
-# flock 的文件描述符会被启动的子进程继承，子进程不退出锁就一直不放
-if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
+# 锁由前台抢到（见开头 take_lock），这里换成后台自己的 PID：前台随 SSH 断开退出以后，锁仍然有主人。
+# 前台的 PID 不在锁里（不是从前台启动的）就按老办法自己抢
+holder=$(cat "$LOCK" 2>/dev/null || true)
+if [ "$holder" = "$PPID" ] || [ -z "$holder" ] || ! kill -0 "$holder" 2>/dev/null; then
+  echo $$ > "$LOCK"
+elif [ "$holder" != "$$" ]; then
   die "已经有一个升级正在进行，请等它结束（或查看 $OUTDIR 下最新的 medops-upgrade-*.log）"
 fi
-echo $$ > "$LOCK"
 
 # ---------- 对外地址（与 manage.sh 状态 的自检一致） ----------
 read_env() { grep -E "^$1=" "$OPS/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'" || true; }
