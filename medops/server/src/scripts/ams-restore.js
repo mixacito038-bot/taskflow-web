@@ -34,7 +34,7 @@ function describe(e) {
   const what = e.keys.length >= 4 ? `一次改了 ${e.keys.length} 份（${names.slice(0, 3).join('、')}…）` : names.join('、');
   const b = R.countOf((e.before.get('ams:assets') || {}).value), a = R.countOf((e.after.get('ams:assets') || {}).value);
   const assets = e.keys.includes('ams:assets') ? `电脑台账 ${num(b)} → ${num(a)}` : '';
-  const who = e.dev === R.RESTORE_DEVICE ? '（服务器上的还原操作）' : `电脑 ${String(e.dev || '?').slice(0, 8)}${e.user ? ' · 账号 ' + e.user : ''}`;
+  const who = R.isRestore(e.dev) ? '（服务器上的还原操作）' : `电脑 ${String(e.dev || '?').slice(0, 8)}${e.user ? ' · 账号 ' + e.user : ''}`;
   return { what, assets, who };
 }
 

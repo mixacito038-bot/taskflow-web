@@ -69,7 +69,7 @@ test('找出误覆盖那次，还原到它之前；还原本身可撤销', () =>
 
   // 再看改动列表：最新一次是「服务器上的还原操作」，不会被当成误操作
   const evs2 = R.listEvents();
-  assert.equal(evs2[evs2.length - 1].dev, R.RESTORE_DEVICE);
+  assert.ok(R.isRestore(evs2[evs2.length - 1].dev));
   assert.equal(R.suspectIndex(evs2), 3, '还原操作本身不算嫌疑');
   // 撤销还原：还原到「还原那一次」之前 = 回到 13 台
   at('2026-11-04T10:05:00.000Z', () => R.apply(evs2.length - 1));

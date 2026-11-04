@@ -1069,7 +1069,7 @@ async function main() {
     assert.ok(/\[1\][^\n]*服务器上的还原操作/.test(list2.stdout), list2.stdout);
     assert.equal(run(['--to', '1', '--yes']).status, 0);
     assert.equal(JSON.parse((await snapA()).keys['ams:assets'].value).length, 12, '撤销还原 = 回到 12 台');
-    assert.equal(run(['--to', '2', '--yes']).status, 0, '再还原一次');
+    assert.equal(run(['--to', '1', '--yes']).status, 0, '再撤销一次 = 又回到 220 台');
     assert.equal(JSON.parse((await snapA()).keys['ams:assets'].value).length, 220);
     assert.ok(sql.prepare("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'ams_restore'").get().c >= 3, '记审计');
   }

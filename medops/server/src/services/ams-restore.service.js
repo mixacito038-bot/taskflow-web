@@ -14,7 +14,8 @@
 const { getDb } = require('../db/connection');
 const amsSvc = require('./ams.service');
 
-const RESTORE_DEVICE = 'ams-restore';
+const RESTORE_DEVICE = 'ams-restore'; // 每次还原用 ams-restore:<时间>，两次还原永远是两次改动（撤销还原才对得上）
+const isRestore = dev => String(dev || '').startsWith(RESTORE_DEVICE);
 const GROUP_MS = 3000; // 同一台电脑 3 秒内连着写的，算一次改动
 
 /* 数据份（key）的中文名：只列用户认得出的几份，其余按 key 原样显示 */
@@ -96,7 +97,7 @@ const countIn = (state, key) => { const s = state.get(key); return !s ? 0 : s.un
 function suspectIndex(evs) {
   for (let i = evs.length - 1; i >= 0; i--) {
     const e = evs[i];
-    if (e.dev === RESTORE_DEVICE) continue;
+    if (isRestore(e.dev)) continue;
     const b = countIn(e.before, 'ams:assets'), a = countIn(e.after, 'ams:assets');
     const hadData = SUMMARY_KEYS.some(k => (countIn(e.before, k) || 0) > 0);
     if (!hadData) continue;
@@ -137,7 +138,7 @@ function apply(idx, db = getDb()) {
   const p = plan(idx, db);
   if (!p) return null;
   if (!p.changes.length) return { ...p, written: 0 };
-  const res = amsSvc.push({ id: null }, { deviceId: RESTORE_DEVICE, changes: p.changes });
+  const res = amsSvc.push({ id: null }, { deviceId: `${RESTORE_DEVICE}:${Date.now().toString(36)}`, changes: p.changes });
   const bad = res.results.filter(r => !r.ok);
   if (bad.length) {
     const e = new Error(`有 ${bad.length} 份数据在还原的同时被别的电脑改了（${bad.map(r => labelOf(r.key)).join('、')}），请稍后重新执行一次`);
@@ -149,4 +150,4 @@ function apply(idx, db = getDb()) {
   return { ...p, written: p.changes.length };
 }
 
-module.exports = { listEvents, suspectIndex, plan, apply, labelOf, countOf, RESTORE_DEVICE, SUMMARY_KEYS };
+module.exports = { listEvents, suspectIndex, plan, apply, labelOf, countOf, isRestore, RESTORE_DEVICE, SUMMARY_KEYS };
