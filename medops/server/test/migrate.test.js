@@ -80,3 +80,22 @@ test('005：不留下临时表', () => {
   const t = db.prepare("SELECT name FROM sqlite_temp_master WHERE type = 'table'").all();
   assert.deepEqual(t, []);
 });
+
+test('006：设备加序列号列，旧设备默认空串，不设唯一约束', () => {
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  migrate(db);
+  const col = db.prepare("SELECT * FROM pragma_table_info('devices') WHERE name = 'serial'").get();
+  assert.ok(col, '应有 serial 列');
+  assert.equal(col.notnull, 1);
+  assert.equal(col.dflt_value, "''");
+  db.prepare("INSERT INTO depts (id, name, created_at) VALUES (1, '急诊科', 'x')").run();
+  // 旧代码的 INSERT 不带 serial 列：照样能插（升级失败回退到旧版本时，旧代码要能用新库）
+  db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, status, created_at, updated_at)
+    VALUES (1, '除颤类', 'A-1', '除颤仪', 'in_use', 'x', 'x')`).run();
+  assert.equal(db.prepare("SELECT serial FROM devices WHERE code = 'A-1'").get().serial, '');
+  db.prepare("UPDATE devices SET serial = 'SN1' WHERE code = 'A-1'").run();
+  db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, status, serial, created_at, updated_at)
+    VALUES (1, '除颤类', 'A-2', '除颤仪', 'in_use', 'SN1', 'x', 'x')`).run(); // 允许重号
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM devices WHERE serial = 'SN1'").get().c, 2);
+});

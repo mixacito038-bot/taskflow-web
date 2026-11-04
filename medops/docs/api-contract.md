@@ -69,7 +69,7 @@ H5 启动后所有 today()/wkOf(today())/moOf(today()) 用它（S.date/S.week/S.
 数据形状（与 H5 localStorage 结构一致，仅 sign.dataUrl → sign.url）：
 ```
 dept   {id,name,code,sort,status:'on'|'off',startDate}   # startDate：应巡起算日（建科室日与最早记录取早）
-device {id,deptId,catName,code,name,model,location,status:'in_use'|...}
+device {id,deptId,catName,code,name,model,location,status:'in_use'|...,serial}   # serial：出厂序列号，选填，≤60 字，可重复；后台接口返回与收发
         # 有效期三字段 expiryDate/expiryNote/remindDays 只由 /api/admin/devices 返回，
         # H5 侧的 GET /api/devices 不含（H5 的有效期数据走 /api/stats/expiry）
 member {id,deptId,name,title,status:'on'}
@@ -113,7 +113,7 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | POST /api/admin/depts/import (equip/admin) | multipart 上传 xlsx（只读第 1 张表）。按科室名称新增或更新；编码、排序、状态留空 = 已有科室不改动（编码填「无」清空）；新科室默认编码空、排序 0、启用。状态只认 启用 / 停用；排序须为整数；文件内重名、缺名称逐行报错。返回 `{created,updated,errors:[{row,message}]}`，记审计 depts_import |
 | POST /api/admin/depts/batch (equip/admin) | Body `{ids:[...],action:'status'\|'delete',status?:'on'\|'off'}`，ids ≤2000。delete 与单个删除同一规则：有巡检/签字记录、有护士长账号、本科室设备被巡检过的不删，放进 `blocked:[{id,name,reason}]`；能删的连同签字人名单、设备、账号科室关联一起删除。返回 `{updated,deleted,blocked,missing}`，单个事务；记审计 dept_batch_status / dept_batch_delete |
 | GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records）。status 只能是 in_use/repair/retired/scrapped，其它值 400（报错里带上原值）。DELETE devices：被巡检记录引用→409 CONFLICT，message 写明记录天数、最近日期，并提示改为停用/报废（作废签字不删巡检记录）；删除成功记审计 device_delete |
-| GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数） |
+| GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数/序列号；序列号列为文本格式）。导入时按表头找「序列号」列：没有这一列或留空 = 不改动，填「无」清空，单元格是 ≥16 位的数字（Excel 已截断）或超过 60 字 → 该行报错 |
 | POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。→ `{created,updated,errors:[{row,message}]}`。有效期两列的写入语义：**列不存在或该格留空 = 本次不改动**（老 7 列模板重导入不会清空已录到期日），填「无/-/清空」= 清空，填日期 = 覆盖。日期必须年月日填全（不做 `new Date()` 宽松兜底），状态须命中白名单否则整行报错 |
 | GET/POST/PATCH/DELETE /api/admin/members[/:id] | 签字人名单。同科室重名 → 409；不能改科室（400）；改名后历史周签显示新名 |
 | POST /api/admin/signs/void (admin) | Body `{type:'day'|'week'|'month',deptId,key,reason}`。作废签字（记录退回未签态）。**必须自上而下**：周签在时不能作废其中的日签，月签在时不能作废其中的周签（409 LOCKED）。reason 去空白后不能为空。审计记下原签字人、时间、签名图、统计 |

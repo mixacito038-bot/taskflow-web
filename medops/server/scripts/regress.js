@@ -837,6 +837,71 @@ async function main() {
   }
   ok('科室：导入模板只有表头；Excel 按名称新增 / 更新（留空不改动）、逐行报错；批量删除只删没用过的、写明原因，可一键停用；校验与权限；记审计');
 
+  step = '设备序列号（选填）：新增、编辑、Excel 模板与导入、历史导入';
+  {
+    const ks = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '序列号科' } }));
+    const list = async () => okj(await api('GET', '/api/admin/devices', { token: A }));
+    const byCode = async code => (await list()).find(x => x.code === code);
+    // 新增：去首尾空白；不填为空串；超长 400
+    let v = okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: ks.id, catName: '除颤类', code: 'SN-D1', name: '除颤仪', serial: '  CD21A0458  ' } }));
+    assert.equal(v.serial, 'CD21A0458', '序列号去首尾空白');
+    const v2 = okj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: ks.id, catName: '除颤类', code: 'SN-D2', name: '除颤仪' } }));
+    assert.equal(v2.serial, '', '不填序列号为空串');
+    errj(await api('POST', '/api/admin/devices', { token: A, body: { deptId: ks.id, catName: '除颤类', code: 'SN-D3', name: '除颤仪', serial: 'X'.repeat(61) } }), 400, 'BAD_INPUT', '序列号超长');
+    // 编辑：不传不动；传空串清空；改别的字段不影响序列号
+    v = okj(await api('PATCH', `/api/admin/devices/${v.id}`, { token: A, body: { location: '抢救室 1' } }));
+    assert.equal(v.serial, 'CD21A0458', '编辑别的字段，序列号不动');
+    v = okj(await api('PATCH', `/api/admin/devices/${v.id}`, { token: A, body: { serial: 'NEW-SN' } }));
+    assert.equal(v.serial, 'NEW-SN');
+    v = okj(await api('PATCH', `/api/admin/devices/${v.id}`, { token: A, body: { serial: '' } }));
+    assert.equal(v.serial, '', '传空串清空');
+    errj(await api('PATCH', `/api/admin/devices/${v.id}`, { token: A, body: { serial: 'Y'.repeat(61) } }), 400, 'BAD_INPUT', '编辑时序列号超长');
+    // 模板：序列号在最后一列，整列文本格式
+    const tres = await api('GET', '/api/admin/devices/import-template', { token: A, raw: true });
+    const twb = new ExcelJS.Workbook(); await twb.xlsx.load(Buffer.from(await tres.arrayBuffer()));
+    const hdr = twb.worksheets[0].getRow(1).values.slice(1);
+    assert.equal(hdr[hdr.length - 1], '序列号', '序列号是模板最后一列：' + hdr.join('/'));
+    assert.equal(hdr.length, 10);
+    assert.equal(twb.worksheets[0].getColumn(10).numFmt, '@', '序列号整列是文本格式（长数字、开头的 0 不会被 Excel 改掉）');
+    // Excel 导入
+    const up = async rows => {
+      const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('设备导入');
+      rows.forEach(r => ws.addRow(r));
+      const fd = new FormData();
+      fd.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'devices.xlsx');
+      const r = await fetch(BASE + '/api/admin/devices/import', { method: 'POST', headers: { authorization: `Bearer ${A}`, 'x-device-id': 'regress-dev' }, body: fd });
+      return r.json();
+    };
+    const H10 = ['科室名称', '设备品类', '设备编码', '设备名称', '型号', '位置', '状态', '有效期', '提醒提前天数', '序列号'];
+    await api('PATCH', `/api/admin/devices/${v2.id}`, { token: A, body: { serial: 'KEEP-ME' } });
+    let out = await up([H10,
+      ['序列号科', '监护类', 'SN-M1', '监护仪', 'ePM10', '', '', '', '', '0012345'],          // 新设备：带序列号（开头的 0 保留）
+      ['序列号科', '除颤类', 'SN-D2', '除颤仪', '', '', '', '', '', ''],                      // 已有：留空不改动
+      ['序列号科', '除颤类', 'SN-D1', '除颤仪', '', '', '', '', '', 'FROM-XLSX'],             // 已有：填了就更新
+      ['序列号科', '监护类', 'SN-M2', '监护仪', '', '', '', '', '', 12345678901234567],       // 很长的纯数字被 Excel 当数字存 → 报错
+      ['序列号科', '监护类', 'SN-M3', '监护仪', '', '', '', '', '', 'Z'.repeat(61)]           // 超长 → 报错
+    ]);
+    assert.deepEqual([out.created, out.updated, out.errors.map(e => e.row)], [1, 2, [5, 6]], JSON.stringify(out));
+    assert.ok(out.errors[0].message.includes('文本') && out.errors[1].message.includes('60'), JSON.stringify(out.errors));
+    assert.equal((await byCode('SN-M1')).serial, '0012345');
+    assert.equal((await byCode('SN-D2')).serial, 'KEEP-ME', '导入时序列号留空不改动');
+    assert.equal((await byCode('SN-D1')).serial, 'FROM-XLSX');
+    out = await up([H10, ['序列号科', '除颤类', 'SN-D1', '除颤仪', '', '', '', '', '', '无']]);
+    assert.equal((await byCode('SN-D1')).serial, '', '填「无」清空');
+    // 老模板（9 列，没有序列号这一列）：不碰已录的序列号
+    out = await up([H10.slice(0, 9), ['序列号科', '除颤类', 'SN-D2', '除颤仪', '', '抢救室 9', '', '', '']]);
+    assert.equal(out.updated, 1, JSON.stringify(out));
+    const d2 = await byCode('SN-D2');
+    assert.deepEqual([d2.serial, d2.location], ['KEEP-ME', '抢救室 9'], '老模板导入不碰序列号');
+    // 历史 JSON 导入带序列号
+    okj(await api('POST', '/api/admin/import/legacy', { token: A, body: {
+      depts: [{ id: 's1', name: '序列号科' }],
+      devices: [{ id: 'sv1', deptId: 's1', code: 'SN-L1', name: '吸引器', catName: '吸引类', serial: ' L-SN-1 ' }, { id: 'sv2', deptId: 's1', code: 'SN-D2', name: '除颤仪' }] } }));
+    assert.equal((await byCode('SN-L1')).serial, 'L-SN-1');
+    assert.equal((await byCode('SN-D2')).serial, 'KEEP-ME', '历史导入没带序列号时不动已有的');
+  }
+  ok('序列号：选填、去空白、限 60 字；编辑不传不动；模板最后一列、整列文本；导入留空不动、填「无」清空、长数字被 Excel 截断的拦下；老模板与历史导入不碰已录的');
+
   /* 必须是最后一步：会清空数据 */
   step = '清空数据（只保留 admin）';
   {

@@ -86,6 +86,8 @@ async function importDevices(buffer) {
   const hdr = ws.getRow(1);
   const iExpiry = findCol(hdr, /有效期|到期/, 8);
   const iRemind = findCol(hdr, /提醒/, 9);
+  // 序列号在模板最后一列；老模板没有这一列 = 不碰已录的序列号（与有效期两列同一语义）
+  const iSerial = findCol(hdr, /序列号|出厂编号|^\s*S\/?N\s*$/i, 10);
 
   const rows = [];
   ws.eachRow((row, n) => { if (n > 1) rows.push([row, n]); });
@@ -130,22 +132,39 @@ async function importDevices(buffer) {
         }
       }
 
+      let serial; // undefined = 本次不改动
+      if (iSerial) {
+        const cell = row.getCell(iSerial).value;
+        const raw = cellStr(row, iSerial);
+        /* 单元格是「数字」格式时，Excel 只保留 15 位有效数字（多出的变成 0），开头的 0 也会丢——
+           静默存进去就是一个错的序列号。模板里这一列已设成文本格式，这里再拦一道 */
+        if (typeof cell === 'number' && Math.abs(cell) >= 1e15) {
+          errors.push({ row: n, message: `序列号「${raw}」是很长的纯数字，Excel 按数字保存时后几位会变成 0。请把「序列号」这一列设成「文本」格式后重新填写；本行未导入` });
+          continue;
+        }
+        if (CLEAR_WORDS.has(raw)) serial = '';
+        else if (raw) {
+          if (raw.length > 60) { errors.push({ row: n, message: `序列号最多 60 个字（这一行有 ${raw.length} 个）；本行未导入` }); continue; }
+          serial = raw;
+        }
+      }
+
       const old = db.prepare('SELECT id FROM devices WHERE code = ?').get(code);
       if (old) {
         /* COALESCE 的参数为 null 时保留原值 —— 对应上面 undefined = 不改动 */
         db.prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, name = ?, model = ?, location = ?,
           status = COALESCE(?, status), expiry_date = COALESCE(?, expiry_date), remind_days = COALESCE(?, remind_days),
-          updated_at = ? WHERE id = ?`)
+          serial = COALESCE(?, serial), updated_at = ? WHERE id = ?`)
           .run(deptId, catName, name, model, location, status || null,
             expiry === undefined ? null : expiry, remind === undefined ? null : remind,
-            nowIso(), old.id);
+            serial === undefined ? null : serial, nowIso(), old.id);
         updated++;
       } else {
         db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status,
-          expiry_date, remind_days, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          expiry_date, remind_days, serial, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(deptId, catName, code, name, model, location, status || 'in_use',
-            expiry || '', remind || 0, nowIso(), nowIso());
+            expiry || '', remind || 0, serial || '', nowIso(), nowIso());
         created++;
       }
     }
@@ -323,6 +342,8 @@ function importLegacy(data, { dryRun = false } = {}) {
         else warn(where, `提醒提前天数「${v.remindDays}」应为 0～365 的整数，这一项没有导入`);
       }
       if (v.expiryNote != null) ex.note = str(v.expiryNote).slice(0, 60);
+      let serial = str(v.serial ?? v.sn ?? v.serialNo ?? v.serialNumber);
+      if (serial.length > 60) { warn(where, `序列号超过 60 个字，这一项没有导入`); serial = ''; }
       const cat = str(v.catName != null ? v.catName : v.category);
       if (old) {
         /* 已有的设备：只改 JSON 里给了值的项。没给的不动——以前品类、状态没写就被改成空 / 在用，
@@ -330,17 +351,17 @@ function importLegacy(data, { dryRun = false } = {}) {
         db.prepare(`UPDATE devices SET dept_id = ?, cat_name = COALESCE(?, cat_name), name = COALESCE(?, name),
           model = COALESCE(?, model), location = COALESCE(?, location), status = ?,
           expiry_date = COALESCE(?, expiry_date), expiry_note = COALESCE(?, expiry_note), remind_days = COALESCE(?, remind_days),
-          updated_at = ? WHERE id = ?`)
+          serial = COALESCE(?, serial), updated_at = ? WHERE id = ?`)
           .run(deptId, cat || null, str(v.name) || null, str(v.model) || null, str(v.location) || null, status,
-            ex.date ?? null, ex.note ?? null, ex.days ?? null, nowIso(), old.id);
+            ex.date ?? null, ex.note ?? null, ex.days ?? null, serial || null, nowIso(), old.id);
         deviceMap.set(idOf(v.id), old.id);
       } else {
         if (!cat) uncategorized++;
         if (!str(v.name)) warn(where, '没有设备名称，已用编码代替');
         const id = db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, sort,
-          expiry_date, expiry_note, remind_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          expiry_date, expiry_note, remind_days, serial, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(deptId, cat || '未分类', code, str(v.name) || code, str(v.model), str(v.location), status, intOr(v.sort, 0),
-            ex.date || '', ex.note || '', ex.days || 0, nowIso(), nowIso()).lastInsertRowid;
+            ex.date || '', ex.note || '', ex.days || 0, serial, nowIso(), nowIso()).lastInsertRowid;
         deviceMap.set(idOf(v.id), id);
         counts.devices++;
       }

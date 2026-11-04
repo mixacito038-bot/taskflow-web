@@ -18,7 +18,8 @@ function normDevice(d) {
     status: nz(d.status, 'in_use'),
     expiryDate: nz(d.expiryDate, d.expiry_date, ''),
     expiryNote: nz(d.expiryNote, d.expiry_note, ''),
-    remindDays: nz(d.remindDays, d.remind_days, 0)
+    remindDays: nz(d.remindDays, d.remind_days, 0),
+    serial: nz(d.serial, '')
   }
 }
 
@@ -49,7 +50,7 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
       /* 状态无效的旧数据（如 active）：下拉框里没有这一项，浏览器会显示成第一项「在用」，
          看着选好了、保存时却把 active 原样提交上去被拒。这里清空，逼着重新选一次 */
       setForm(isNew
-        ? { deptId: depts[0]?.id ? String(depts[0].id) : '', catName: '', code: '', name: '', model: '', location: '', status: 'in_use', expiryDate: '', expiryNote: '', remindDays: 0 }
+        ? { deptId: depts[0]?.id ? String(depts[0].id) : '', catName: '', code: '', name: '', model: '', serial: '', location: '', status: 'in_use', expiryDate: '', expiryNote: '', remindDays: 0 }
         : { ...editing, status: isDevStatus(editing.status) ? editing.status : '' })
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -63,7 +64,8 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
     setBusy(true)
     const body = {
       deptId: form.deptId, catName: form.catName.trim(), code: form.code.trim(),
-      name: form.name.trim(), model: (form.model || '').trim(), location: (form.location || '').trim(), status: form.status,
+      name: form.name.trim(), model: (form.model || '').trim(), serial: (form.serial || '').trim(),
+      location: (form.location || '').trim(), status: form.status,
       expiryDate: (form.expiryDate || '').trim(),
       expiryNote: (form.expiryNote || '').trim(),
       remindDays: +form.remindDays || 0
@@ -100,9 +102,14 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
           <Field label="型号">
             <input className="inp" value={form.model || ''} onChange={e => set('model', e.target.value)} />
           </Field>
-          <Field label="位置">
-            <input className="inp" value={form.location || ''} onChange={e => set('location', e.target.value)} />
+          <Field label="序列号" hint="选填，设备铭牌上的出厂序列号（S/N）">
+            <input className="inp font-mono" maxLength={60} value={form.serial || ''} onChange={e => set('serial', e.target.value)} />
           </Field>
+          <div className="col-span-2">
+            <Field label="位置">
+              <input className="inp" value={form.location || ''} onChange={e => set('location', e.target.value)} />
+            </Field>
+          </div>
         </div>
         <Field label="状态" required>
           <select className="inp" value={form.status || ''} onChange={e => set('status', e.target.value)} required>
@@ -277,7 +284,7 @@ export default function Devices() {
   const shown = (list || []).filter(d =>
     (!filterDept || d.deptId === filterDept) &&
     (!filterStatus || (filterStatus === 'bad' ? !isDevStatus(d.status) : d.status === filterStatus)) &&
-    (!kw || [d.code, d.name, d.catName, d.model, d.location].join(' ').toLowerCase().includes(kw.toLowerCase()))
+    (!kw || [d.code, d.name, d.serial, d.catName, d.model, d.location].join(' ').toLowerCase().includes(kw.toLowerCase()))
   )
 
   /* 勾选只对当前列表里看得见的设备生效：换了筛选条件，看不见的自动取消勾选，免得批量操作误伤别的科室 */
@@ -340,7 +347,7 @@ export default function Devices() {
           {DEVICE_STATUS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
           <option value="bad">状态无效</option>
         </select>
-        <input className="inp !w-64" placeholder="搜索编码 / 名称 / 品类 / 位置" value={kw} onChange={e => setKw(e.target.value)} />
+        <input className="inp !w-64" placeholder="搜索编码 / 名称 / 序列号 / 品类 / 位置" value={kw} onChange={e => setKw(e.target.value)} />
         <span className="self-center text-sm text-slate-600">共 {shown.length} 台</span>
       </div>
       <ErrorTip error={err || deptErr} className="mb-4" />
@@ -375,7 +382,7 @@ export default function Devices() {
                   <input type="checkbox" aria-label="全选当前列表" checked={allOn} onChange={toggleAll}
                     ref={el => { if (el) el.indeterminate = someOn && !allOn }} />
                 </th>
-                <th>编码</th><th>名称</th><th>品类</th><th>科室</th><th>位置</th><th>状态</th><th>有效期</th><th className="text-right">操作</th>
+                <th>编码</th><th>名称</th><th>序列号</th><th>品类</th><th>科室</th><th>位置</th><th>状态</th><th>有效期</th><th className="text-right">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -384,6 +391,7 @@ export default function Devices() {
                   <td><input type="checkbox" aria-label={`选择 ${d.code}`} checked={sel.has(d.id)} onChange={() => toggle(d.id)} /></td>
                   <td className="font-mono text-slate-600">{d.code}</td>
                   <td className="font-medium">{d.name}</td>
+                  <td className="font-mono text-slate-600">{d.serial || <span className="text-slate-400">—</span>}</td>
                   <td>{d.catName}</td>
                   <td>{deptName(d.deptId)}</td>
                   <td className="text-slate-500">{d.location || '—'}</td>
@@ -420,8 +428,8 @@ export default function Devices() {
         title="批量导入设备（xlsx）" uploadPath="/admin/devices/import"
         template={{ path: '/admin/devices/import-template', name: '设备导入模板.xlsx' }}
         intro="按「设备编码」新增或更新（upsert）；科室名称必须已存在，不会自动创建。"
-        columns="科室名称 / 设备品类 / 设备编码 / 设备名称 / 型号 / 位置 / 状态 / 有效期 / 提醒提前天数"
-        note={<>「有效期」「提醒提前天数」留空表示<b>本次不改动</b>，不会清掉设备上已录的到期日；要清空请在该格填「无」。</>} />
+        columns="科室名称 / 设备品类 / 设备编码 / 设备名称 / 型号 / 位置 / 状态 / 有效期 / 提醒提前天数 / 序列号"
+        note={<>「有效期」「提醒提前天数」「序列号」留空表示<b>本次不改动</b>，不会清掉设备上已录的内容；要清空请在该格填「无」。</>} />
       <DeleteBlockedModal blocked={blocked} onClose={() => setBlocked(null)} onDone={load} />
       <BatchDeleteResult result={batchResult} onClose={() => setBatchResult(null)} onDone={msg => { setNotice(msg); load() }} />
     </div>

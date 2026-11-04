@@ -134,20 +134,24 @@ async function ngXlsx(deptIds, { from, to, deptId, sign }) {
 
 /* 设备导入模板。示例行单独放第 2 张表：导入只读第 1 张表（import.service 取 worksheets[0]），
    用户忘删示例也不会凭空多出一台「JZ-CD-001」 */
-const TPL_HEADER = ['科室名称', '设备品类', '设备编码', '设备名称', '型号', '位置', '状态', '有效期', '提醒提前天数'];
-const TPL_WIDTHS = [14, 14, 16, 20, 16, 16, 10, 14, 14];
+const TPL_HEADER = ['科室名称', '设备品类', '设备编码', '设备名称', '型号', '位置', '状态', '有效期', '提醒提前天数', '序列号'];
+const TPL_WIDTHS = [14, 14, 16, 20, 16, 16, 10, 14, 14, 20];
+const TPL_SERIAL_COL = 10;
 
 async function importTemplateXlsx() {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('设备导入');
   ws.addRow(TPL_HEADER).font = { bold: true };
   TPL_WIDTHS.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  // 序列号整列设成文本：长数字不被改成科学计数法、不丢后几位，开头的 0 也保留
+  ws.getColumn(TPL_SERIAL_COL).numFmt = '@';
 
   const demo = wb.addWorksheet('填写示例（勿改此表）');
   demo.addRow(TPL_HEADER).font = { bold: true };
   TPL_WIDTHS.forEach((w, i) => { demo.getColumn(i + 1).width = w; });
-  demo.addRow(['急诊科', '除颤仪', 'JZ-CD-001', '除颤监护仪', 'XD-100', '抢救室', '在用', '2027-03-15', 30]);
-  demo.addRow(['重症医学科', '呼吸机', 'ICU-HX-001', '有创呼吸机', 'Savina300', '1 床', '在用', '', '']);
+  demo.getColumn(TPL_SERIAL_COL).numFmt = '@';
+  demo.addRow(['急诊科', '除颤仪', 'JZ-CD-001', '除颤监护仪', 'XD-100', '抢救室', '在用', '2027-03-15', 30, 'CD21A0458']);
+  demo.addRow(['重症医学科', '呼吸机', 'ICU-HX-001', '有创呼吸机', 'Savina300', '1 床', '在用', '', '', '']);
   demo.addRow([]);
   demo.addRow(['说明：请把设备填进第 1 张表「设备导入」，本表仅供参照，导入时不会被读取。']);
   demo.addRow(['「科室名称」须与系统中已建科室完全一致；「设备编码」是唯一标识，重复导入会更新同编码设备。']);
@@ -156,6 +160,8 @@ async function importTemplateXlsx() {
   demo.addRow(['「提醒提前天数」到期前多少天开始提醒，留空表示用默认 30 天。']);
   demo.addRow(['⚠ 重新导入时，有效期两列留空表示「本次不改动」，不会清掉系统里已录好的到期日；要清空请在该格填「无」。']);
   demo.addRow(['「状态」必须是上面四个词之一，写「正常」「使用中」这类同义词会整行导入失败并提示。']);
+  demo.addRow(['「序列号」选填，填设备铭牌上的出厂序列号（S/N）；留空表示本次不改动，要清空请填「无」。']);
+  demo.addRow(['  这一列已设成文本格式，长数字、开头的 0 都会原样保留；从别处粘贴时请用「选择性粘贴 → 数值」，以免把格式一起覆盖掉。']);
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

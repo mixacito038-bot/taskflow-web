@@ -34,6 +34,13 @@ function sortOf(v, fallback) {
   if (!Number.isInteger(n) || Math.abs(n) > 1e6) throw E.badInput('排序号必须是整数');
   return n;
 }
+/* 选填文本：去首尾空白，可以为空；不传沿用原值 */
+function optText(v, fallback, label, max = 100) {
+  if (v == null) return fallback;
+  const t = String(v).trim();
+  if (t.length > max) throw E.badInput(`${label}最多 ${max} 个字`);
+  return t;
+}
 /* 必填文本：去首尾空白后不能为空；不传沿用原值 */
 function reqText(v, fallback, label, max = 100) {
   if (v == null) return fallback;
@@ -72,7 +79,8 @@ function normExpiry(b, old) {
 
 const deviceJson = v => ({ id: String(v.id), deptId: String(v.dept_id), catName: v.cat_name,
   code: v.code, name: v.name, model: v.model, location: v.location, status: v.status, sort: v.sort,
-  expiryDate: v.expiry_date || '', expiryNote: v.expiry_note || '', remindDays: v.remind_days || 0 });
+  expiryDate: v.expiry_date || '', expiryNote: v.expiry_note || '', remindDays: v.remind_days || 0,
+  serial: v.serial || '' });
 const memberJson = m => ({ id: String(m.id), deptId: String(m.dept_id), name: m.name, title: m.title,
   status: m.status, sort: m.sort });
 
@@ -315,12 +323,13 @@ module.exports = async function adminRoutes(app) {
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
     if (db().prepare('SELECT 1 FROM devices WHERE code = ?').get(code)) throw E.conflict('设备编码已存在');
     const exp = normExpiry(b);
+    const serial = optText(b.serial, '', '序列号', 60);
     const id = db().prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, sort,
-      expiry_date, expiry_note, remind_days, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      expiry_date, expiry_note, remind_days, serial, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(+b.deptId, catName, code, name, String(b.model || '').trim(),
         String(b.location || '').trim(), devStatus(b.status, 'in_use'), sortOf(b.sort, 0),
-        exp.date, exp.note, exp.days, nowIso(), nowIso()).lastInsertRowid;
+        exp.date, exp.note, exp.days, serial, nowIso(), nowIso()).lastInsertRowid;
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(id));
   });
 
@@ -335,11 +344,12 @@ module.exports = async function adminRoutes(app) {
     if (b.deptId != null && !db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
     const exp = normExpiry(b, v);
     const deptId = +(b.deptId ?? v.dept_id);
+    const serial = optText(b.serial, v.serial || '', '序列号', 60);
     db().prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, code = ?, name = ?, model = ?, location = ?,
-      status = ?, sort = ?, expiry_date = ?, expiry_note = ?, remind_days = ?, updated_at = ? WHERE id = ?`)
+      status = ?, sort = ?, expiry_date = ?, expiry_note = ?, remind_days = ?, serial = ?, updated_at = ? WHERE id = ?`)
       .run(deptId, catName, code, name, String(b.model ?? v.model).trim(), String(b.location ?? v.location).trim(),
         devStatus(b.status, v.status), sortOf(b.sort, v.sort),
-        exp.date, exp.note, exp.days, nowIso(), v.id);
+        exp.date, exp.note, exp.days, serial, nowIso(), v.id);
     // 调拨留痕：月报按实际巡检记录出行，调拨本身记进审计，事后能查到设备何时从哪调到哪
     if (deptId !== v.dept_id) authSvc.audit(req.user.id, 'device_transfer', `code=${code} from=${v.dept_id} to=${deptId}`, req.ip);
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(v.id));
