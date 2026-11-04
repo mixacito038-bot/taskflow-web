@@ -8,6 +8,7 @@ const importSvc = require('../services/import.service');
 const exportSvc = require('../services/export.service');
 const expirySvc = require('../services/expiry.service');
 const P = require('../services/period.service');
+const DC = require('../services/device-code');
 
 const nowIso = () => new Date().toISOString();
 const ROLES = ['inspector', 'dept', 'equip', 'admin'];
@@ -34,19 +35,26 @@ function sortOf(v, fallback) {
   if (!Number.isInteger(n) || Math.abs(n) > 1e6) throw E.badInput('排序号必须是整数');
   return n;
 }
-/* 选填文本：去首尾空白，可以为空；不传沿用原值 */
-function optText(v, fallback, label, max = 100) {
-  if (v == null) return fallback;
-  const t = String(v).trim();
-  if (t.length > max) throw E.badInput(`${label}最多 ${max} 个字`);
-  return t;
-}
 /* 必填文本：去首尾空白后不能为空；不传沿用原值 */
 function reqText(v, fallback, label, max = 100) {
   if (v == null) return fallback;
   const t = String(v).trim();
   if (!t) throw E.badInput(`${label}不能为空`);
   if (t.length > max) throw E.badInput(`${label}最多 ${max} 个字`);
+  return t;
+}
+/* 设备编码（必填）/ 序列号（选填）：「无」「-」「、」等统一成「/」（= 没有，可以重复）；不传沿用原值 */
+function devCode(v, fallback) {
+  if (v == null) return fallback;
+  const t = DC.normNone(v);
+  if (!t) throw E.badInput('设备编码不能为空；没有编码的填「/」');
+  if (t.length > 60) throw E.badInput('设备编码最多 60 个字');
+  return t;
+}
+function devSerial(v, fallback) {
+  if (v == null) return fallback;
+  const t = DC.normNone(v);
+  if (t.length > 60) throw E.badInput('序列号最多 60 个字');
   return t;
 }
 
@@ -235,9 +243,9 @@ module.exports = async function adminRoutes(app) {
     if (nurse) return `护士长账号「${nurse.display_name}（${nurse.username}）」属于该科室，请先把它改到别的科室或停用后再删除`;
     /* 设备可以在科室之间调拨，所以"本科室没有巡检记录"不等于"本科室的设备没被巡检过"。
        漏了这一检查，删除时会撞 record_items 的外键约束，事务回滚后用户只拿到一条没有信息量的 500。 */
-    const used = db().prepare(`SELECT v.code FROM devices v
+    const used = db().prepare(`SELECT v.code, v.name FROM devices v
       WHERE v.dept_id = ? AND EXISTS (SELECT 1 FROM record_items i WHERE i.device_id = v.id) LIMIT 1`).get(id);
-    if (used) return `该科室的设备「${used.code}」已有巡检记录（可能是从别的科室调拨过来的），禁止删除，请改为停用`;
+    if (used) return `该科室的设备「${DC.devLabel(used)}」已有巡检记录（可能是从别的科室调拨过来的），禁止删除，请改为停用`;
     return null;
   }
   /* 删除科室：连同它下面的签字人名单、（没巡检过的）设备、账号的科室关联 */
@@ -309,21 +317,27 @@ module.exports = async function adminRoutes(app) {
   app.get('/api/admin/devices', { preHandler: guard }, async req => {
     const { deptId } = req.query;
     const rows = deptId
-      ? db().prepare('SELECT * FROM devices WHERE dept_id = ? ORDER BY sort, code').all(+deptId)
-      : db().prepare('SELECT * FROM devices ORDER BY dept_id, sort, code').all();
+      ? db().prepare(`SELECT * FROM devices WHERE dept_id = ? ORDER BY sort, ${DC.SQL_ORDER()}`).all(+deptId)
+      : db().prepare(`SELECT * FROM devices ORDER BY dept_id, sort, ${DC.SQL_ORDER()}`).all();
     return rows.map(deviceJson);
   });
+
+  /* 编码 / 序列号判重：「/」和空的不判；重了说清楚被哪台设备占用 */
+  function assertUnique(code, serial, selfId = 0) {
+    if (DC.isReal(code)) { const o = DC.codeOwner(db(), code, selfId); if (o) throw E.conflict(DC.codeTaken(o)); }
+    if (DC.isReal(serial)) { const o = DC.serialOwner(db(), serial, selfId); if (o) throw E.conflict(DC.serialTaken(serial, o)); }
+  }
 
   app.post('/api/admin/devices', { preHandler: guard }, async req => {
     const b = req.body || {};
     if (!b.deptId) throw E.badInput('请选择所属科室');
     const catName = reqText(b.catName ?? '', '', '设备品类', 40);
-    const code = reqText(b.code ?? '', '', '设备编码', 60);
+    const code = devCode(b.code ?? '', '');
     const name = reqText(b.name ?? '', '', '设备名称', 100);
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
-    if (db().prepare('SELECT 1 FROM devices WHERE code = ?').get(code)) throw E.conflict('设备编码已存在');
     const exp = normExpiry(b);
-    const serial = optText(b.serial, '', '序列号', 60);
+    const serial = devSerial(b.serial, '');
+    assertUnique(code, serial);
     const id = db().prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status, sort,
       expiry_date, expiry_note, remind_days, serial, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -337,21 +351,22 @@ module.exports = async function adminRoutes(app) {
     const v = db().prepare('SELECT * FROM devices WHERE id = ?').get(+req.params.id);
     if (!v) throw E.notFound('设备不存在');
     const b = req.body || {};
-    const code = reqText(b.code, v.code, '设备编码', 60);
+    const code = devCode(b.code, v.code);
     const catName = reqText(b.catName, v.cat_name, '设备品类', 40);
     const name = reqText(b.name, v.name, '设备名称', 100);
-    if (code !== v.code && db().prepare('SELECT 1 FROM devices WHERE code = ?').get(code)) throw E.conflict('设备编码已存在');
     if (b.deptId != null && !db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
     const exp = normExpiry(b, v);
     const deptId = +(b.deptId ?? v.dept_id);
-    const serial = optText(b.serial, v.serial || '', '序列号', 60);
+    const serial = devSerial(b.serial, v.serial || '');
+    /* 只查改了的：判重是这一版才加的，以前录进去的重号（体检会列出来）不能挡住改位置、改状态这类编辑 */
+    assertUnique(code !== v.code ? code : '', serial.toLowerCase() !== (v.serial || '').toLowerCase() ? serial : '', v.id);
     db().prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, code = ?, name = ?, model = ?, location = ?,
       status = ?, sort = ?, expiry_date = ?, expiry_note = ?, remind_days = ?, serial = ?, updated_at = ? WHERE id = ?`)
       .run(deptId, catName, code, name, String(b.model ?? v.model).trim(), String(b.location ?? v.location).trim(),
         devStatus(b.status, v.status), sortOf(b.sort, v.sort),
         exp.date, exp.note, exp.days, serial, nowIso(), v.id);
     // 调拨留痕：月报按实际巡检记录出行，调拨本身记进审计，事后能查到设备何时从哪调到哪
-    if (deptId !== v.dept_id) authSvc.audit(req.user.id, 'device_transfer', `code=${code} from=${v.dept_id} to=${deptId}`, req.ip);
+    if (deptId !== v.dept_id) authSvc.audit(req.user.id, 'device_transfer', `id=${v.id} code=${code} name=${name} from=${v.dept_id} to=${deptId}`, req.ip);
     return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(v.id));
   });
 
@@ -365,12 +380,12 @@ module.exports = async function adminRoutes(app) {
     const used = db().prepare(`SELECT COUNT(*) AS n, MAX(r.date) AS last FROM record_items i
       JOIN records r ON r.id = i.record_id WHERE i.device_id = ?`).get(id);
     if (used.n) {
-      throw E.conflict(`「${v.code} ${v.name}」有 ${used.n} 天的巡检记录（最近一次 ${used.last}），为保留巡检历史不能删除`
+      throw E.conflict(`「${DC.devLabel(v)}」有 ${used.n} 天的巡检记录（最近一次 ${used.last}），为保留巡检历史不能删除`
         + '（作废签字只撤销签字，巡检记录仍在）。不再使用请改为「已停用」，已报废请改为「已报废」：'
         + '手机端不再列出这台设备，历史记录和报表照常保留。');
     }
     db().prepare('DELETE FROM devices WHERE id = ?').run(id);
-    authSvc.audit(req.user.id, 'device_delete', `code=${v.code} name=${v.name}`, req.ip);
+    authSvc.audit(req.user.id, 'device_delete', `id=${v.id} code=${v.code} name=${v.name}`, req.ip);
     return { ok: true };
   });
 
@@ -403,7 +418,7 @@ module.exports = async function adminRoutes(app) {
         out.deleted.push(one);
       }
     })();
-    const codes = l => l.map(x => x.code).slice(0, 100).join(',') + (l.length > 100 ? ` 等 ${l.length} 台` : '');
+    const codes = l => l.map(x => DC.devLabel(x)).slice(0, 100).join(',') + (l.length > 100 ? ` 等 ${l.length} 台` : '');
     if (out.updated.length) authSvc.audit(req.user.id, 'device_batch_status', `status=${status} n=${out.updated.length} codes=${codes(out.updated)}`, req.ip);
     if (out.deleted.length) authSvc.audit(req.user.id, 'device_batch_delete', `n=${out.deleted.length} codes=${codes(out.deleted)}`, req.ip);
     return out;

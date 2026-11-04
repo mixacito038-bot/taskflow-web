@@ -9,6 +9,7 @@ const fs = require('fs');
 const fileSvc = require('./file.service');
 const P = require('./period.service');
 const { normDeviceStatus, onOff, STATUS_TEXT } = require('./device-status');
+const DC = require('./device-code');
 
 const nowIso = () => new Date().toISOString();
 
@@ -64,7 +65,17 @@ function findCol(hdr, re, fallback) {
   return 0;
 }
 
-/* 设备 xlsx 导入：按 code upsert；科室名不存在 → 该行报错不自动建。
+/* 设备 xlsx 导入：有编码的按编码新增或更新；科室名不存在 → 该行报错不自动建。
+
+   编码 / 序列号判重（「/」= 没有，可以重复；其他值全院唯一，序列号不区分大小写）：
+     · 编码已被别的设备用 → 就是更新那台；序列号被别的设备用 → 该行报错
+     · 同一个文件里两行编码相同 / 序列号相同 → 后一行报错（以前后一行会悄悄覆盖前一行）
+   编码是「/」的设备（没有编码）认不出是哪台，按下面的顺序对应已有设备，对应不上才新增——
+   同一张表改了重导，不会把这些设备重复新增一遍：
+     1. 有真实序列号：按序列号对应（序列号全院唯一，最可靠）
+     2. 否则按「科室 + 品类 + 名称 + 型号 + 位置」对应台账里同样是「/」的设备，一行对应一台
+        （表里 3 行一模一样就对应 3 台；台账里只有 2 台就再新增 1 台）
+   有编码的一行，如果它的序列号正是某台「/」设备的：认作那台设备、把编码补上。
 
    有效期两列的写入语义（这里很容易出安全事故，故写死规则）：
      · 文件里没有这两列（老的 7 列模板）  → 完全不碰库里已有的有效期，只更新其它字段
@@ -89,14 +100,30 @@ async function importDevices(buffer) {
   // 序列号在模板最后一列；老模板没有这一列 = 不碰已录的序列号（与有效期两列同一语义）
   const iSerial = findCol(hdr, /序列号|出厂编号|^\s*S\/?N\s*$/i, 10);
 
+  /* 没有编码的已有设备，按「科室 + 品类 + 名称 + 型号 + 位置」分组；对应上一台就从组里拿掉 */
+  const keyOf = (deptId, cat, name, model, location) => [deptId, cat, name, model, location].join('\u0001');
+  const pool = new Map();
+  for (const v of db.prepare(`SELECT id, dept_id, cat_name, name, model, location, serial FROM devices
+      WHERE code = '/' ORDER BY id`).all()) {
+    const k = keyOf(v.dept_id, v.cat_name, v.name, v.model, v.location);
+    if (!pool.has(k)) pool.set(k, []);
+    pool.get(k).push(v);
+  }
+  const takeFromPool = id => {
+    for (const l of pool.values()) { const i = l.findIndex(x => x.id === id); if (i >= 0) { l.splice(i, 1); return; } }
+  };
+  const seenCode = new Map(), seenSerial = new Map(), used = new Map(); // 本文件里：编码 / 序列号 / 设备 id → 第几行
+
   const rows = [];
   ws.eachRow((row, n) => { if (n > 1) rows.push([row, n]); });
   db.transaction(() => {
     for (const [row, n] of rows) {
-      const [deptName, catName, code, name, model, location, statusRaw] =
+      const [deptName, catName, codeRaw, name, model, location, statusRaw] =
         [1, 2, 3, 4, 5, 6, 7].map(i => cellStr(row, i));
-      if (!deptName && !code && !name) continue; // 空行
-      if (!deptName || !catName || !code || !name) { errors.push({ row: n, message: '科室名称/设备品类/设备编码/设备名称不能为空' }); continue; }
+      if (!deptName && !codeRaw && !name) continue; // 空行
+      const code = DC.normNone(codeRaw);
+      if (!deptName || !catName || !code || !name) { errors.push({ row: n, message: '科室名称/设备品类/设备编码/设备名称不能为空（没有编码的填「/」）' }); continue; }
+      if (code.length > 60) { errors.push({ row: n, message: `设备编码最多 60 个字（这一行有 ${code.length} 个）；本行未导入` }); continue; }
       const deptId = deptByName.get(deptName);
       if (!deptId) { errors.push({ row: n, message: `科室「${deptName}」不存在` }); continue; }
       /* 状态必须是模板列出的四个词之一。写成「正常」「使用中」这类同义词若原样入库，
@@ -132,7 +159,7 @@ async function importDevices(buffer) {
         }
       }
 
-      let serial; // undefined = 本次不改动
+      let serial; // undefined = 本次不改动；'' = 清空（填「清空」）；'/' = 没有序列号
       if (iSerial) {
         const cell = row.getCell(iSerial).value;
         const raw = cellStr(row, iSerial);
@@ -142,31 +169,65 @@ async function importDevices(buffer) {
           errors.push({ row: n, message: `序列号「${raw}」是很长的纯数字，Excel 按数字保存时后几位会变成 0。请把「序列号」这一列设成「文本」格式后重新填写；本行未导入` });
           continue;
         }
-        if (CLEAR_WORDS.has(raw)) serial = '';
+        if (raw === '清空') serial = '';
         else if (raw) {
-          if (raw.length > 60) { errors.push({ row: n, message: `序列号最多 60 个字（这一行有 ${raw.length} 个）；本行未导入` }); continue; }
-          serial = raw;
+          serial = DC.normNone(raw);
+          if (serial.length > 60) { errors.push({ row: n, message: `序列号最多 60 个字（这一行有 ${serial.length} 个）；本行未导入` }); continue; }
         }
       }
+      const realSerial = DC.isReal(serial) ? serial : null;
 
-      const old = db.prepare('SELECT id FROM devices WHERE code = ?').get(code);
-      if (old) {
-        /* COALESCE 的参数为 null 时保留原值 —— 对应上面 undefined = 不改动 */
-        db.prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, name = ?, model = ?, location = ?,
-          status = COALESCE(?, status), expiry_date = COALESCE(?, expiry_date), remind_days = COALESCE(?, remind_days),
-          serial = COALESCE(?, serial), updated_at = ? WHERE id = ?`)
-          .run(deptId, catName, name, model, location, status || null,
-            expiry === undefined ? null : expiry, remind === undefined ? null : remind,
-            serial === undefined ? null : serial, nowIso(), old.id);
-        updated++;
-      } else {
-        db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status,
-          expiry_date, remind_days, serial, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(deptId, catName, code, name, model, location, status || 'in_use',
-            expiry || '', remind || 0, serial || '', nowIso(), nowIso());
-        created++;
+      /* 同一个文件里重复 */
+      if (DC.isReal(code) && seenCode.has(code)) {
+        errors.push({ row: n, message: `与第 ${seenCode.get(code)} 行的设备编码「${code}」重复，编码不能重复；本行未导入` }); continue;
       }
+      if (realSerial && seenSerial.has(realSerial.toLowerCase())) {
+        errors.push({ row: n, message: `与第 ${seenSerial.get(realSerial.toLowerCase())} 行的序列号「${realSerial}」重复，序列号不能重复；本行未导入` }); continue;
+      }
+
+      /* 这一行对应系统里的哪台设备（null = 新增） */
+      let target = DC.isReal(code) ? db.prepare('SELECT id, code FROM devices WHERE code = ?').get(code) || null : null;
+      if (realSerial) {
+        const o = DC.serialOwner(db, realSerial, target ? target.id : 0);
+        if (o && !target && o.code === DC.NONE) target = o;   // 没有编码的那台：按序列号认出来
+        else if (o) { errors.push({ row: n, message: `${DC.serialTaken(realSerial, o)}；本行未导入` }); continue; }
+      }
+      if (!target && !DC.isReal(code)) {
+        const l = pool.get(keyOf(deptId, catName, name, model, location)) || [];
+        // 这一行带了真实序列号：只对应还没录序列号的那几台（录了别的序列号的是另一台设备）
+        const i = l.findIndex(v => !realSerial || !DC.isReal(v.serial));
+        if (i >= 0) target = l[i];
+      }
+      if (target && used.has(target.id)) {
+        errors.push({ row: n, message: `和第 ${used.get(target.id)} 行是同一台设备（序列号相同），本行未导入` }); continue;
+      }
+
+      /* 每行一个保存点：万一写库出错只丢这一行，不连累整张表 */
+      try {
+        db.transaction(() => {
+          if (target) {
+            /* COALESCE 的参数为 null 时保留原值 —— 对应上面 undefined = 不改动 */
+            db.prepare(`UPDATE devices SET dept_id = ?, cat_name = ?, code = ?, name = ?, model = ?, location = ?,
+              status = COALESCE(?, status), expiry_date = COALESCE(?, expiry_date), remind_days = COALESCE(?, remind_days),
+              serial = COALESCE(?, serial), updated_at = ? WHERE id = ?`)
+              .run(deptId, catName, code, name, model, location, status || null,
+                expiry === undefined ? null : expiry, remind === undefined ? null : remind,
+                serial === undefined ? null : serial, nowIso(), target.id);
+          } else {
+            target = { id: db.prepare(`INSERT INTO devices (dept_id, cat_name, code, name, model, location, status,
+              expiry_date, remind_days, serial, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              .run(deptId, catName, code, name, model, location, status || 'in_use',
+                expiry || '', remind || 0, serial || '', nowIso(), nowIso()).lastInsertRowid, isNew: true };
+          }
+        })();
+      } catch (e) {
+        errors.push({ row: n, message: `写入失败（${e.message}），本行未导入` }); continue;
+      }
+      if (target.isNew) created++; else { updated++; takeFromPool(target.id); }
+      used.set(target.id, n);
+      if (DC.isReal(code)) seenCode.set(code, n);
+      if (realSerial) seenSerial.set(realSerial.toLowerCase(), n);
     }
   })();
   return { created, updated, errors };
@@ -311,16 +372,49 @@ function importLegacy(data, { dryRun = false } = {}) {
       deptNames.set(idOf(d.id), name);
     });
 
-    /* ---------- 设备 ---------- */
+    /* ---------- 设备 ----------
+       编码 / 序列号规则同 Excel 导入（见 importDevices）：「/」= 没有，可以重复；其他的全院唯一。
+       没写编码的按「/」导入；编码是「/」的先按序列号、再按「科室 + 品类 + 名称 + 型号 + 位置」
+       对应已有设备，重复导入同一份数据不会重复新增。 */
     const conv = new Map(); // 「原写法→系统值」计数，汇总成一条提示
-    let uncategorized = 0;
-    each(list('devices'), v => `设备 ${str(v.code) || str(v.name) || '(没有编码)'}`, v => {
-      const code = str(v.code);
-      const where = `设备 ${code || str(v.name) || '(没有编码)'}`;
-      if (!code) { skip(where, '缺少设备编码（code），已跳过'); return; }
+    let uncategorized = 0, noCode = 0;
+    const keyOf = (deptId, cat, name, model, location) => [deptId, cat, name, model, location].join('\u0001');
+    const pool = new Map();
+    for (const v of db.prepare(`SELECT id, dept_id, cat_name, name, model, location, serial, status FROM devices
+        WHERE code = '/' ORDER BY id`).all()) {
+      const k = keyOf(v.dept_id, v.cat_name, v.name, v.model, v.location);
+      if (!pool.has(k)) pool.set(k, []);
+      pool.get(k).push(v);
+    }
+    const takeFromPool = id => {
+      for (const l of pool.values()) { const i = l.findIndex(x => x.id === id); if (i >= 0) { l.splice(i, 1); return; } }
+    };
+    each(list('devices'), v => `设备 ${DC.isReal(DC.normNone(v.code)) ? DC.normNone(v.code) : str(v.name) || '(没有编码)'}`, v => {
+      const code = DC.normNone(v.code) || DC.NONE; // 没写编码 = 没有编码
+      const where = `设备 ${DC.isReal(code) ? code : str(v.name) || '(没有编码)'}`;
+      if (!DC.isReal(code) && !str(v.name)) { skip(where, '没有设备编码也没有设备名称，认不出是什么设备，已跳过'); return; }
+      if (code.length > 60) { skip(where, '设备编码超过 60 个字，已跳过'); return; }
       const deptId = deptMap.get(idOf(v.deptId));
       if (!deptId) { skip(where, `所属科室（deptId=${idOf(v.deptId)}）不在导入数据里，已跳过`); return; }
-      const old = db.prepare('SELECT id, status FROM devices WHERE code = ?').get(code);
+      if (!DC.normNone(v.code)) noCode++;
+      const cat = str(v.catName != null ? v.catName : v.category);
+      let serial = DC.normNone(v.serial ?? v.sn ?? v.serialNo ?? v.serialNumber);
+      if (serial.length > 60) { warn(where, '序列号超过 60 个字，这一项没有导入'); serial = ''; }
+
+      /* 对应系统里的哪台设备 */
+      let old = DC.isReal(code) ? db.prepare('SELECT id, code, status FROM devices WHERE code = ?').get(code) || null : null;
+      if (DC.isReal(serial)) {
+        const o = DC.serialOwner(db, serial, old ? old.id : 0);
+        if (o && !old && o.code === DC.NONE) old = o;
+        else if (o) { warn(where, `${DC.serialTaken(serial, o)}，这一项没有导入`); serial = ''; }
+      }
+      if (!old && !DC.isReal(code)) {
+        const l = pool.get(keyOf(deptId, cat || '未分类', str(v.name), str(v.model), str(v.location))) || [];
+        const i = l.findIndex(x => !DC.isReal(serial) || !DC.isReal(x.serial));
+        if (i >= 0) old = l[i];
+      }
+      if (old) takeFromPool(old.id);
+
       const raw = v.status != null ? v.status : (v.active === false ? 'retired' : v.active === true ? 'in_use' : null);
       let status = normDeviceStatus(raw);
       if (status === null) {
@@ -342,17 +436,14 @@ function importLegacy(data, { dryRun = false } = {}) {
         else warn(where, `提醒提前天数「${v.remindDays}」应为 0～365 的整数，这一项没有导入`);
       }
       if (v.expiryNote != null) ex.note = str(v.expiryNote).slice(0, 60);
-      let serial = str(v.serial ?? v.sn ?? v.serialNo ?? v.serialNumber);
-      if (serial.length > 60) { warn(where, `序列号超过 60 个字，这一项没有导入`); serial = ''; }
-      const cat = str(v.catName != null ? v.catName : v.category);
       if (old) {
         /* 已有的设备：只改 JSON 里给了值的项。没给的不动——以前品类、状态没写就被改成空 / 在用，
-           管理员事后改好的又被重新导入冲掉 */
-        db.prepare(`UPDATE devices SET dept_id = ?, cat_name = COALESCE(?, cat_name), name = COALESCE(?, name),
+           管理员事后改好的又被重新导入冲掉。编码：按序列号认出来的「/」设备，这次给了编码就补上 */
+        db.prepare(`UPDATE devices SET dept_id = ?, code = ?, cat_name = COALESCE(?, cat_name), name = COALESCE(?, name),
           model = COALESCE(?, model), location = COALESCE(?, location), status = ?,
           expiry_date = COALESCE(?, expiry_date), expiry_note = COALESCE(?, expiry_note), remind_days = COALESCE(?, remind_days),
           serial = COALESCE(?, serial), updated_at = ? WHERE id = ?`)
-          .run(deptId, cat || null, str(v.name) || null, str(v.model) || null, str(v.location) || null, status,
+          .run(deptId, code, cat || null, str(v.name) || null, str(v.model) || null, str(v.location) || null, status,
             ex.date ?? null, ex.note ?? null, ex.days ?? null, serial || null, nowIso(), old.id);
         deviceMap.set(idOf(v.id), old.id);
       } else {
@@ -368,6 +459,7 @@ function importLegacy(data, { dryRun = false } = {}) {
     });
     if (conv.size) warn('设备状态', `按常见写法换算：${[...conv].map(([k, n]) => `${k} ${n} 台`).join('；')}`);
     if (uncategorized) warn('设备品类', `${uncategorized} 台设备没有品类，已记为「未分类」，可在设备台账里改成实际品类`);
+    if (noCode) warn('设备编码', `${noCode} 台设备没有编码，已按「/」（没有编码）导入；有编码的可在设备台账里补上`);
 
     /* ---------- 签字人名单 ---------- */
     each(list('members'), m => `签字人 ${str(m.name) || '(没有姓名)'}`, m => {

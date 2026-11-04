@@ -3,6 +3,7 @@ const { getDb } = require('../db/connection');
 const { E } = require('../plugins/error');
 const P = require('./period.service');
 const fileSvc = require('./file.service');
+const { devLabel } = require('./device-code');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -139,10 +140,10 @@ function putRecord(user, deptId, date, body) {
     if (row) for (const it of db.prepare('SELECT device_id FROM record_items WHERE record_id = ?').all(row.id)) okIds.add(it.device_id);
     for (const id of devIds) {
       if (okIds.has(id)) continue;
-      const dv = db.prepare('SELECT code, dept_id, status FROM devices WHERE id = ?').get(id);
+      const dv = db.prepare('SELECT code, name, dept_id, status FROM devices WHERE id = ?').get(id);
       if (!dv) throw E.badInput(`设备 ${id} 不存在`);
-      if (dv.dept_id !== deptId) throw E.badInput(`设备「${dv.code}」已不属于该科室（可能刚被调拨），请返回刷新后再勾选`);
-      throw E.badInput(`设备「${dv.code}」不是在用状态，不能勾选巡检`);
+      if (dv.dept_id !== deptId) throw E.badInput(`设备「${devLabel(dv)}」已不属于该科室（可能刚被调拨），请返回刷新后再勾选`);
+      throw E.badInput(`设备「${devLabel(dv)}」不是在用状态，不能勾选巡检`);
     }
   }
 

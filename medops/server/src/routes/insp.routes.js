@@ -5,6 +5,7 @@ const { E } = require('../plugins/error');
 const recSvc = require('../services/record.service');
 const fileSvc = require('../services/file.service');
 const statsSvc = require('../services/stats.service');
+const DC = require('../services/device-code');
 
 /* startDate：科室从哪天开始算「应巡」（建科室当天，或更早的第一条记录）。
    手机端的未签提醒据此不追溯建科室之前的日子 */
@@ -38,7 +39,7 @@ module.exports = async function inspRoutes(app) {
     const deptId = +(req.query.deptId || 0);
     if (!deptId) throw E.badInput('缺少 deptId');
     app.assertDeptScope(req.user, deptId);
-    return db().prepare('SELECT * FROM devices WHERE dept_id = ? ORDER BY sort, code').all(deptId).map(deviceJson);
+    return db().prepare(`SELECT * FROM devices WHERE dept_id = ? ORDER BY sort, ${DC.SQL_ORDER()}`).all(deptId).map(deviceJson);
   });
 
   app.get('/api/members', { preHandler: [app.auth] }, async req => {

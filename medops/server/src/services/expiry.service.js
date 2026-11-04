@@ -10,6 +10,7 @@
 
 const { getDb } = require('../db/connection');
 const P = require('./period.service');
+const { byCode } = require('./device-code');
 
 const DEFAULT_REMIND_DAYS = 30;
 /* 有效期的合理年份区间。两个方向都要挡：
@@ -96,7 +97,7 @@ function list(deptIds, { onlyAlert = true, today = P.today() } = {}) {
   /* 越紧急越靠前；同级按剩余天数升序，再按科室、编码稳定排序 */
   kept.sort((a, b) =>
     LEVEL[b.level] - LEVEL[a.level] || a.days - b.days ||
-    a.deptName.localeCompare(b.deptName, 'zh') || a.code.localeCompare(b.code));
+    a.deptName.localeCompare(b.deptName, 'zh') || byCode(a, b));
   return kept;
 }
 

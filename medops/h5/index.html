@@ -546,6 +546,9 @@ function refreshSession(){
    （以前只在登录/退出时清空，App 常驻时可能连续几天看不到新设备）。 */
 const DEVCACHE=new Map(), DEV_TTL=3*60*1000;
 const catOf=d=>String(d.catName||'').trim()||'未分类';
+/* 设备编码「/」= 没有编码（可以多台都是「/」）：列表里排在有编码的后面、按名称排；提到这台设备时说名称 */
+const byCode=(a,b)=>{const x=String(a.name),y=String(b.name);return (a.code==='/')-(b.code==='/')||a.code.localeCompare(b.code)||(x<y?-1:x>y?1:0)};
+const devLabel=d=>d.code&&d.code!=='/'?d.code+' '+d.name:d.name;
 function devList(deptId){
   const c=DEVCACHE.get(deptId);
   if(!c||Date.now()-c.at>DEV_TTL){
@@ -638,7 +641,7 @@ const API={
     ds.forEach(d=>{const k=catOf(d);const c=map.get(k)||{name:k,devices:[]};c.devices.push(d);map.set(k,c)});
     return [...map.values()].sort((a,b)=>b.devices.length-a.devices.length);
   },
-  async devices(deptId,cat){return (await devList(deptId)).filter(d=>catOf(d)===cat&&d.status==='in_use').sort((a,b)=>a.code.localeCompare(b.code))},
+  async devices(deptId,cat){return (await devList(deptId)).filter(d=>catOf(d)===cat&&d.status==='in_use').sort(byCode)},
   async devCount(deptId){return (await devList(deptId)).filter(d=>d.status==='in_use').length},
 
   /* ---------- 日巡检 + 日签 ---------- */
@@ -1816,7 +1819,7 @@ window.openRec=async(deptId,date)=>{
   const canFix=S.me.role==='inspector'&&!rec.sign&&!lk&&date<=today();
   const ng=Object.entries(rec.checks||{}).filter(([,v])=>v==='ng').map(([id])=>{
     const dv=devs.find(x=>x.id===id);
-    return `<div class="kv"><span>${H(dv?dv.code:'')}</span><b style="color:var(--bad)">${H(rec.notes[id]||'异常')}</b></div>`}).join('');
+    return `<div class="kv"><span>${H(dv?devLabel(dv):'')}</span><b style="color:var(--bad)">${H(rec.notes[id]||'异常')}</b></div>`}).join('');
   const v=Object.values(rec.checks||{});
   sheet(`<h3>${H(d.name)}</h3><div class="d">${dLab(date)}</div>
     <div class="card" style="box-shadow:inset 0 0 0 1px var(--line)">

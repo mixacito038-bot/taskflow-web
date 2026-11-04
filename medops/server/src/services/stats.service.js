@@ -1,6 +1,7 @@
 'use strict';
 const { getDb } = require('../db/connection');
 const P = require('./period.service');
+const { SQL_ORDER } = require('./device-code');
 
 /* 数据范围：deptIds=null 表示全院。
    month 给定时（按月的统计），全院范围除了启用中的科室，还要带上「该月有巡检记录」的停用科室——
@@ -153,7 +154,7 @@ function ngList(deptIds, { from, to, deptId, sign }) {
     JOIN depts dp ON dp.id = r.dept_id
     LEFT JOIN users iu ON iu.id = r.inspector_id
     WHERE ${cond.join(' AND ')}
-    ORDER BY r.date, r.dept_id, dv.code`).all(...args);
+    ORDER BY r.date, r.dept_id, ${SQL_ORDER('dv.')}`).all(...args);
   const voided = rows.some(x => !x.sign_at) ? voidedDays() : null;
   return rows.map(x => ({
     date: x.date, deptId: String(x.dept_id), deptName: x.dept_name,

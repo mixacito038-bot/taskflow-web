@@ -79,7 +79,7 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
   }
 
   return (
-    <Modal open={open} title={isNew ? '新增设备' : `编辑设备：${editing?.code}`} onClose={onClose}>
+    <Modal open={open} title={isNew ? '新增设备' : `编辑设备：${editing?.code} ${editing?.name}`} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorTip error={err} className="mb-3" />
         <div className="grid grid-cols-2 gap-3">
@@ -93,7 +93,7 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
           <Field label="设备品类" required hint="如：除颤仪、心电监护仪">
             <input className="inp" value={form.catName || ''} onChange={e => set('catName', e.target.value)} required />
           </Field>
-          <Field label="设备编码" required hint="全院唯一">
+          <Field label="设备编码" required hint="不能重复；没有编码的填「/」（可以多台都填）">
             <input className="inp" value={form.code || ''} onChange={e => set('code', e.target.value)} required />
           </Field>
           <Field label="设备名称" required>
@@ -102,7 +102,7 @@ function DeviceModal({ open, onClose, editing, depts, formDepts, onSaved, time }
           <Field label="型号">
             <input className="inp" value={form.model || ''} onChange={e => set('model', e.target.value)} />
           </Field>
-          <Field label="序列号" hint="选填，设备铭牌上的出厂序列号（S/N）">
+          <Field label="序列号" hint="选填，设备铭牌上的出厂序列号（S/N），不能重复；没有的填「/」">
             <input className="inp font-mono" maxLength={60} value={form.serial || ''} onChange={e => set('serial', e.target.value)} />
           </Field>
           <div className="col-span-2">
@@ -388,7 +388,7 @@ export default function Devices() {
             <tbody>
               {shown.map(d => (
                 <tr key={d.id} className={sel.has(d.id) ? 'bg-primary-light/60' : ''}>
-                  <td><input type="checkbox" aria-label={`选择 ${d.code}`} checked={sel.has(d.id)} onChange={() => toggle(d.id)} /></td>
+                  <td><input type="checkbox" aria-label={`选择 ${d.code} ${d.name}`} checked={sel.has(d.id)} onChange={() => toggle(d.id)} /></td>
                   <td className="font-mono text-slate-600">{d.code}</td>
                   <td className="font-medium">{d.name}</td>
                   <td className="font-mono text-slate-600">{d.serial || <span className="text-slate-400">—</span>}</td>
@@ -427,9 +427,10 @@ export default function Devices() {
       <XlsxImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load}
         title="批量导入设备（xlsx）" uploadPath="/admin/devices/import"
         template={{ path: '/admin/devices/import-template', name: '设备导入模板.xlsx' }}
-        intro="按「设备编码」新增或更新（upsert）；科室名称必须已存在，不会自动创建。"
+        intro="按「设备编码」新增或更新；科室名称必须已存在，不会自动创建。"
         columns="科室名称 / 设备品类 / 设备编码 / 设备名称 / 型号 / 位置 / 状态 / 有效期 / 提醒提前天数 / 序列号"
-        note={<>「有效期」「提醒提前天数」「序列号」留空表示<b>本次不改动</b>，不会清掉设备上已录的内容；要清空请在该格填「无」。</>} />
+        note={<>「设备编码」「序列号」不能和别的设备重复；<b>没有的填「/」</b>（可以多台都填「/」）。编码是「/」的设备，重新导入时按序列号（或科室 + 品类 + 名称 + 型号 + 位置）对应原来那台，不会重复新增。<br />
+          「有效期」「提醒提前天数」「序列号」留空表示<b>本次不改动</b>，不会清掉设备上已录的内容；有效期要清空请在该格填「无」。</>} />
       <DeleteBlockedModal blocked={blocked} onClose={() => setBlocked(null)} onDone={load} />
       <BatchDeleteResult result={batchResult} onClose={() => setBatchResult(null)} onDone={msg => { setNotice(msg); load() }} />
     </div>

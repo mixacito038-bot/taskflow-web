@@ -6,6 +6,7 @@ const { E } = require('../plugins/error');
 const P = require('./period.service');
 const fileSvc = require('./file.service');
 const statsSvc = require('./stats.service');
+const { byCode } = require('./device-code');
 const { REC_SELECT, WS_SELECT, MS_SELECT } = require('./record.service');
 
 function daysOfMonth(month) {
@@ -42,7 +43,7 @@ function monthDevices(deptId, month, monthEnd, itemMap) {
   }
   return rows
     .map(v => ({ ...v, label: v.dept_id !== deptId ? `${v.name}（现属${v.now_dept}）` : v.name }))
-    .sort((a, b) => (a.dept_id !== deptId) - (b.dept_id !== deptId) || a.sort - b.sort || a.code.localeCompare(b.code));
+    .sort((a, b) => (a.dept_id !== deptId) - (b.dept_id !== deptId) || a.sort - b.sort || byCode(a, b));
 }
 
 /* 月报：设备×日期矩阵(✓/✗) + 异常清单 + 三级签名（嵌图） */
@@ -152,15 +153,18 @@ async function importTemplateXlsx() {
   demo.getColumn(TPL_SERIAL_COL).numFmt = '@';
   demo.addRow(['急诊科', '除颤仪', 'JZ-CD-001', '除颤监护仪', 'XD-100', '抢救室', '在用', '2027-03-15', 30, 'CD21A0458']);
   demo.addRow(['重症医学科', '呼吸机', 'ICU-HX-001', '有创呼吸机', 'Savina300', '1 床', '在用', '', '', '']);
+  demo.addRow(['急诊科', '简易呼吸器', '/', '简易呼吸器（成人）', '', '抢救室', '在用', '', '', '/']);
   demo.addRow([]);
   demo.addRow(['说明：请把设备填进第 1 张表「设备导入」，本表仅供参照，导入时不会被读取。']);
-  demo.addRow(['「科室名称」须与系统中已建科室完全一致；「设备编码」是唯一标识，重复导入会更新同编码设备。']);
+  demo.addRow(['「科室名称」须与系统中已建科室完全一致。']);
+  demo.addRow(['「设备编码」不能重复，重复导入会更新同编码的设备；没有编码的填「/」（可以多台都填「/」）。']);
+  demo.addRow(['  编码是「/」的设备，重新导入时先按序列号、再按「科室 + 品类 + 名称 + 型号 + 位置」对应原来那台，不会重复新增；这几项要改请到后台「设备台账」里改。']);
   demo.addRow(['「状态」可填：在用 / 维修 / 停用 / 报废。留空：新设备默认为在用；系统里已有的设备不改动原状态。']);
   demo.addRow(['「有效期」填除颤电极片、急救药品等的到期日，格式 2027-03-15（必须年月日填全）；设备本身没有有效期就留空。']);
   demo.addRow(['「提醒提前天数」到期前多少天开始提醒，留空表示用默认 30 天。']);
   demo.addRow(['⚠ 重新导入时，有效期两列留空表示「本次不改动」，不会清掉系统里已录好的到期日；要清空请在该格填「无」。']);
   demo.addRow(['「状态」必须是上面四个词之一，写「正常」「使用中」这类同义词会整行导入失败并提示。']);
-  demo.addRow(['「序列号」选填，填设备铭牌上的出厂序列号（S/N）；留空表示本次不改动，要清空请填「无」。']);
+  demo.addRow(['「序列号」选填，填设备铭牌上的出厂序列号（S/N），不能重复；没有序列号的填「/」（可以重复）；留空表示本次不改动。']);
   demo.addRow(['  这一列已设成文本格式，长数字、开头的 0 都会原样保留；从别处粘贴时请用「选择性粘贴 → 数值」，以免把格式一起覆盖掉。']);
 
   return Buffer.from(await wb.xlsx.writeBuffer());

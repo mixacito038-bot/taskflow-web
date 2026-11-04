@@ -4,10 +4,12 @@
    ① 签字：周签要求那一周 7 天都已日签；月签要求周一在该月的各周都已周签。
       发现问题后，在管理后台「周签 / 月签」里按「先作废月签、再作废周签」的顺序作废，再按正常流程补签。
    ② 设备：状态必须是 在用 / 维修中 / 已停用 / 已报废 之一。别的值（旧数据导入留下的）
-      手机端巡检清单不显示、有效期不提醒；升级时常见写法（如 active）已自动改好，剩下的要人工选。 */
+      手机端巡检清单不显示、有效期不提醒；升级时常见写法（如 active）已自动改好，剩下的要人工选。
+   ③ 序列号：一台设备一个（「/」= 没有，可以重复）。判重是后来才加的，之前录进去的重号在这里列出来。 */
 const cfg = require('../config');
 const { initDb } = require('../db/connection');
 const P = require('../services/period.service');
+const { devLabel } = require('../services/device-code');
 
 const db = initDb(cfg.dataDir);
 const name = id => (db.prepare('SELECT name FROM depts WHERE id = ?').get(id) || {}).name || `科室#${id}`;
@@ -59,8 +61,26 @@ if (uncat) {
   console.log('  手机端按品类分组显示，可在后台「设备台账」里点「编辑」改成实际品类（如：除颤仪、心电监护仪）。');
 }
 
-if (!n && !badDev.length) {
-  console.log('\n✓ 所有周签、月签都符合规则；设备状态都正常');
+/* 序列号重复（不区分大小写；「/」和空的不算） */
+const hasSerial = db.prepare("SELECT 1 FROM pragma_table_info('devices') WHERE name = 'serial'").get();
+const dupSerial = hasSerial ? db.prepare(`SELECT serial, code, name, dept_id FROM devices
+  WHERE serial NOT IN ('', '/') AND lower(serial) IN (SELECT lower(serial) FROM devices
+    WHERE serial NOT IN ('', '/') GROUP BY lower(serial) HAVING COUNT(*) > 1)
+  ORDER BY lower(serial), id`).all() : [];
+if (dupSerial.length) {
+  const groups = new Map();
+  for (const v of dupSerial) {
+    const k = v.serial.toLowerCase();
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(v);
+  }
+  console.log(`\n✗ 序列号重复 · ${groups.size} 个序列号、${dupSerial.length} 台设备（序列号一台一个，「/」除外）：`);
+  for (const l of groups.values()) console.log(`    「${l[0].serial}」：${l.map(v => `${name(v.dept_id)} ${devLabel(v)}`).join('；')}`);
+  console.log('  处理办法：后台「设备台账」里搜索这个序列号，把录错的改成正确的序列号，没有序列号的改成「/」。');
+}
+
+if (!n && !badDev.length && !dupSerial.length) {
+  console.log('\n✓ 所有周签、月签都符合规则；设备状态、序列号都正常');
 }
 if (n) {
   console.log(`\n签字共 ${n} 处。处理办法：管理员登录后台 →「周签 / 月签」，找到上面这些点「作废」`);

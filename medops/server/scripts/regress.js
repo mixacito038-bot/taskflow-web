@@ -661,7 +661,8 @@ async function main() {
         { id: 'hv2', deptId: 'h1', code: 'HX-002', name: '监护仪', catName: '监护类', status: 'inactive' },
         { id: 'hv3', deptId: 'h1', code: 'HX-003', name: '吸引器', catName: '吸引类', status: '报废' },
         { id: 'hv4', deptId: 'h1', code: 'HX-004', catName: '吸引类', status: '借出' },
-        { id: 'hv5', deptId: 'h1', name: '没编码' }
+        { id: 'hv5', deptId: 'h1', name: '没编码' },
+        { id: 'hv6', deptId: 'h1', catName: '吸引类' }
       ],
       members: [{ id: 'hm1', deptId: 'h1', name: '导入护士长', title: '护士长' }, { id: 'hm2', deptId: 'h1' }],
       users: [{ id: 'hu1', username: 'imp-insp', displayName: '导入巡检员', role: '巡检员', deptIds: ['h1'] }, { id: 'hu2', displayName: '无账号名' }],
@@ -680,11 +681,12 @@ async function main() {
     const res = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: data }));
     assert.equal(res.dryRun, false);
     assert.deepEqual([res.imported, res.errors, res.warnings], [dry.imported, dry.errors, dry.warnings], '先检查与正式导入的结果应一致');
-    assert.deepEqual(res.imported, { depts: 2, devices: 4, members: 1, users: 1, records: 6, weeksigns: 1, monthsigns: 0 });
+    assert.deepEqual(res.imported, { depts: 2, devices: 5, members: 1, users: 1, records: 6, weeksigns: 1, monthsigns: 0 });
     const msgs = l => l.map(e => `${e.where}：${e.message}`).join('\n');
     const has = (l, where, frag) => assert.ok(l.some(e => e.where.includes(where) && e.message.includes(frag)), `缺少「${where} … ${frag}」：\n${msgs(l)}`);
     has(res.errors, '科室 id=h3', '缺少科室名称');
-    has(res.errors, '设备 没编码', '缺少设备编码');
+    has(res.warnings, '设备编码', '1 台设备没有编码，已按「/」（没有编码）导入');
+    has(res.errors, '设备 (没有编码)', '没有设备编码也没有设备名称');
     has(res.errors, '签字人', '缺少姓名');
     has(res.errors, '账号 无账号名', '缺少登录账号名');
     has(res.errors, `日巡检 导入一科 ${P.addDay(today, 2)}`, '不能提前录入');
@@ -695,7 +697,7 @@ async function main() {
     has(res.warnings, '设备状态', '「报废」→ 已报废 1 台');
     has(res.warnings, '设备 HX-004', '状态「借出」认不出');
     has(res.warnings, '设备 HX-004', '没有设备名称');
-    has(res.warnings, '设备品类', '1 台设备没有品类');
+    has(res.warnings, '设备品类', '2 台设备没有品类');
     has(res.warnings, '日巡检 导入一科', '6 天的记录里共有 6 项结果对应不上设备');
     has(res.warnings, `周签 导入一科 ${lw} 起`, '有 1 天没有日签');
     const st = Object.fromEntries(sql.prepare("SELECT code, status, cat_name FROM devices WHERE code LIKE 'HX-%'").all().map(r => [r.code, `${r.status}/${r.cat_name}`]));
@@ -717,6 +719,8 @@ async function main() {
     const again = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: data }));
     assert.equal(again.imported.records, 0);
     has(again.errors, '日巡检 导入一科', '6 天系统里已有记录');
+    assert.equal(sql.prepare("SELECT COUNT(*) AS c FROM devices WHERE name = '没编码' AND code = '/'").get().c, 1, '没编码的设备重新导入不重复新增');
+    assert.equal(again.imported.devices, 0, JSON.stringify(again.imported));
     assert.equal(again.errors.filter(e => e.message.includes('系统里已有记录')).length, 1, '同一科室的重复记录合并成一条提示');
     assert.equal(sql.prepare("SELECT cat_name FROM devices WHERE code = 'HX-001'").get().cat_name, '除颤仪', '重新导入不冲掉管理员改好的品类');
     // 结构不对的整体数据：明确报错
@@ -887,7 +891,9 @@ async function main() {
     assert.equal((await byCode('SN-D2')).serial, 'KEEP-ME', '导入时序列号留空不改动');
     assert.equal((await byCode('SN-D1')).serial, 'FROM-XLSX');
     out = await up([H10, ['序列号科', '除颤类', 'SN-D1', '除颤仪', '', '', '', '', '', '无']]);
-    assert.equal((await byCode('SN-D1')).serial, '', '填「无」清空');
+    assert.equal((await byCode('SN-D1')).serial, '/', '填「无」记为「/」（没有序列号）');
+    out = await up([H10, ['序列号科', '除颤类', 'SN-D1', '除颤仪', '', '', '', '', '', '清空']]);
+    assert.equal((await byCode('SN-D1')).serial, '', '填「清空」清空');
     // 老模板（9 列，没有序列号这一列）：不碰已录的序列号
     out = await up([H10.slice(0, 9), ['序列号科', '除颤类', 'SN-D2', '除颤仪', '', '抢救室 9', '', '', '']]);
     assert.equal(out.updated, 1, JSON.stringify(out));
@@ -900,7 +906,129 @@ async function main() {
     assert.equal((await byCode('SN-L1')).serial, 'L-SN-1');
     assert.equal((await byCode('SN-D2')).serial, 'KEEP-ME', '历史导入没带序列号时不动已有的');
   }
-  ok('序列号：选填、去空白、限 60 字；编辑不传不动；模板最后一列、整列文本；导入留空不动、填「无」清空、长数字被 Excel 截断的拦下；老模板与历史导入不碰已录的');
+  ok('序列号：选填、去空白、限 60 字；编辑不传不动；模板最后一列、整列文本；导入留空不动、填「无」记为「/」、填「清空」清空、长数字被 Excel 截断的拦下；老模板与历史导入不碰已录的');
+
+  step = '设备编码 / 序列号：「/」= 没有、可以重复；其他的不能重复';
+  {
+    const xg = okj(await api('POST', '/api/admin/depts', { token: A, body: { name: '斜杠科' } }));
+    const devs = async () => okj(await api('GET', `/api/admin/devices?deptId=${xg.id}`, { token: A }));
+    const add = body => api('POST', '/api/admin/devices', { token: A, body: { deptId: xg.id, ...body } });
+    // 新增：「/」可以重复；「无」「、」「－」按「/」；不填报错并提示填「/」
+    const a1 = okj(await add({ catName: '呼吸类', code: '/', name: '简易呼吸器', location: '抢救室' }));
+    const a2 = okj(await add({ catName: '呼吸类', code: '/', name: '简易呼吸器', location: '抢救室' }));
+    const a3 = okj(await add({ catName: '吸引类', code: ' 无 ', name: '吸痰器' }));
+    const a3b = okj(await add({ catName: '吸引类', code: '、', name: '吸痰器（备用）' }));
+    assert.deepEqual([a1.code, a2.code, a3.code, a3b.code], ['/', '/', '/', '/'], '「/」可以重复；「无」「、」统一成「/」');
+    let e = errj(await add({ catName: '除颤类', code: '  ', name: '除颤仪' }), 400, 'BAD_INPUT', '编码为空');
+    assert.ok(e.message.includes('「/」'), '提示没有编码填「/」：' + e.message);
+    const a4 = okj(await add({ catName: '除颤类', code: 'XG-1', name: '除颤仪', serial: 'SN-X1' }));
+    e = errj(await add({ catName: '除颤类', code: 'XG-1', name: '另一台除颤仪' }), 409, 'CONFLICT', '编码重复');
+    assert.ok(e.message.includes('斜杠科') && e.message.includes('除颤仪') && e.message.includes('不能重复'), '说清楚被哪台占用：' + e.message);
+    // 序列号：不区分大小写判重；「/」和空的可以重复
+    e = errj(await add({ catName: '除颤类', code: 'XG-9', name: '除颤仪', serial: ' sn-x1 ' }), 409, 'CONFLICT', '序列号重复（大小写不同）');
+    assert.ok(e.message.includes('XG-1 除颤仪') && e.message.includes('序列号不能重复'), e.message);
+    const s1 = okj(await add({ catName: '监护类', code: 'XG-6', name: '监护仪', serial: '/' }));
+    const s2 = okj(await add({ catName: '监护类', code: 'XG-7', name: '监护仪', serial: '暂无' }));
+    const s3 = okj(await add({ catName: '监护类', code: 'XG-8', name: '监护仪' }));
+    assert.deepEqual([s1.serial, s2.serial, s3.serial], ['/', '/', ''], '序列号「/」「暂无」→「/」；不填为空');
+    // 编辑：改成别人的编码 / 序列号 → 409；改成「/」可以；不改编码序列号的编辑照常
+    errj(await api('PATCH', `/api/admin/devices/${s1.id}`, { token: A, body: { code: 'XG-1' } }), 409, 'CONFLICT', '编辑成重复编码');
+    errj(await api('PATCH', `/api/admin/devices/${s1.id}`, { token: A, body: { serial: 'SN-X1' } }), 409, 'CONFLICT', '编辑成重复序列号');
+    assert.equal(okj(await api('PATCH', `/api/admin/devices/${s3.id}`, { token: A, body: { code: '/' } })).code, '/');
+    assert.equal(okj(await api('PATCH', `/api/admin/devices/${a4.id}`, { token: A, body: { serial: 'sn-X1' } })).serial, 'sn-X1', '自己的序列号只改大小写不算重复');
+    // 以前录进去的重号（这一版之前没判重）：不挡住改位置这类编辑；体检列出来
+    sql.prepare('UPDATE devices SET serial = ? WHERE id = ?').run('SN-X1', +s2.id);
+    assert.equal(okj(await api('PATCH', `/api/admin/devices/${s2.id}`, { token: A, body: { location: '2 床' } })).location, '2 床', '原有重号不挡别的编辑');
+    const chk = require('child_process').spawnSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+    assert.ok(chk.stdout.includes('✗ 序列号重复') && chk.stdout.includes('XG-7 监护仪') && chk.stdout.includes('XG-1 除颤仪'), '体检列出重号：' + chk.stdout);
+    okj(await api('PATCH', `/api/admin/devices/${s2.id}`, { token: A, body: { serial: '/' } }));
+    const chk2 = require('child_process').spawnSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV, encoding: 'utf8' });
+    assert.ok(!chk2.stdout.includes('序列号重复'), chk2.stdout);
+    // 排序：有编码的在前，「/」的在后按名称
+    let codes = (await devs()).map(d => d.code + ':' + d.name);
+    assert.deepEqual(codes, ['XG-1:除颤仪', 'XG-6:监护仪', 'XG-7:监护仪', '/:吸痰器', '/:吸痰器（备用）', '/:监护仪', '/:简易呼吸器', '/:简易呼吸器'], codes.join(' | '));
+    assert.deepEqual(okj(await api('GET', `/api/devices?deptId=${xg.id}`, { token: A })).map(d => d.code + ':' + d.name), codes, '手机端同样的顺序');
+
+    // Excel 导入
+    const up = async rows => {
+      const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('设备导入');
+      rows.forEach(r => ws.addRow(r));
+      const fd = new FormData();
+      fd.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'devices.xlsx');
+      const r = await fetch(BASE + '/api/admin/devices/import', { method: 'POST', headers: { authorization: `Bearer ${A}`, 'x-device-id': 'regress-dev' }, body: fd });
+      return r.json();
+    };
+    const H = ['科室名称', '设备品类', '设备编码', '设备名称', '型号', '位置', '状态', '有效期', '提醒提前天数', '序列号'];
+    const R = (cat, code, name, loc, serial) => ['斜杠科', cat, code, name, '', loc, '', '', '', serial];
+    const resp = () => R('呼吸类', '/', '简易呼吸器', '抢救室', '');
+    const count = (code, name) => sql.prepare('SELECT COUNT(*) AS c FROM devices WHERE dept_id = ? AND code = ? AND name = ?').get(+xg.id, code, name).c;
+    let out = await up([H,
+      resp(), resp(),                                   // 2、3 行：对应台账里已有的两台「/」简易呼吸器
+      R('呼吸类', '－', '简易呼吸器', '抢救室', ''),      // 4：「－」按「/」，台账里只有两台 → 新增第三台
+      R('吸引类', '/', '吸引器', '', 'XS-001'),           // 5：新设备，带序列号
+      R('吸引类', 'XG-2', '吸引器', '', 'XS-002'),        // 6：新设备
+      R('吸引类', 'XG-2', '吸引器', '', ''),              // 7：同文件编码重复 → 报错
+      R('吸引类', 'XG-3', '吸引器', '', 'xs-002'),        // 8：同文件序列号重复（大小写不同）→ 报错
+      R('除颤类', 'XG-4', '除颤仪', '', 'SN-X1'),         // 9：序列号已是 XG-1 的 → 报错
+      R('除颤类', '', '除颤仪', '', '')                   // 10：编码空 → 报错，提示填「/」
+    ]);
+    assert.deepEqual([out.created, out.updated, out.errors.map(x => x.row)], [3, 2, [7, 8, 9, 10]], JSON.stringify(out));
+    const msg = row => out.errors.find(x => x.row === row).message;
+    assert.ok(msg(7).includes('与第 6 行的设备编码「XG-2」重复') && msg(8).includes('与第 6 行的序列号「xs-002」重复') && msg(9).includes('XG-1 除颤仪') && msg(10).includes('「/」'), JSON.stringify(out.errors));
+    assert.equal(count('/', '简易呼吸器'), 3);
+    assert.ok(!sql.prepare("SELECT 1 FROM devices WHERE code IN ('XG-3', 'XG-4')").get(), '报错的行没有写入');
+    // 同一张表（去掉报错的行）再导一遍：一台都不新增
+    const fixed = [H, resp(), resp(), R('呼吸类', '/', '简易呼吸器', '抢救室', ''), R('吸引类', '/', '吸引器', '', 'XS-001'), R('吸引类', 'XG-2', '吸引器', '', 'XS-002')];
+    out = await up(fixed);
+    assert.deepEqual([out.created, out.updated, out.errors.length], [0, 5, 0], '重复导入不重复新增：' + JSON.stringify(out));
+    // 表里比台账多一台一模一样的 → 只新增那一台
+    out = await up([...fixed, resp()]);
+    assert.deepEqual([out.created, out.updated], [1, 5], JSON.stringify(out));
+    assert.equal(count('/', '简易呼吸器'), 4);
+    // 有编码的一行，序列号是某台「/」设备的 → 就是那台，把编码补上
+    out = await up([H, R('吸引类', 'XG-5', '吸引器', '', 'XS-001')]);
+    assert.deepEqual([out.created, out.updated], [0, 1], JSON.stringify(out));
+    assert.equal(sql.prepare("SELECT code FROM devices WHERE serial = 'XS-001'").get().code, 'XG-5', '按序列号认出、补上编码');
+    // 「/」行带了新序列号：对应同名同位置、还没录序列号的那台；再导一遍按序列号认
+    out = await up([H, R('吸引类', '/', '吸痰器', '', 'XT-9')]);
+    assert.deepEqual([out.created, out.updated], [0, 1], JSON.stringify(out));
+    assert.equal(sql.prepare('SELECT serial FROM devices WHERE id = ?').get(+a3.id).serial, 'XT-9');
+    out = await up([H, R('吸引类', '/', '吸痰器', '', 'xt-9')]);
+    assert.deepEqual([out.created, out.updated], [0, 1], JSON.stringify(out));
+    // 同名同位置、但序列号是另一个的 → 是另一台设备，新增（不能把 XT-9 那台改成 XT-10）
+    out = await up([H, R('吸引类', '/', '吸痰器', '', 'XT-10')]);
+    assert.deepEqual([out.created, out.updated], [1, 0], JSON.stringify(out));
+    assert.equal(sql.prepare('SELECT serial FROM devices WHERE id = ?').get(+a3.id).serial, 'xt-9', '原来那台的序列号没被改');
+    sql.prepare("DELETE FROM devices WHERE serial = 'XT-10'").run();
+    // 同一台设备在表里出现两次（一行没写序列号对上了它，另一行按序列号又对上它）→ 后一行报错
+    out = await up([H, R('吸引类', '/', '吸痰器', '', ''), R('吸引类', '/', '吸痰器', '', 'XT-9')]);
+    assert.deepEqual([out.updated, out.errors.map(x => x.row)], [1, [3]], JSON.stringify(out));
+    assert.ok(out.errors[0].message.includes('第 2 行'), JSON.stringify(out.errors));
+
+    // 历史 JSON 导入：同样的规则
+    const L = { depts: [{ id: 'd', name: '斜杠科' }], devices: [
+      { id: 'x1', deptId: 'd', code: '/', name: '简易呼吸器', catName: '呼吸类', location: '抢救室' },
+      { id: 'x2', deptId: 'd', name: '老系统没编码的', catName: '呼吸类' },
+      { id: 'x3', deptId: 'd', code: 'XG-1', name: '除颤仪', catName: '除颤类', serial: 'XS-002' }] };
+    let res = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: L }));
+    assert.equal(res.imported.devices, 1, '只新增没编码的那台：' + JSON.stringify(res.imported));
+    assert.equal(count('/', '简易呼吸器'), 4, '「/」设备对应上已有的');
+    assert.equal(count('/', '老系统没编码的'), 1);
+    assert.ok(res.warnings.some(w => w.where === '设备 XG-1' && w.message.includes('XS-002') && w.message.includes('这一项没有导入')), JSON.stringify(res.warnings));
+    assert.equal(sql.prepare("SELECT serial FROM devices WHERE code = 'XG-1'").get().serial, 'sn-X1', '重复的序列号没导入');
+    res = okj(await api('POST', '/api/admin/import/legacy', { token: A, body: L }));
+    assert.equal(res.imported.devices, 0, '再导一遍不重复新增');
+    assert.equal(count('/', '老系统没编码的'), 1);
+
+    // 模板说明、示例
+    const tres = await api('GET', '/api/admin/devices/import-template', { token: A, raw: true });
+    const twb = new ExcelJS.Workbook(); await twb.xlsx.load(Buffer.from(await tres.arrayBuffer()));
+    const demo = [];
+    twb.worksheets[1].eachRow(r => demo.push(r.values.slice(1).join('|')));
+    assert.ok(demo.some(t => t.includes('|/|简易呼吸器')) && demo.some(t => t.includes('没有编码的填「/」')) && demo.some(t => t.includes('没有序列号的填「/」')), demo.join('\n'));
+    assert.equal(twb.worksheets[0].rowCount, 1, '第 1 张表只有表头');
+  }
+  ok('「/」= 没有编码 / 序列号，可以重复（「无」「、」「－」等同）；其他编码、序列号判重（序列号不分大小写），重了说清楚被哪台占用；同一文件内重复报错；「/」设备按序列号或科室+品类+名称+型号+位置对应，重复导入不重复新增、能补编码；历史导入同规则；排序、体检');
 
   /* 必须是最后一步：会清空数据 */
   step = '清空数据（只保留 admin）';
