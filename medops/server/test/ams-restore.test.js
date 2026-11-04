@@ -88,3 +88,55 @@ test('超出 20 版历史的 key 不乱改；没有改动时什么都不写', ()
   const p2 = R.plan(last);
   assert.deepEqual(p2.changes.map(c => c.key), ['ams:tags'], '只改动过 tags');
 });
+
+test('保留之后的改动：覆盖前的找回来，覆盖之后新加、新改、删掉的照样算数', () => {
+  const A = (id, extra = {}) => ({ id, code: 'ZC-' + id, holder: '', purchaseDate: '2023-04-28', ...extra });
+  // 覆盖前：a1..a6
+  const before = [A('a1'), A('a2', { holder: '张三' }), A('a3'), A('a4'), A('a5'), A('a6')];
+  // 覆盖成（旧电脑上的老数据）：a1、a2（旧的使用人）、a3，另有一台旧数据里才有的 x9；a4..a6 没了
+  const after = [A('a1'), A('a2', { holder: '李四' }), A('a3'), A('x9')];
+  // 覆盖之后：新加 n1；a1 改了位置；a3 删掉；x9 有人改过（留着）；又补录了一台 a5（新 id 同编号）
+  const now = [A('n1'), A('a1', { location: '908' }), A('a2', { holder: '李四' }), A('x9', { holder: '王五' }), A('n5', { code: 'ZC-a5' })];
+  const r = R.mergeValues(JSON.stringify(after), JSON.stringify(before), JSON.stringify(now));
+  const got = JSON.parse(r.value);
+  const byId = Object.fromEntries(got.map(x => [x.id, x]));
+  assert.deepEqual(Object.keys(byId).sort(), ['a1', 'a2', 'a4', 'a5', 'a6', 'n1', 'n5', 'x9'], '找回 a4..a6；保留 n1、n5、改过的 x9；a3 照删');
+  assert.equal(byId.a1.location, '908', '之后改的字段保留');
+  assert.equal(byId.a2.holder, '张三', '覆盖时被改回旧样子、之后没人动的 → 覆盖前的');
+  assert.equal(byId.x9.holder, '王五');
+  assert.deepEqual(r.stats, { recovered: 4, keptNew: 2, keptChanged: 2, dropped: 0, deletedLater: 1, conflicts: 0 });
+  // 覆盖时带进来、之后没人动的 → 去掉
+  const r2 = R.mergeValues(JSON.stringify(after), JSON.stringify(before), JSON.stringify([...after, A('n1')]));
+  assert.ok(!JSON.parse(r2.value).some(x => x.id === 'x9') && JSON.parse(r2.value).some(x => x.id === 'n1'));
+  // 之后没人改过 → 就是覆盖前那份（原样字符串）
+  assert.equal(R.mergeValues(JSON.stringify(after), JSON.stringify(before), JSON.stringify(after)).value, JSON.stringify(before));
+  // 简单数组（类别名称）、对象（设置）
+  assert.deepEqual(JSON.parse(R.mergeValues('["笔记本","台式机"]', '["笔记本","台式机","一体机"]', '["笔记本","台式机","服务器"]').value), ['笔记本', '台式机', '一体机', '服务器']);
+  assert.deepEqual(JSON.parse(R.mergeValues('{"rate":5,"life":5}', '{"rate":3,"life":5}', '{"rate":5,"life":6}').value), { rate: 3, life: 6 });
+});
+
+test('还原时选「保留之后的改动」：整份数据层面', () => {
+  const evsBefore = R.listEvents().length;
+  const A = (id, extra = {}) => ({ id, code: 'K-' + id, ...extra });
+  at('2027-01-01T01:00:00.000Z', () => push('pc-main', { 'ams:assets': JSON.stringify([A('1'), A('2'), A('3')]), 'ams:sites': JSON.stringify([{ id: 's1', name: '信息部' }]) }));
+  const mvBefore = val('ams:movements'), catsBefore = val('ams:cats'); // 同一个库，前面的测试留下过
+  at('2027-01-01T02:00:00.000Z', () => push('pc-old', { 'ams:assets': JSON.stringify([A('1')]), 'ams:sites': JSON.stringify([]), 'ams:movements': JSON.stringify([{ id: 'm0' }]), 'ams:cats': '["x"]' }));
+  at('2027-01-01T03:00:00.000Z', () => push('pc-main', { 'ams:assets': JSON.stringify([A('9'), A('1', { holder: '新' })]) }));
+  const evs = R.listEvents();
+  const idx = evs.length - 2; // pc-old 那次
+  assert.equal(evs[idx].dev, 'pc-old');
+  const plain = R.plan(idx);
+  assert.equal(plain.later, 1);
+  assert.equal(plain.summary.find(s => s.key === 'ams:assets').restored, 3, '完全退回：3 台（之后加的 9 没了）');
+  const keep = R.plan(idx, undefined, { keepLater: true });
+  assert.equal(keep.keepLater, true);
+  assert.equal(keep.summary.find(s => s.key === 'ams:assets').restored, 4, '保留之后的：1、2、3 + 之后加的 9');
+  const r = at('2027-01-01T04:00:00.000Z', () => R.apply(idx, undefined, { keepLater: true }));
+  const assets = JSON.parse(val('ams:assets'));
+  assert.deepEqual(assets.map(a => a.id).sort(), ['1', '2', '3', '9']);
+  assert.equal(assets.find(a => a.id === '1').holder, '新');
+  assert.deepEqual(JSON.parse(val('ams:sites')), [{ id: 's1', name: '信息部' }], '之后没人动的份：直接退回覆盖前');
+  assert.equal(val('ams:movements'), mvBefore, '覆盖时改掉的份（之后没人动）：退回覆盖前');
+  assert.equal(val('ams:cats') ?? null, catsBefore ?? null, '覆盖时带进来的份：删掉');
+  assert.ok(r.written >= 3 && evsBefore < R.listEvents().length);
+});

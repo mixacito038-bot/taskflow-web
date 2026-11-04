@@ -1072,8 +1072,28 @@ async function main() {
     assert.equal(run(['--to', '1', '--yes']).status, 0, '再撤销一次 = 又回到 220 台');
     assert.equal(JSON.parse((await snapA()).keys['ams:assets'].value).length, 220);
     assert.ok(sql.prepare("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'ams_restore'").get().c >= 3, '记审计');
+    // 覆盖之后又有人录了一台：选「保留之后的改动」→ 覆盖前的找回来，新录的那台也在
+    await new Promise(r => setTimeout(r, 3200));
+    const ups2 = [];
+    for (const [key, value] of Object.entries(old)) ups2.push({ key, value, baseVersion: await verOf(key) });
+    okj(await amsPush('pc-old', ups2));
+    await new Promise(r => setTimeout(r, 3200));
+    const later = JSON.stringify([...JSON.parse(old['ams:assets']), { id: 'new1', code: 'ZC-NEW' }]);
+    okj(await amsPush('pc-main', [{ key: 'ams:assets', value: later, baseVersion: await verOf('ams:assets') }]));
+    const sug2 = run(['--suggest']).stdout.trim();
+    assert.equal(sug2, '2', '最新一次是之后的正常录入（条数增加），标出来的是它前面那次覆盖');
+    assert.equal(run(['--count-later', sug2]).stdout.trim(), '1');
+    const showK = run(['--show', sug2, '--keep-later']);
+    assert.ok(showK.stdout.includes('保留这次之后的 1 次改动') && /电脑台账\s+现在\s+13 条\s+→\s+还原后\s+221 条/.test(showK.stdout)
+      && showK.stdout.includes('保留之后新加的 1 条'), showK.stdout);
+    const showP = run(['--show', sug2]);
+    assert.ok(/还原后\s+220 条/.test(showP.stdout) && showP.stdout.includes('会一起撤销'), '不保留：220 台，之后那台撤销');
+    assert.equal(run(['--to', sug2, '--yes', '--keep-later']).status, 0);
+    const fin = JSON.parse((await snapA()).keys['ams:assets'].value);
+    assert.ok(fin.length === 221 && fin.some(a => a.id === 'new1'), '还原后 221 台，含覆盖之后新录的那台');
+    assert.equal((await snapA()).keys['ams:sites'].value, good['ams:sites'], '之后没人动过的份：直接退回覆盖前');
   }
-  ok('资产盘点误覆盖：还原命令列出改动、标出那次、先看前后条数、只读不加 --yes 不动；还原后与覆盖前一字不差、各端能增量拉到；还原可撤销；记审计');
+  ok('资产盘点误覆盖：还原命令列出改动、标出那次、先看前后条数、只读不加 --yes 不动；还原后与覆盖前一字不差、各端能增量拉到；还原可撤销；记审计；可选保留覆盖之后的改动');
 
   /* 必须是最后一步：会清空数据 */
   step = '清空数据（只保留 admin）';

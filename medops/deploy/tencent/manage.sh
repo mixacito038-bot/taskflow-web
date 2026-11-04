@@ -176,21 +176,39 @@ case "${1:-帮助}" in
     fi
     N=$(echo "${N}" | tr -d ' []')
     [ -n "${N}" ] || { echo "  已取消，没有改动任何数据。"; exit 0; }
+    # 2) 这次之后还有改动：问要不要保留
+    LATER=$(docker compose exec -T api node src/scripts/ams-restore.js --count-later "${N}" 2>/dev/null | tr -d '\r\n ')
+    case "${LATER}" in
+      ''|*[!0-9]*) docker compose exec -T api node src/scripts/ams-restore.js --show "${N}"; exit 1 ;; # 编号不对：显示原因
+    esac
+    KEEP=""
+    if [ "${LATER}" -gt 0 ]; then
+      echo
+      echo "  这次之后还有 ${LATER} 次改动。还原时："
+      echo "    1 = 保留这些改动（推荐）：覆盖前的数据找回来，覆盖之后新加、新改的照样留着"
+      echo "    2 = 不保留：完全退回到那次之前的样子"
+      read -r -p "  输入 1 或 2 后回车（直接回车 = 1）：" M || M=""
+      case "${M:-1}" in
+        1) KEEP="--keep-later" ;;
+        2) KEEP="" ;;
+        *) echo "  已取消，没有改动任何数据。"; exit 0 ;;
+      esac
+    fi
     echo
-    # 2) 还原前后各有多少条（只读）
-    docker compose exec -T api node src/scripts/ams-restore.js --show "${N}" || exit 1
+    # 3) 还原前后各有多少条（只读）
+    docker compose exec -T api node src/scripts/ams-restore.js --show "${N}" ${KEEP} || exit 1
     echo
     read -r -p "  确认还原请输入 yes 后回车（输入别的都会取消）：" c || c=""
     [ "${c}" = yes ] || { echo "  已取消，没有改动任何数据。"; exit 0; }
-    # 3) 先备份（备份失败就不还原）
+    # 4) 先备份（备份失败就不还原）
     OUT="${MEDOPS_OUT_DIR:-/root}/medops-before-ams-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
     echo "  正在备份…"
     if ! bash "${SELF}" backup "${OUT}" > /dev/null 2>&1 || [ ! -s "${OUT}" ]; then
       echo "  ✗ 备份没有成功，为安全起见没有还原。"; exit 1
     fi
     echo "  ✓ 已备份：${OUT}"
-    # 4) 还原
-    docker compose exec -T api node src/scripts/ams-restore.js --to "${N}" --yes || { echo "  ✗ 还原没有完成，数据保持原样（备份在 ${OUT}）"; exit 1; }
+    # 5) 还原
+    docker compose exec -T api node src/scripts/ams-restore.js --to "${N}" --yes ${KEEP} || { echo "  ✗ 还原没有完成，数据保持原样（备份在 ${OUT}）"; exit 1; }
     echo
     echo "  想撤销这次还原：再执行一次 bash ${SELF} ams-restore，选最上面那条「服务器上的还原操作」。"
     ;;

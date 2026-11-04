@@ -93,49 +93,157 @@ function stateAt(byKey, t, inclusive) {
 
 const countIn = (state, key) => { const s = state.get(key); return !s ? 0 : s.unknown ? null : countOf(s.value); };
 
-/* 最像误操作的那次：最近的一次「一次改了 4 份以上」或「电脑台账明显变少」的改动（不是还原自己、之前确实有数据） */
+/* 最像误操作的那次：最近的一次「一次改了 4 份以上、而且条数变了」或「哪份数据一下少了不少」的改动
+   （不算还原操作自己、之前确实有数据）。只是整份重存一遍、条数一条没变的（页面刚升级后重存）不算 */
 function suspectIndex(evs) {
   for (let i = evs.length - 1; i >= 0; i--) {
     const e = evs[i];
     if (isRestore(e.dev)) continue;
-    const b = countIn(e.before, 'ams:assets'), a = countIn(e.after, 'ams:assets');
     const hadData = SUMMARY_KEYS.some(k => (countIn(e.before, k) || 0) > 0);
     if (!hadData) continue;
-    const bulk = e.keys.length >= 4;
-    const drop = b != null && a != null && b >= 3 && a < b * 0.9;
-    if (bulk || drop) return i;
+    const pairs = SUMMARY_KEYS.filter(k => e.keys.includes(k)).map(k => [countIn(e.before, k), countIn(e.after, k)]);
+    const changed = pairs.some(([b, a]) => b !== a);
+    const drop = pairs.some(([b, a]) => b != null && a != null && b - a >= Math.max(2, b * 0.05));
+    if ((e.keys.length >= 4 && changed) || drop) return i;
   }
   return -1;
 }
 
-/* 还原到第 idx 次改动（listEvents 的下标）之前：要写哪些 key、各是什么值 */
-function plan(idx, db = getDb()) {
+/* ---------- 「保留之后的改动」：三方合并 ----------
+   base = 那次改动刚做完时（被覆盖成的样子），ours = 那次之前（覆盖前），theirs = 现在。
+   覆盖之后有人改过的（现在 ≠ 覆盖后）用现在的；没人改过的退回覆盖前的。
+   数组里的记录（资产、流转、日志……都带 id）逐条比：
+     · 覆盖时丢掉、之后也没再出现的 → 找回
+     · 覆盖时被改成旧样子、之后没人动过的 → 改回覆盖前的
+     · 覆盖之后新加的 → 保留
+     · 覆盖之后改过的 → 改过的字段用现在的，其余字段用覆盖前的
+     · 覆盖时带进来（覆盖前没有）、之后没人动过的 → 去掉；之后有人改过的 → 保留
+     · 覆盖之后删掉的 → 照删 */
+function canon(v) { // 键排好序的 JSON，用来比「是不是一样」（同一条记录前后字段顺序可能不同）
+  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+  return JSON.stringify(v === undefined ? null : v);
+}
+const same = (a, b) => canon(a) === canon(b);
+const isObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
+const idList = a => Array.isArray(a) && a.every(x => isObj(x) && (typeof x.id === 'string' || typeof x.id === 'number'))
+  && new Set(a.map(x => String(x.id))).size === a.length;
+const primList = a => Array.isArray(a) && a.every(x => x == null || typeof x !== 'object');
+const newStats = () => ({ recovered: 0, keptNew: 0, keptChanged: 0, dropped: 0, deletedLater: 0, conflicts: 0 });
+
+function mergeById(base, ours, theirs, st) {
+  const B = new Map(base.map(x => [String(x.id), x])), O = new Map(ours.map(x => [String(x.id), x])), T = new Map(theirs.map(x => [String(x.id), x]));
+  const later = [], out = [];
+  for (const t of theirs) { // 覆盖前没有的：之后新加的、或覆盖带进来又被人改过的 → 留；带进来没人动的 → 去掉
+    const id = String(t.id);
+    if (O.has(id)) continue;
+    if (B.has(id) && same(t, B.get(id))) { st.dropped++; continue; }
+    later.push(t);
+    if (B.has(id)) st.keptChanged++; else st.keptNew++;
+  }
+  for (const o of ours) { // 按覆盖前的顺序
+    const id = String(o.id);
+    if (T.has(id)) {
+      const t = T.get(id);
+      if (!B.has(id)) { out.push(t); st.keptChanged++; continue; } // 覆盖时没了、之后又加回（同一条）
+      const b = B.get(id);
+      if (same(t, b)) { out.push(o); if (!same(o, b)) st.recovered++; } // 之后没人动 → 覆盖前的
+      else { out.push(merge3(b, o, t, st)); st.keptChanged++; }
+    } else if (B.has(id)) st.deletedLater++; // 覆盖之后删掉的：照删
+    else { out.push(o); st.recovered++; }     // 覆盖时丢掉的：找回
+  }
+  return [...later, ...out];
+}
+
+function merge3(base, ours, theirs, st) {
+  if (same(theirs, base)) return ours;
+  if (same(ours, base)) return theirs;
+  if (idList(base) && idList(ours) && idList(theirs)) return mergeById(base, ours, theirs, st);
+  if (primList(base) && primList(ours) && primList(theirs)) {
+    const T = new Set(theirs.map(canon)), B = new Set(base.map(canon));
+    const removed = new Set(base.map(canon).filter(x => !T.has(x)));
+    const out = ours.filter(x => !removed.has(canon(x)));
+    const seen = new Set(out.map(canon));
+    for (const x of theirs) { const c = canon(x); if (!B.has(c) && !seen.has(c)) { out.push(x); seen.add(c); } }
+    return out;
+  }
+  if (isObj(base) && isObj(ours) && isObj(theirs)) {
+    const out = {};
+    for (const k of new Set([...Object.keys(ours), ...Object.keys(theirs), ...Object.keys(base)])) {
+      const v = merge3(base[k], ours[k], theirs[k], st);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+  st.conflicts++;
+  return theirs; // 两边都改了同一处、又没法逐条比：以后来的为准
+}
+
+/* 三个原样 JSON 串（null = 这份数据不存在）合并，返回新的串 */
+function mergeValues(b, o, t) {
+  const st = newStats();
+  let B, O, T;
+  try {
+    B = b == null ? undefined : JSON.parse(b);
+    O = o == null ? undefined : JSON.parse(o);
+    T = t == null ? undefined : JSON.parse(t);
+  } catch { st.conflicts++; return { value: t, stats: st }; }
+  const m = merge3(B, O, T, st);
+  if (m === O) return { value: o, stats: st };
+  if (m === T) return { value: t, stats: st };
+  return { value: m === undefined ? null : JSON.stringify(m), stats: st };
+}
+
+/* 电脑台账里资产编号重复的（多半是覆盖后又录了一遍）：只报还原后新出现的 */
+function dupCodes(value) {
+  let a; try { a = JSON.parse(value); } catch { return []; }
+  if (!Array.isArray(a)) return [];
+  const n = new Map();
+  for (const x of a) { const c = x && String(x.code || '').trim(); if (c) n.set(c, (n.get(c) || 0) + 1); }
+  return [...n].filter(([, k]) => k > 1).map(([c]) => c);
+}
+
+/* 还原到第 idx 次改动（listEvents 的下标）之前：要写哪些 key、各是什么值。
+   keepLater：这次之后的改动保留（三方合并）；否则完全退回到那次之前 */
+function plan(idx, db = getDb(), { keepLater = false } = {}) {
   const evs = listEvents(db);
   const e = evs[idx];
   if (!e) return null;
   const cur = new Map(db.prepare('SELECT key, value, version FROM ams_kv').all().map(r => [r.key, r]));
-  const changes = [], unknown = [];
+  const later = evs.length - 1 - idx; // 这次之后还有几次改动
+  const changes = [], unknown = [], stats = {}, target = new Map();
   for (const [key, s] of e.before) {
-    if (s.unknown) { unknown.push(key); continue; }
     const now = cur.get(key);
     const nowVal = now ? now.value : null;
-    if (nowVal === s.value) continue;
-    changes.push({ key, value: s.value, baseVersion: now ? now.version : 0 });
+    if (s.unknown) { unknown.push(key); target.set(key, nowVal); continue; }
+    let val = s.value;
+    if (keepLater && later > 0) {
+      const a = e.after.get(key);
+      if (a && !a.unknown && a.value !== nowVal) { // 这份数据覆盖之后又被改过 → 合并
+        const r = mergeValues(a.value, s.value, nowVal);
+        val = r.value; stats[key] = r.stats;
+      }
+    }
+    target.set(key, val);
+    if (nowVal === val) continue;
+    changes.push({ key, value: val, baseVersion: now ? now.version : 0 });
   }
+  const tState = new Map([...target].map(([k, v]) => [k, { value: v }]));
   const nowState = new Map([...cur].map(([k, r]) => [k, { value: r.value }]));
-  const later = evs.length - 1 - idx; // 这次之后还有几次改动（也会一起撤销）
+  const before = (e.before.get('ams:assets') || {}).value;
   const files = db.prepare('SELECT id, deleted FROM ams_files WHERE updated_at >= ?').all(e.start);
   return {
-    event: e, changes, unknown, later,
-    summary: SUMMARY_KEYS.map(k => ({ key: k, label: labelOf(k), now: countIn(nowState, k), restored: countIn(e.before, k) })),
+    event: e, changes, unknown, later, keepLater: keepLater && later > 0, stats,
+    summary: SUMMARY_KEYS.map(k => ({ key: k, label: labelOf(k), now: countIn(nowState, k), restored: countIn(tState, k) })),
+    newDups: keepLater ? dupCodes(target.get('ams:assets')).filter(c => !dupCodes(before).includes(c)) : [],
     filesDeleted: files.filter(f => f.deleted).length,
     filesChanged: files.filter(f => !f.deleted).length
   };
 }
 
 /* 真正还原：走与客户端推送相同的写入路径（旧值进历史、版本 +1、游标前进），一个事务 */
-function apply(idx, db = getDb()) {
-  const p = plan(idx, db);
+function apply(idx, db = getDb(), opts = {}) {
+  const p = plan(idx, db, opts);
   if (!p) return null;
   if (!p.changes.length) return { ...p, written: 0 };
   const res = amsSvc.push({ id: null }, { deviceId: `${RESTORE_DEVICE}:${Date.now().toString(36)}`, changes: p.changes });
@@ -146,8 +254,8 @@ function apply(idx, db = getDb()) {
     throw e;
   }
   db.prepare(`INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (NULL, 'ams_restore', ?, 'manage.sh', ?)`)
-    .run(`before=${p.event.start} dev=${p.event.dev} keys=${p.changes.length}`, new Date().toISOString());
+    .run(`before=${p.event.start} dev=${p.event.dev} keys=${p.changes.length} keepLater=${p.keepLater ? 1 : 0}`, new Date().toISOString());
   return { ...p, written: p.changes.length };
 }
 
-module.exports = { listEvents, suspectIndex, plan, apply, labelOf, countOf, isRestore, RESTORE_DEVICE, SUMMARY_KEYS };
+module.exports = { listEvents, suspectIndex, plan, apply, labelOf, countOf, isRestore, mergeValues, RESTORE_DEVICE, SUMMARY_KEYS };
