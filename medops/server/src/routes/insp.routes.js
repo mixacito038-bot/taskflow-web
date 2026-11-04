@@ -50,13 +50,17 @@ module.exports = async function inspRoutes(app) {
   });
 
   /* ---------- 日巡检记录 ---------- */
+  /* limit=N：只要最近 N 条（按日期从新到旧，最多 1000）；active=1：只要启用中的科室。
+     手机端「记录」页只显示最近 150 条，以前要把 120 天里全院的记录（含每台设备的勾选）全拉下来再挑 */
   app.get('/api/records', { preHandler: [app.auth] }, async req => {
     const { deptId, from, to } = req.query;
+    const limit = /^\d+$/.test(String(req.query.limit || '')) ? Math.min(+req.query.limit, 1000) || null : null;
+    const active = req.query.active === '1';
     if (deptId) {
       app.assertDeptScope(req.user, +deptId);
-      return recSvc.listRecords({ deptId: +deptId, from, to });
+      return recSvc.listRecords({ deptId: +deptId, from, to, limit, active });
     }
-    return recSvc.listRecords({ deptIds: app.visibleDeptIds(req.user), from, to });
+    return recSvc.listRecords({ deptIds: app.visibleDeptIds(req.user), from, to, limit, active });
   });
 
   app.get('/api/records/:deptId/:date', { preHandler: [app.auth] }, async req => {

@@ -34,6 +34,15 @@ module.exports = async function statsRoutes(app) {
     return statsSvc.completion(scope(req.user), month, deptId);
   });
 
+  /* 各科室的月度状态（手机端首页一次取齐，不再逐科室查）。所有角色可用，范围按 visibleDeptIds */
+  app.get('/api/stats/month-states', { preHandler: [app.auth] }, async req => {
+    const months = [...new Set(String(req.query.months || P.moOf(P.today())).split(',').map(s => s.trim()).filter(Boolean))];
+    if (!months.length || months.length > 12 || !months.every(P.isMonth)) {
+      throw E.badInput('months 格式：YYYY-MM，多个用英文逗号分隔，最多 12 个');
+    }
+    return statsSvc.monthStates(scope(req.user), months);
+  });
+
   app.get('/api/stats/ng', { preHandler: guard }, async req => {
     const { from, to } = req.query;
     for (const v of [from, to]) if (v && !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw E.badInput('日期格式应为 YYYY-MM-DD');

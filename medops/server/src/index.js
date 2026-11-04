@@ -26,8 +26,15 @@ async function build() {
 
   await app.register(require('@fastify/helmet'), { contentSecurityPolicy: false });
   await app.register(require('./plugins/error'));
+  /* 全局限流按「设备 + IP」计：医院整栋楼共用一个出口 IP，按 IP 计的话，一台手机请求多了，
+     全院所有手机、电脑都一起被挡（2026-11 设备科手机首页曾因此显示「请求过于频繁」）。
+     没带设备号的请求仍按 IP 计。登录 / 改密码在路由上单独按 IP 限流，不受这里影响。 */
   await app.register(require('@fastify/rate-limit'), {
     global: true, max: cfg.rl.global, timeWindow: '1 minute',
+    keyGenerator: req => {
+      const dev = String(req.headers['x-device-id'] || '').slice(0, 64);
+      return dev ? `${dev}|${req.ip}` : req.ip;
+    },
     /* 必须带上 statusCode：@fastify/rate-limit 会把这个对象当作 error 抛给 setErrorHandler，
        不带 statusCode 的话 error 插件识别不出来，会当成未知异常返回 500——
        实测触发限流时客户端收到的是「服务器内部错误」而不是「请求过于频繁」。 */
@@ -36,6 +43,22 @@ async function build() {
       error: { code: 'RATE_LIMITED', message: '请求过于频繁', retryAfter: Math.ceil((ctx.ttl || 0) / 1000) }
     })
   });
+  /* 同一个出口 IP 的总量上限（每分钟 RL_IP 次，0 = 不限）：上面按设备计，脚本不停换设备号狂刷时靠这里兜住 */
+  if (cfg.rl.ip > 0) {
+    const hits = new Map(); let win = Date.now();
+    app.addHook('onRequest', async (req, reply) => {
+      if (!req.url.startsWith('/api/') || req.url.startsWith('/api/health')) return;
+      const now = Date.now();
+      if (now - win >= 60000) { hits.clear(); win = now; }
+      const n = (hits.get(req.ip) || 0) + 1;
+      hits.set(req.ip, n);
+      if (n > cfg.rl.ip) {
+        const s = Math.max(1, Math.ceil((win + 60000 - now) / 1000));
+        reply.header('retry-after', String(s));
+        throw app.E.rateLimited(s);
+      }
+    });
+  }
   await app.register(require('./plugins/auth'), { cfg });
 
   app.get('/api/health', { config: { rateLimit: false } }, async () => ({ ok: true }));

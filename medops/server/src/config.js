@@ -31,9 +31,12 @@ module.exports = {
      真正拦撞库的不是这里，而是 auth.service 里的两道账号级防护：
        · 同一账号连错 5 次 → 冻结 5/10/15… 分钟（递增）
        · 同一设备+IP 两分钟内失败 8 次 → 枚举冷却
-     这里只负责别让人拿脚本把 CPU 打满，所以可以放宽。 */
+     这里只负责别让人拿脚本把 CPU 打满，所以可以放宽。
+     global 按「设备 + IP」计（见 index.js），一台设备超限不会连累同一出口 IP 下的其他人；
+     ip 是整个出口 IP 的总量兜底。 */
   rl: {
-    global: +(process.env.RL_GLOBAL || 1200),   // 全院同时刷新首页也够
+    global: +(process.env.RL_GLOBAL || 1200),   // 每台设备（手机 / 电脑）每分钟的接口调用上限
+    ip: /^\d+$/.test(process.env.RL_IP || '') ? +process.env.RL_IP : 6000, // 同一个出口 IP（全院）每分钟的总上限；0 = 不限
     login: +(process.env.RL_LOGIN || 60),       // 交接班几十人同时登录不会被挡
     export: +(process.env.RL_EXPORT || 20)      // 导出很重，维持原值
   }

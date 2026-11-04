@@ -64,14 +64,18 @@ function getRecord(deptId, date) {
   return recordJson(row, db.prepare('SELECT * FROM record_items WHERE record_id = ?').all(row.id));
 }
 
-function listRecords({ deptIds, deptId, from, to }) {
+/* limit：只取最近 limit 条（此时按日期从新到旧返回）；active：只要启用中的科室 */
+function listRecords({ deptIds, deptId, from, to, limit, active }) {
   const db = getDb();
   const cond = []; const args = [];
   if (deptId != null) { cond.push('r.dept_id = ?'); args.push(+deptId); }
   else if (deptIds) { cond.push(`r.dept_id IN (${deptIds.map(() => '?').join(',') || 'NULL'})`); args.push(...deptIds); }
   if (from) { cond.push('r.date >= ?'); args.push(from); }
   if (to) { cond.push('r.date <= ?'); args.push(to); }
-  const rows = db.prepare(`${REC_SELECT} ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''} ORDER BY r.date, r.dept_id`).all(...args);
+  if (active) cond.push("r.dept_id IN (SELECT id FROM depts WHERE status = 'on')");
+  const order = limit ? 'ORDER BY r.date DESC, r.dept_id LIMIT ?' : 'ORDER BY r.date, r.dept_id';
+  if (limit) args.push(+limit);
+  const rows = db.prepare(`${REC_SELECT} ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''} ${order}`).all(...args);
   const items = loadItems(db, rows.map(r => r.id));
   return rows.map(r => recordJson(r, items.get(r.id) || []));
 }

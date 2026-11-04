@@ -2,6 +2,7 @@
 const { getDb } = require('../db/connection');
 const P = require('./period.service');
 const { SQL_ORDER } = require('./device-code');
+const recSvc = require('./record.service');
 
 /* 数据范围：deptIds=null 表示全院。
    month 给定时（按月的统计），全院范围除了启用中的科室，还要带上「该月有巡检记录」的停用科室——
@@ -207,4 +208,61 @@ function signatures(deptIds, month) {
   return out;
 }
 
-module.exports = { unsigned, completion, ngList, NG_SIGN_TEXT, devStatusText, signatures, scopedDepts, deptStart };
+/* GET /api/stats/month-states?months=YYYY-MM,YYYY-MM —— 各科室的月度状态，一次取齐。
+   手机端设备科首页要看全院每个科室本月、上月、上上月的状态。以前按科室逐个查（每科室每月 3 个请求）：
+   40 个科室打开一次首页就是 365 个请求，来回切两三次「看上月 / 看本月」就超过每分钟 1200 次的限流，
+   页面显示「请求过于频繁」（同一个出口 IP 的其他人也一起被挡）。
+   口径与手机端 monthState（h5/index.html）逐项一致：
+     weeks 归属该月的全部周；signedWeeks / miss / missDue / openWeeks 按周签；
+     checked / ng / dsign 统计月签覆盖范围 monthSpan（第一周周一～最后一周周日）内的记录；
+     dueDays = 覆盖范围起点到 min(终点, 今天) 的天数；ended = 覆盖范围最后一天已过；ms = 月签（契约 JSON）。
+   全院范围只返回启用中的科室（手机端本来就不显示停用科室）。 */
+function monthStates(deptIds, months) {
+  const db = getDb();
+  const t = P.today();
+  const depts = scopedDepts(deptIds);
+  if (!depts.length || !months.length) return [];
+  const ids = depts.map(d => d.id), inIds = `(${ids.map(() => '?').join(',')})`;
+  const per = months.map(m => ({ m, wks: P.wksOfMonth(m), sp: P.monthSpan(m) }));
+  const from = per.map(x => x.sp.from).sort()[0], to = per.map(x => x.sp.to).sort().pop();
+  const ws = new Set(db.prepare(`SELECT dept_id, week_start FROM week_signs
+      WHERE dept_id IN ${inIds} AND week_start >= ? AND week_start <= ?`).all(...ids, from, to)
+    .map(r => `${r.dept_id}|${r.week_start}`));
+  const days = new Map(); // dept_id → [{date, signed, checked, ng}]
+  for (const r of db.prepare(`SELECT r.dept_id, r.date, r.sign_at IS NOT NULL AS signed,
+        COUNT(ri.device_id) AS checked, COALESCE(SUM(ri.result = 'ng'), 0) AS ng
+      FROM records r LEFT JOIN record_items ri ON ri.record_id = r.id
+      WHERE r.dept_id IN ${inIds} AND r.date >= ? AND r.date <= ?
+      GROUP BY r.id`).all(...ids, from, to)) {
+    if (!days.has(r.dept_id)) days.set(r.dept_id, []);
+    days.get(r.dept_id).push(r);
+  }
+  const want = new Set(months);
+  const ms = new Map(recSvc.listMonthSigns({ deptIds: ids })
+    .filter(x => want.has(x.month)).map(x => [`${x.deptId}|${x.month}`, x]));
+  const out = [];
+  for (const { m, wks, sp } of per) {
+    const last = sp.to < t ? sp.to : t;
+    const dueDays = last < sp.from ? 0 : Math.round((P.D(last) - P.D(sp.from)) / 864e5) + 1;
+    const openWeeks = wks.filter(w => P.addDay(w, 6) > t);
+    for (const d of depts) {
+      const miss = wks.filter(w => !ws.has(`${d.id}|${w}`));
+      let checked = 0, ng = 0, dsign = 0;
+      for (const r of days.get(d.id) || []) {
+        if (r.date < sp.from || r.date > sp.to) continue;
+        checked += r.checked; ng += r.ng; if (r.signed) dsign++;
+      }
+      const msj = ms.get(`${d.id}|${m}`) || null;
+      out.push({
+        deptId: String(d.id), month: m, weeks: wks, signedWeeks: wks.length - miss.length,
+        miss, missDue: miss.filter(w => P.addDay(w, 6) <= t), openWeeks,
+        checked, ng, dsign, dueDays, span: sp, ms: msj,
+        started: m <= P.moOf(t), ended: sp.to < t,
+        ready: wks.length > 0 && miss.length === 0, locked: !!msj
+      });
+    }
+  }
+  return out;
+}
+
+module.exports = { unsigned, completion, ngList, NG_SIGN_TEXT, devStatusText, signatures, scopedDepts, deptStart, monthStates };

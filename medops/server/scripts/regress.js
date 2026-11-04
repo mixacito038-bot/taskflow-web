@@ -1030,6 +1030,53 @@ async function main() {
   }
   ok('「/」= 没有编码 / 序列号，可以重复（「无」「、」「－」等同）；其他编码、序列号判重（序列号不分大小写），重了说清楚被哪台占用；同一文件内重复报错；「/」设备按序列号或科室+品类+名称+型号+位置对应，重复导入不重复新增、能补编码；历史导入同规则；排序、体检');
 
+  step = '月度状态批量接口：与逐科室计算（手机端原来的算法）逐项一致';
+  {
+    /* 手机端 monthState 的算法原样搬过来：逐科室取周签、记录、月签再算 */
+    const h5State = async (tok, deptId, month) => {
+      const wks = P.wksOfMonth(month), sp = P.monthSpan(month);
+      const signs = okj(await api('GET', `/api/weeksigns?deptId=${deptId}`, { token: tok })).filter(x => wks.includes(x.week));
+      const miss = wks.filter(w => !signs.find(x => x.week === w));
+      const recs = okj(await api('GET', `/api/records?from=${sp.from}&to=${sp.to}&deptId=${deptId}`, { token: tok }));
+      let checked = 0, ng = 0, dsign = 0;
+      recs.forEach(r => { const v = Object.values(r.checks || {}); checked += v.length; ng += v.filter(x => x === 'ng').length; if (r.sign) dsign++; });
+      const t = today, last = sp.to < t ? sp.to : t;
+      const ms = okj(await api('GET', `/api/monthsigns?deptId=${deptId}&year=${month.slice(0, 4)}`, { token: tok })).find(x => x.month === month) || null;
+      return { deptId: String(deptId), month, weeks: wks, signedWeeks: signs.length, miss,
+        missDue: miss.filter(w => P.addDay(w, 6) <= t), openWeeks: wks.filter(w => P.addDay(w, 6) > t),
+        checked, ng, dsign, dueDays: last < sp.from ? 0 : Math.round((P.D(last) - P.D(sp.from)) / 864e5) + 1,
+        span: sp, ms, started: month <= P.moOf(t), ended: sp.to < t, ready: wks.length > 0 && miss.length === 0, locked: !!ms };
+    };
+    const months = []; for (let m = P.moOf(today), i = 0; i < 6; i++, m = P.prevMonth(m)) months.push(m);
+    const all = okj(await api('GET', `/api/stats/month-states?months=${months.join(',')}`, { token: Q }));
+    const depts = okj(await api('GET', '/api/depts', { token: Q })).filter(d => d.status === 'on');
+    assert.equal(all.length, depts.length * months.length, '每个启用中的科室 × 每个月各一条');
+    let n = 0, busy = 0;
+    for (const d of depts) for (const m of months) {
+      const got = all.find(x => x.deptId === d.id && x.month === m);
+      assert.deepEqual(got, await h5State(Q, d.id, m), `${d.name} ${m}`);
+      n++; if (got.checked || got.signedWeeks || got.locked) busy++;
+    }
+    assert.ok(busy >= 3, '用来比对的数据里要有巡检、周签、月签：' + busy);
+    // 范围：护士长只看到本科室；巡检员只看到负责的科室
+    const mine = okj(await api('GET', `/api/stats/month-states?months=${months[1]}`, { token: N }));
+    assert.deepEqual(mine.map(x => x.deptId), [String(dept.id)], '护士长只返回本科室');
+    assert.deepEqual(mine[0], await h5State(N, dept.id, months[1]), '护士长看到的和逐科室算的一样');
+    errj(await api('GET', '/api/stats/month-states?months=2026-13', { token: Q }), 400, 'BAD_INPUT', '非法月份');
+    const m13 = []; for (let m = P.moOf(today), i = 0; i < 13; i++, m = P.prevMonth(m)) m13.push(m);
+    errj(await api('GET', `/api/stats/month-states?months=${m13.join(',')}`, { token: Q }), 400, 'BAD_INPUT', '一次最多 12 个月');
+    assert.equal(okj(await api('GET', `/api/stats/month-states?months=${m13.slice(1).join(',')}`, { token: Q })).length, depts.length * 12, '12 个月可以');
+    // 记录列表只取最近 N 条、只要启用中的科室（手机端「记录」页）
+    const from = P.addDay(today, -120);
+    const full = okj(await api('GET', `/api/records?from=${from}&to=${today}`, { token: Q }));
+    const on = new Set(depts.map(d => d.id));
+    const want = full.filter(r => on.has(r.deptId)).sort((a, b) => b.date.localeCompare(a.date) || a.deptId - b.deptId).slice(0, 7);
+    const lim = okj(await api('GET', `/api/records?from=${from}&to=${today}&limit=7&active=1`, { token: Q }));
+    assert.deepEqual(lim.map(r => r.deptId + '|' + r.date), want.map(r => r.deptId + '|' + r.date), '最近 7 条、新的在前');
+    assert.ok(full.length > 7, '比对的记录要多于 7 条');
+    ok(`${depts.length} 个科室 × ${months.length} 个月（${busy} 项有巡检 / 签字）：批量接口与逐科室计算逐项一致；范围按角色收窄；记录可只取最近 N 条`);
+  }
+
   step = '资产盘点：另一台电脑误选「使用本机数据」整份覆盖 → 服务器命令还原';
   {
     const amsPush = (dev, kv) => api('POST', '/api/ams/push', { token: A, body: { deviceId: dev, changes: kv } });

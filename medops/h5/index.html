@@ -187,6 +187,29 @@ select.in{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   background:rgba(21,34,32,.94);color:#fff;padding:11px 20px;border-radius:99px;font-size:14px;
   font-weight:500;max-width:88vw;text-align:center;animation:fade .18s;box-shadow:0 8px 24px -8px #0006}
 
+/* ===== 加载进度（所有页面同一套）：顶部进度条 + 稍慢时中间「正在加载」 ===== */
+#ldbar{position:fixed;left:0;right:0;top:var(--sat);height:3px;z-index:95;pointer-events:none;opacity:0;transition:opacity .25s}
+#ldbar.on{opacity:1}
+#ldbar i{display:block;height:100%;background:var(--brand-s);border-radius:0 99px 99px 0;
+  transform-origin:0 50%;transform:scaleX(0);transition:transform .35s cubic-bezier(.4,0,.2,1);
+  box-shadow:0 0 8px rgba(21,122,110,.45)}
+/* 挡住内容区（防止着急连点又发一遍请求）；标题栏（返回键）和底部导航在它上面，随时能换页 */
+#ldveil{position:fixed;inset:0;z-index:25;display:flex;align-items:center;justify-content:center;
+  padding:0 16px calc(64px + var(--sab));background:rgba(241,245,244,.6);animation:fade .2s}
+.ldbox{display:flex;align-items:center;gap:11px;padding:12px 20px;border-radius:99px;background:#fff;
+  box-shadow:0 10px 28px -14px rgba(15,85,77,.5),inset 0 0 0 1px var(--line);
+  font-size:14px;font-weight:500;color:var(--ink2);max-width:100%}
+.spin{width:20px;height:20px;flex-shrink:0;border-radius:50%;
+  border:2.5px solid var(--brand-l);border-top-color:var(--brand);animation:spin .75s linear infinite}
+.spin.lg{width:34px;height:34px;border-width:3px}
+.btn .spin{width:16px;height:16px;border-width:2px}
+.btn.pri .spin{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+.boot{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  padding:0 26px 12vh;color:var(--muted);font-size:14px;text-align:center}
+.boot svg{width:44px;height:44px;stroke-width:1.4;opacity:.5}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}#ldbar i{transition:none}}
+
 /* ===== 登录 ===== */
 .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:32px 26px calc(40px + var(--sab))}
 .logo{width:56px;height:56px;border-radius:18px;background:var(--brand);display:grid;place-items:center;
@@ -376,7 +399,7 @@ select.in{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app"><div class="boot" role="status"><div class="spin lg"></div><div>正在加载…</div></div></div>
 <script>
 const LOGO='data:image/png;base64,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';
 /* =========================================================================
@@ -506,19 +529,33 @@ function onAuthLost(){
   DB.del('session');
   if(S.me){S.me=null;LOGIN.mode='list';render();toast('登录已过期，请重新登录',2400)}
 }
-/* 统一请求：Bearer + X-Device-Id + cookie；401 → refresh 轮换后重试一次 */
+/* 统一请求：Bearer + X-Device-Id + cookie；401 → refresh 轮换后重试一次。
+   · 查询 20 秒没有回应算超时（网络卡住时页面不会一直转圈）；写操作不设超时（服务器可能已经收到了）；
+   · 服务器忙（429 限流）：查询、保存勾选（整份覆盖，重发没有副作用）按服务器给的秒数等一等自动重发，
+     最多两次，等的时候显示倒计时；签字、登录等提交不自动重发。 */
+const REQ_TIMEOUT=20000;
 async function req(path,opt={},retried){
   const s=session(),headers={'X-Device-Id':devid()};
+  const method=opt.method||'GET';
   if(opt.body!==undefined)headers['Content-Type']='application/json';
   if(s&&s.accessToken&&opt.auth!==false)headers.Authorization='Bearer '+s.accessToken;
+  const ac=method==='GET'&&typeof AbortController==='function'?new AbortController():null;
+  const tm=ac&&setTimeout(()=>ac.abort(),REQ_TIMEOUT);
   let res;
   try{
-    res=await fetch(API_BASE+path,{method:opt.method||'GET',headers,credentials:'include',
+    res=await fetch(API_BASE+path,{method,headers,credentials:'include',signal:ac?ac.signal:undefined,
       body:opt.body!==undefined?JSON.stringify(opt.body):undefined});
-  }catch(x){const e=new Error('网络异常，请稍后再试');e.code='NETWORK';throw e}
+  }catch(x){
+    const late=!!(ac&&ac.signal.aborted);
+    const e=new Error(late?'网络太慢，加载超时':'网络异常，请稍后再试');e.code=late?'TIMEOUT':'NETWORK';throw e;
+  }finally{clearTimeout(tm)}
   let data=null;try{data=await res.json()}catch(x){}
   if(res.ok)return data;
   const er=(data&&data.error)||{code:'ERR',message:'请求失败（'+res.status+'）'};
+  if(res.status===429&&er.code!=='PROBE_COOLDOWN'&&opt.auth!==false&&(method==='GET'||method==='PUT')&&(opt.rl||0)<2){
+    await rlWait(Math.min(Math.max(Math.ceil(+er.retryAfter)||3,1),30));
+    return req(path,{...opt,rl:(opt.rl||0)+1},retried);
+  }
   if(er.code==='MUST_CHANGE_PASSWORD'&&S.me){S.me.mustChange=true;setTimeout(render,0)}
   if(er.code==='KICKED'&&opt.auth!==false)onKicked();
   else if(res.status===401&&opt.auth!==false&&!retried){
@@ -583,9 +620,11 @@ const API={
     try{return await req('/auth/login-state?username='+encodeURIComponent(un),{auth:false})}
     catch(e){return {frozen:false,disabled:false,unknown:true}}
   },
-  async me(){
+  /* strict：网络异常 / 服务器忙时抛出（打开页面时据此显示「重试」，而不是把人退回登录页） */
+  async me(strict){
     if(!session())return null;
-    try{return await req('/auth/me')}catch(e){return null}
+    try{return await req('/auth/me')}
+    catch(e){if(strict&&(e.code==='NETWORK'||e.code==='TIMEOUT'||e.status===429||e.status>=500))throw e;return null}
   },
   async takeKicked(){const k=KICKED;KICKED=null;return k},
   /* 退出：勾了「记住此账号」的，保留它的 refreshToken 给下次一键登录用，不去吊销；
@@ -650,8 +689,8 @@ const API={
     const l=await req('/records?from='+date+'&to='+date+'&deptId='+encodeURIComponent(deptId));
     return l[0]||null;
   },
-  async recordsRange(from,to,deptId){
-    return req('/records?from='+from+'&to='+to+(deptId?'&deptId='+encodeURIComponent(deptId):''));
+  async recordsRange(from,to,deptId,extra){
+    return req('/records?from='+from+'&to='+to+(deptId?'&deptId='+encodeURIComponent(deptId):'')+(extra||''));
   },
   async saveChecks(deptId,date,checks,notes){
     return req('/records/'+encodeURIComponent(deptId)+'/'+date,{method:'PUT',body:{checks,notes}});
@@ -675,6 +714,15 @@ const API={
     return l.find(x=>x.month===month)||null;
   },
   async monthSigns(){return req('/monthsigns')},
+  /* 各科室的月度状态一次取齐（设备科首页、提醒用），返回 Map「科室id|月份」→ 状态（字段同 monthState）。
+     以前逐科室查：每科室每月 3 个请求，40 个科室打开一次首页 365 个请求，来回切几次就被服务器限流 */
+  async monthStates(months){
+    const m=new Map();
+    for(const x of await req('/stats/month-states?months='+months.join(','))) m.set(x.deptId+'|'+x.month,x);
+    return m;
+  },
+  /* 某周以来所有可见科室的周签（巡检员提醒一次取齐，不再逐科室查） */
+  async weekSignsSince(from){return req('/weeksigns?from='+from)},
   async signMonth(deptId,month,sign){
     return req('/monthsigns/'+encodeURIComponent(deptId)+'/'+month+'/sign',{method:'POST',body:sign});
   }
@@ -754,14 +802,14 @@ async function pending(me){
     /* 提醒「还没日签的日子」：所在周还没周签（所属月也没月签）的都算，最多往前看 12 周，
        不早于科室起算日；没有在用设备的科室不提醒。
        旧版只看最近 7 天：更早漏掉的日子既不提醒、也没有入口补签，所在周就永远周签不了 */
-    const depts=await API.depts(me);
     const from=wkOf(addDay(t,-7*12)), to=addDay(t,-1);
-    const recs=await API.recordsRange(from,to);
-    const msAll=await API.monthSigns();
+    /* 一次取齐、并行发出（以前逐科室查周签：科室多时首页一打开就是几十个请求，一个接一个地等） */
+    const [depts,recs,msAll,wsAll]=await Promise.all([API.depts(me),API.recordsRange(from,to),API.monthSigns(),API.weekSignsSince(from)]);
+    await Promise.all(depts.map(dp=>API.devCount(dp.id)));   // 各科室设备清单并行取（3 分钟缓存，下面直接用）
     const out=[];
     for(const dp of depts){
       if(!(await API.devCount(dp.id))) continue;
-      const wsSet=new Set((await API.weekSigns(dp.id)).map(w=>w.week));
+      const wsSet=new Set(wsAll.filter(w=>w.deptId===dp.id).map(w=>w.week));
       const msSet=new Set(msAll.filter(m=>m.deptId===dp.id).map(m=>m.month));
       const start=dp.startDate&&dp.startDate>from?dp.startDate:from;
       for(let d=to;d>=start;d=addDay(d,-1)){
@@ -797,12 +845,12 @@ async function pending(me){
       why:'已经过完、还没周签的周。日签没齐的，要等巡检员补签后才能周签'};
   }
   /* 设备科：只回溯 2 个月，且该月须有巡检数据；最后一周过完才算「该签了」 */
-  const depts=await API.depts(me);const out=[];
-  let m=moOf(t);
-  for(let i=1;i<=2;i++){
-    m=prevMonth(m);
+  const months=[prevMonth(moOf(t))];months.push(prevMonth(months[0]));
+  const [depts,sts]=await Promise.all([API.depts(me),API.monthStates(months)]);
+  const out=[];
+  for(const m of months){
     for(const dp of depts){
-      const st=await monthState(dp.id,m);
+      const st=sts.get(dp.id+'|'+m)||await monthState(dp.id,m);
       if(!st.ended||st.locked||!st.checked) continue;   // 无数据不提醒
       out.push({type:'month',month:m,deptId:dp.id,deptName:dp.name,
         label:`${moLab(m)} · ${dp.name}`, ready:st.ready, miss:st.missDue.length});
@@ -828,6 +876,65 @@ function sheet(h){closeSheet();const m=document.createElement('div');m.className
   m.addEventListener('click',e=>{if(e.target===m)closeSheet()});
   document.body.appendChild(m);return m}
 function closeSheet(){const m=$('.mask');if(m)m.remove()}
+
+/* ---------- 加载进度（所有页面同一套）----------
+   · 顶部细进度条：开始加载 0.12 秒后出现（很快就好的不闪），慢慢走到 90%，加载完走满再淡出；
+   · 0.45 秒还没好：中间显示「正在加载…」并挡住内容区，防止着急连点、又发一遍请求；
+     标题栏（返回键）和底部导航不挡，随时可以换页；
+   · 8 秒还没好：改成「网络较慢，还在加载…」；服务器忙时显示倒计时，到点自动重试。
+   几次加载重叠时只认最后开始的那次：换了页，前一页的加载结束不会把新一页的进度关掉。 */
+const LD={seq:0,owner:0,pct:0,tk:null,t1:null,t2:null,t3:null,fade:null};
+function ldEl(id,html){let e=document.getElementById(id);
+  if(!e){e=document.createElement('div');e.id=id;e.innerHTML=html;document.body.appendChild(e)}return e}
+function ldBar(p){const e=ldEl('ldbar','<i></i>');LD.pct=p;e.firstChild.style.transform='scaleX('+p+')';e.classList.add('on')}
+function ldVeil(msg){
+  const e=ldEl('ldveil','<div class="ldbox" role="status" aria-live="polite"><div class="spin"></div><span></span></div>');
+  e.querySelector('span').textContent=msg;
+}
+function ldStart(){
+  const tok=++LD.seq,first=!LD.owner;LD.owner=tok;
+  if(first){
+    clearTimeout(LD.fade);
+    const b=document.getElementById('ldbar');
+    if(b){const i=b.firstChild;b.classList.remove('on');i.style.transition='none';i.style.transform='scaleX(0)';void i.offsetWidth;i.style.transition='';LD.pct=0}
+    LD.t1=setTimeout(()=>{ldBar(.08);LD.tk=setInterval(()=>{if(LD.pct<.9)ldBar(LD.pct+(.9-LD.pct)*.12)},280)},120);
+    LD.t2=setTimeout(()=>{if(!document.getElementById('ldveil')&&!document.querySelector('#app>.boot'))ldVeil('正在加载…')},450);
+    LD.t3=setTimeout(()=>{const v=document.getElementById('ldveil');
+      if(v&&v.textContent==='正在加载…')ldVeil('网络较慢，还在加载…')},8000);
+  }
+  return tok;
+}
+function ldEnd(tok){
+  if(tok!==LD.owner) return;
+  LD.owner=0;clearTimeout(LD.t1);clearTimeout(LD.t2);clearTimeout(LD.t3);clearInterval(LD.tk);
+  const v=document.getElementById('ldveil');if(v)v.remove();
+  const b=document.getElementById('ldbar');
+  if(b&&b.classList.contains('on')){
+    ldBar(1);
+    LD.fade=setTimeout(()=>{b.classList.remove('on');LD.fade=setTimeout(()=>{if(!LD.owner)b.firstChild.style.transform='scaleX(0)'},260)},220);
+  }
+}
+/* 等一个 Promise 的同时显示进度（保存、换页前等保存完成等） */
+async function withLoad(p){const t=ldStart();try{return await p}finally{ldEnd(t)}}
+/* 先取数据再弹出明细的按钮（异常明细、签字明细等）：同样显示进度；失败说清原因，不再点了没反应 */
+async function busy(fn){const t=ldStart();try{return await fn()}catch(e){toast('加载失败：'+errText(e),2800)}finally{ldEnd(t)}}
+/* 服务器忙：倒计时后自动重试。正在加载就写在「正在加载」那里，否则用提示条 */
+async function rlWait(sec){
+  for(let i=sec;i>0;i--){
+    const m=`服务器忙，${i} 秒后自动重试…`;
+    if(LD.owner)ldVeil(m);else toast(m,1500);
+    await new Promise(r=>setTimeout(r,1000));
+  }
+  const v=document.getElementById('ldveil');if(v)ldVeil('正在加载…');
+}
+/* 出错时给人看的话 */
+function errText(e){
+  if(e&&e.status===429&&e.code!=='PROBE_COOLDOWN') return `服务器忙，请${e.retryAfter?` ${e.retryAfter} 秒后`:'稍后'}再试`;
+  return (e&&e.message)||'请稍后再试';
+}
+/* 按钮进入「处理中」：转圈 + 文字，不能再点 */
+function btnBusy(b,t){if(b){b.disabled=true;b.dataset.txt=b.innerHTML;b.innerHTML='<span class="spin"></span>'+t}}
+function btnIdle(b){if(b&&b.isConnected){b.disabled=false;if(b.dataset.txt!=null)b.innerHTML=b.dataset.txt}}
 
 /* x（可选）：{icon:'home', tone:'lite'} —— 一级页（无返回键）标题左侧的图标徽章 */
 function header(t,sub,back,act,x){
@@ -973,23 +1080,31 @@ window.forget=async u=>{
   if(!(await API.savedAccounts()).length) LOGIN.mode='form';
   render();toast('已移除该账号');
 };
+/* 登录进行中：网络慢时多点几下，会连发几次登录请求（输错密码时还会多记几次错误） */
+let LOGGING=false;
 /* 一键登录：refreshToken 换新对；失效则转密码输入 */
 window.quickLogin=async u=>{
+  if(LOGGING) return;
   const a=(await API.savedAccounts()).find(x=>x.username===u);
   if(!a||!a.refreshToken){LOGIN.mode='form';LOGIN.user=u;render();return toast('请输入密码')}
+  LOGGING=true;const t=ldStart();
   try{
     S.me=await API.loginByToken(a.refreshToken);
     await afterLogin();
   }catch(e){
     if(e.code==='KICKED'){LOGIN.kick=u;render();return toast('您的账户已被禁用，请联系设备科',2600)}
-    if(e.code==='NETWORK') return toast('网络异常，请检查网络后再试',2400);   // 网络问题不是「登录过期」，别让人去输密码
+    if(e.code==='NETWORK'||e.code==='TIMEOUT') return toast('网络异常，请检查网络后再试',2400);   // 网络问题不是「登录过期」，别让人去输密码
+    if(e.status===429) return toast(errText(e),2600);                                              // 服务器忙也不是
     LOGIN.mode='form';LOGIN.user=u;render();toast('登录已过期，请重新输入密码',2400);
-  }
+  }finally{LOGGING=false;ldEnd(t)}
 };
 window.doLogin=async()=>{
+  if(LOGGING) return;
   const u=$('#lu').value,p=$('#lp').value;
   LOGIN.user=u;
-  await tryLogin(u,p,$('#lr')&&$('#lr').checked);
+  const b=$('#lbtn');LOGGING=true;btnBusy(b,'登录中…');
+  try{await tryLogin(u,p,$('#lr')&&$('#lr').checked)}
+  finally{LOGGING=false;btnIdle(b)}
 };
 async function afterLogin(){
   LOGIN.mode='list';LOGIN.show=false;LOGIN.kick='';stopTick();
@@ -1006,7 +1121,7 @@ async function tryLogin(u,p,remember){
     if(remember) await API.saveAccount(S.me);
     await afterLogin();
   }catch(e){
-    toast(e.message,2600);
+    toast(errText(e),2600);
     if(LOGIN.mode==='list'){LOGIN.mode='form';render()}
     /* 冻结 / 冷却等状态按「当前输入框里的账号」刷新提示与按钮 */
     setTimeout(()=>refreshLock(LOGIN.user),60);
@@ -1058,9 +1173,7 @@ function stopTick(){if(LOGIN.tick){clearInterval(LOGIN.tick);LOGIN.tick=null}}
    首页 · 巡检员（每日任务）
    ========================================================================= */
 async function viewInspector(){
-  const p=await pending(S.me);
-  const depts=await API.depts(S.me);
-  const recs=await API.recordsRange(S.date,S.date);
+  const [p,depts,recs,expList]=await Promise.all([pending(S.me),API.depts(S.me),API.recordsRange(S.date,S.date),API.expiry()]);
   if(!depts.length) return header('今日任务',dLab(S.date),null,null,{icon:'home'})+
     `<main class="pad-tab"><div class="empty">${svg('box')}
       <div>还没有为你配置负责的科室<br><span style="font-size:12.5px">请联系设备科在后台配置</span></div></div></main>`+tabbar();
@@ -1107,7 +1220,6 @@ async function viewInspector(){
     <div class="hfoot"><span>负责 <b>${depts.length}</b> 个科室</span>
       <span>待巡检 <b>${tAll-tDone}</b> 台</span></div>
     ${note}${btn}</div>`;
-  const expList=await API.expiry();
   return header('今日任务',`${dLab(S.date)} · 负责 ${depts.length} 个科室`,null,null,{icon:'home'})+`<main class="pad-tab">
     ${alertBar(p)}
     ${expiryCard(expList)}
@@ -1121,24 +1233,22 @@ async function viewInspector(){
    首页 · 科室（周确认）
    ========================================================================= */
 async function viewDeptHome(){
-  const p=await pending(S.me);
-  const d=await API.dept(S.me.deptId);
   const cur=wkOf(today());
   const weeks=[];let w=cur;
   for(let i=0;i<8;i++){weeks.push(w);w=addDay(w,-7)}
+  const moSp=monthSpan(signMonthOf(today()));
+  const [p,d,wst,moRecs,expList]=await Promise.all([pending(S.me),API.dept(S.me.deptId),weekStates(S.me.deptId,weeks),
+    API.recordsRange(moSp.from,moSp.to,S.me.deptId),API.expiry()]);
 
   /* 先算各周状态，供主卡与列表共用。科室起算日之后的周即使一条记录都没有也要列出来
      （它照样挡着月签）；起算日之前的、且没有数据的不列 */
   const sts=[];
-  for(const st of await weekStates(S.me.deptId,weeks)){
+  for(const st of wst){
     if(!st.checked&&st.week!==cur&&!(d.startDate&&addDay(st.week,6)>=d.startDate)) continue;
     sts.push(st); if(sts.length>=6) break;
   }
   const now=sts.find(x=>x.week===cur)||sts[0]||{days:[],signed:[],miss:[],missDue:[],future:[],checked:0,ng:0,locked:false,ready:false};
   const canSign=sts.filter(x=>!x.locked&&x.ready);
-  const mo=moOf(today());
-  const moSp=monthSpan(signMonthOf(today()));
-  const moRecs=await API.recordsRange(moSp.from,moSp.to,S.me.deptId);
   let moCk=0,moNg=0;moRecs.forEach(r=>{const v=Object.values(r.checks||{});moCk+=v.length;moNg+=v.filter(x=>x==='ng').length});
 
   /* 状态主卡：直接回答「现在该做什么」 */
@@ -1189,7 +1299,6 @@ async function viewDeptHome(){
     </button>`;
   }).join('');
 
-  const expList=await API.expiry();
   return header('周确认',d.name,null,null,{icon:'cal'})+`<main class="pad-tab">
     ${alertBar(p,true)}
     ${expiryCard(expList)}
@@ -1208,12 +1317,12 @@ async function viewDeptHome(){
    首页 · 设备科（月确认）
    ========================================================================= */
 async function viewEquipHome(){
-  const p=await pending(S.me);
-  const depts=await API.depts(S.me);
   const m=S.month;
+  /* 全院各科室的月度状态一次取齐（以前每个科室 3 个请求，一个接一个地等） */
+  const [p,depts,sts,expList]=await Promise.all([pending(S.me),API.depts(S.me),API.monthStates([m]),API.expiry()]);
   const cards=[];let tCk=0,tNg=0,tOk=0,tReady=0,firstReady='';
   for(const d of depts){
-    const st=await monthState(d.id,m);
+    const st=sts.get(d.id+'|'+m)||await monthState(d.id,m);
     tCk+=st.checked;tNg+=st.ng;if(st.locked)tOk++;
     if(!st.locked&&st.ready){tReady++;if(!firstReady)firstReady=d.id}
     const badge=st.locked?`<span class="pill p-ok">${svg('ok')} 已月签</span>`
@@ -1250,7 +1359,6 @@ async function viewEquipHome(){
     <div class="hfoot"><span>巡检 <b>${tCk}</b> 台次</span>
       <span>异常 <b>${tNg}</b> 台次</span></div>
     ${note}${btn}</div>`;
-  const expList=await API.expiry();
   return header('月确认',`${moLab(m)} · 全院 ${depts.length} 个科室`,null,
     `<button class="btn gho" style="padding:7px 11px;font-size:13px" onclick="switchMonth('${isCur?prev:moOf(today())}')">${isCur?'看上月':'看本月'}</button>`,{icon:'chart'})+
   `<main class="pad-tab">
@@ -1267,12 +1375,13 @@ window.switchMonth=m=>{S.month=m;render()};
    科室 → 品类 → 设备（巡检员）
    ========================================================================= */
 async function viewDept(){
+  const live=liveGuard();
   await flushSaves();   // 先等排队中的保存落库，否则下面从服务端取到的是旧记录
-  const d=await API.dept(S.deptId);
-  const cats=await API.cats(S.deptId);
-  const rec=await API.record(S.deptId,S.date);
+  const [d,cats,rec]=await Promise.all([API.dept(S.deptId),API.cats(S.deptId),API.record(S.deptId,S.date)]);
+  const lk=await lockOf(S.deptId,S.date,rec);
+  live();   // 已经点去别的页面了：不能拿这个科室 / 这一天的记录去覆盖当前的勾选状态
   S.checks=rec?{...rec.checks}:{};S.notes=rec?{...rec.notes}:{};setSaved(rec);
-  S.lock=await lockOf(S.deptId,S.date,rec);
+  S.lock=lk;
   const total=cats.reduce((a,c)=>a+c.devices.length,0);
   const done=cats.reduce((a,c)=>a+c.devices.filter(x=>S.checks[x.id]).length,0);
   const ng=cats.reduce((a,c)=>a+c.devices.filter(x=>S.checks[x.id]==='ng').length,0),rest=total-done;
@@ -1325,11 +1434,12 @@ window.pickDate=async v=>{
 };
 
 async function viewCat(){
+  const live=liveGuard();
   await flushSaves();
-  const d=await API.dept(S.deptId);
-  const devs=await API.devices(S.deptId,S.catName);
-  const rec=await API.record(S.deptId,S.date);
-  S.lock=await lockOf(S.deptId,S.date,rec);
+  const [d,devs,rec]=await Promise.all([API.dept(S.deptId),API.devices(S.deptId,S.catName),API.record(S.deptId,S.date)]);
+  const lk=await lockOf(S.deptId,S.date,rec);
+  live();
+  S.lock=lk;
   const signed=!!S.lock;
   const done=devs.filter(x=>S.checks[x.id]).length;
   const rows=devs.map(dv=>{const st=S.checks[dv.id];
@@ -1419,7 +1529,7 @@ window.catAllOk=async()=>{
   if(S.lock) return toast(S.lock.msg,3000);
   const devs=await API.devices(S.deptId,S.catName);let n=0;
   devs.forEach(d=>{if(!S.checks[d.id]){S.checks[d.id]='ok';n++}});
-  const ok=await persist();await render();if(!ok)return;
+  const ok=await withLoad(persist());await render();if(!ok)return;
   /* 提示里的 n 只是「这次新标的」台数；同时给出本类总数和异常数，和页面上的计数对得上 */
   const ng=devs.filter(d=>S.checks[d.id]==='ng').length;
   toast(n?`本类剩余 ${n} 台已标为正常（本类共 ${devs.length} 台${ng?`，异常 ${ng} 台`:''}）`
@@ -1429,13 +1539,13 @@ window.markAllOk=async()=>{
   const cats=await API.cats(S.deptId);let n=0,total=0,ng=0;
   cats.forEach(c=>c.devices.forEach(d=>{total++;if(!S.checks[d.id]){S.checks[d.id]='ok';n++}}));
   cats.forEach(c=>c.devices.forEach(d=>{if(S.checks[d.id]==='ng')ng++}));
-  const ok=await persist();await render();if(!ok)return;
+  const ok=await withLoad(persist());await render();if(!ok)return;
   /* 旧提示「已勾选 2 台，异常项请单独标记」：2 是这次新标的台数，页面列表显示的却是累计
      9/9、1/1……两个口径对不上；且已经标了异常还提醒"请单独标记"。改为说清是「剩余」几台，
      并给出全科总数与异常数，和列表一致 */
   toast(n?`剩余 ${n} 台已标为正常，全科 ${total} 台已巡检完${ng?`（异常 ${ng} 台）`:''}`
     :`全科 ${total} 台都已勾选，无需再标`,2600)};
-window.saveBack=async()=>{await flushSaves();openDept(S.deptId)};
+window.saveBack=async()=>{const t=ldStart();await flushSaves();openDept(S.deptId);ldEnd(t)};
 async function patchDev(id){
   const el=document.getElementById('dev_'+id);if(!el)return;
   const st=S.checks[id];el.className='dev '+(st==='ok'?'ok':st==='ng'?'ng':'');
@@ -1466,9 +1576,8 @@ async function ngList(deptId,from,to){
   });
   return out;
 }
-window.showNg=async(deptId,from,to,title)=>{
-  const list=await ngList(deptId,from,to);
-  const d=await API.dept(deptId);
+window.showNg=(deptId,from,to,title)=>busy(async()=>{
+  const [list,d]=await Promise.all([ngList(deptId,from,to),API.dept(deptId)]);
   const body=list.length?list.map(x=>`<div class="dtl"><div class="dot"></div><div class="grow">
       <div class="h"><span class="mono">${H(x.code)}</span> · ${H(x.name||x.cat)}</div>
       <div class="m">${H(x.note)}</div>
@@ -1479,9 +1588,9 @@ window.showNg=async(deptId,from,to,title)=>{
     <div class="d">${H(d.name)} · ${H(title)}</div>
     <div class="card" style="box-shadow:inset 0 0 0 1px var(--line);max-height:56vh;overflow-y:auto">${body}</div>
     <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">关闭</button>`);
-};
+});
 /* 查看该周期内所有签字（含别人签的） */
-window.showSigns=async(deptId,kind,key)=>{
+window.showSigns=(deptId,kind,key)=>busy(async()=>{
   const d=await API.dept(deptId);let rows=[],title='';
   if(kind==='week'){
     title=wkLab(key);
@@ -1509,7 +1618,7 @@ window.showSigns=async(deptId,kind,key)=>{
   sheet(`<h3>签字明细</h3><div class="d">${H(d.name)} · ${H(title)}</div>
     <div class="card" style="box-shadow:inset 0 0 0 1px var(--line);max-height:58vh;overflow-y:auto">${body}</div>
     <button class="btn blk" style="margin-top:14px" onclick="closeSheet()">关闭</button>`);
-};
+});
 
 /* =========================================================================
    周详情（科室）
@@ -1623,6 +1732,7 @@ window.chooseSigner=i=>{const m=SIGN_MEMBERS[i];SIGNER={id:m.id,name:m.name,titl
   b.classList.remove('ph');
   b.innerHTML=`<span class="grow">${H(SIGNER.name)}${SIGNER.title?`（${H(SIGNER.title)}）`:''}</span>${svg('chevdown')}`};
 async function viewSignPage(){
+  const live=liveGuard();
   const k=S.signKind;
   const d=await API.dept(S.deptId||S.me.deptId);
   let title,sub,members,sum;
@@ -1652,6 +1762,7 @@ async function viewSignPage(){
       <div class="kv"><span>巡检台次</span><b>${st.checked}</b></div>
       <div class="kv"><span>异常台次</span><b style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</b></div>`;
   }
+  live();
   SIGN_MEMBERS=members;
   /* 上一次签字（或中途返回）留下的确认人不在本次可选名单里 → 清掉，避免带着别人的名字提交 */
   if(SIGNER.name&&!members.some(m=>m.name===SIGNER.name)) SIGNER={name:'',title:''};
@@ -1756,7 +1867,7 @@ window.submitSign=async()=>{
   const name=SIGNER.name,title=SIGNER.title||'';
   const sign={name,title,memberId:SIGNER.id,dataUrl:SIG.cv.toDataURL('image/png'),opinion:$('#opinion').value.trim()};
   const d=S.deptId||S.me.deptId;
-  SUBMITTING=true;const btn=$('#signbtn');if(btn){btn.disabled=true;btn.textContent='提交中…'}
+  SUBMITTING=true;const btn=$('#signbtn');btnBusy(btn,'提交中…');
   try{
     if(S.signKind==='day'){await API.signDay(d,S.date,sign);toast('已日签');SIGNER={name:'',title:''};S.view='dept'}
     else if(S.signKind==='week'){const st=await weekState(d,S.week);
@@ -1770,11 +1881,11 @@ window.submitSign=async()=>{
     SUBMITTING=false;
     render();
   }catch(e){
-    SUBMITTING=false;if(btn){btn.disabled=false;btn.textContent='确认签字'}
-    toast(e.message,3000);
+    SUBMITTING=false;btnIdle(btn);
+    toast(errText(e),3000);
   }
 };
-window.viewSignOf=async k=>{
+window.viewSignOf=k=>busy(async()=>{
   const d=S.deptId||S.me.deptId;let s=null,ttl='';
   if(k==='day'){const r=await API.record(d,S.date);s=r&&r.sign;ttl='日签'}
   else if(k==='week'){const w=await API.weekSign(d,S.week);s=w&&w.sign;ttl='周签'}
@@ -1785,15 +1896,16 @@ window.viewSignOf=async k=>{
     ${s.opinion?`<div class="card" style="margin-top:12px;box-shadow:inset 0 0 0 1px var(--line)">
       <div class="st" style="margin:0">意见：${H(s.opinion)}</div></div>`:''}
     <button class="btn blk" style="margin-top:16px" onclick="closeSheet()">关闭</button>`);
-};
+});
 
 /* =========================================================================
    记录
    ========================================================================= */
 async function viewRecords(){
-  const depts=await API.depts(S.me);const ids=depts.map(d=>d.id);
+  const [depts,recent]=await Promise.all([API.depts(S.me),API.recordsRange(addDay(today(),-120),today(),null,'&limit=150&active=1')]);
+  const ids=depts.map(d=>d.id);
   const dn=id=>(depts.find(d=>d.id===id)||{}).name||'';
-  const recs=(await API.recordsRange(addDay(today(),-120),today()))
+  const recs=recent
     .filter(r=>ids.includes(r.deptId))
     .sort((a,b)=>b.date<a.date?-1:1).slice(0,150);
   const by={};recs.forEach(r=>{(by[r.date]=by[r.date]||[]).push(r)});
@@ -1809,8 +1921,7 @@ async function viewRecords(){
   return header('巡检记录',`最近 ${recs.length} 条`,null,null,{icon:'list',tone:'lite'})+
     `<main class="pad-tab">${blocks||`<div class="empty">${svg('file')}<div>还没有巡检记录</div></div>`}</main>`+tabbar();
 }
-window.openRec=async(deptId,date)=>{
-  try{
+window.openRec=(deptId,date)=>busy(async()=>{
   const rec=await API.record(deptId,date);if(!rec)return;
   const d=await API.dept(deptId);
   const devs=await API.allDevices(deptId);
@@ -1833,8 +1944,7 @@ window.openRec=async(deptId,date)=>{
       :`<div class="lock" style="margin-top:14px">${lk?H(lk.msg):'该日尚未日签'}</div>`}
     ${canFix?`<button class="btn pri blk" style="margin-top:16px" onclick="closeSheet();jump('day','${deptId}','${date}')">去补录、补签这一天</button>`:''}
     <button class="btn blk" style="margin-top:${canFix?10:16}px" onclick="closeSheet()">关闭</button>`);
-  }catch(e){toast('加载失败：'+e.message,2600)}
-};
+});
 
 /* =========================================================================
    我的签字记录（本人签过的日/周/月签，按时间倒序）
@@ -1866,7 +1976,9 @@ async function mySigns(){
   return out.sort((a,b)=>b.at<a.at?-1:1);
 }
 async function viewMySigns(){
+  const live=liveGuard();
   const list=await mySigns();
+  live();
   const K={'日签':'p-br','周签':'p-ok','月签':'p-go'};
   const by={};list.forEach(x=>{const m=String(x.at).slice(0,7);(by[m]=by[m]||[]).push(x)});
   MYSIGN_CACHE=by;
@@ -1980,22 +2092,30 @@ window.submitPwd=async()=>{
   if(p1.length<6) return toast('新密码至少 6 位');
   if(p1!==p2) return toast('两次输入的新密码不一致');
   if(p1===old) return toast('新密码不能和原来的一样');
-  const b=$('#pwbtn');b.disabled=true;b.textContent='提交中…';
+  const b=$('#pwbtn');btnBusy(b,'提交中…');
   try{
     await API.changePassword(old,p1);
     PWD.old='';
     S.me=await API.me()||S.me;S.me.mustChange=false;
     toast('密码已修改。其他手机、电脑上的旧登录已失效',2800);
     S.view='home';S.tab='home';render();
-  }catch(e){b.disabled=false;b.textContent='确认修改';toast(e.message,2800)}
+  }catch(e){btnIdle(b);toast(errText(e),2800)}
 };
 
 /* =========================================================================
    路由
    ========================================================================= */
 window.go=async k=>{
-  if(k==='home'){S.tab='home';S.view='home';await syncTime();S.date=today()}
-  else if(k==='mysigns'){S.tab='me';S.view='mysigns'}else{S.tab=k;S.view=k}render()};
+  if(k==='home'){
+    S.tab='home';S.view='home';
+    /* 先对一下服务器时间再画首页；网络慢时对时间的这一下已经点去别的页面了，就不再画首页（连点两下首页也只画一次） */
+    const s0=RSEQ,t=ldStart();
+    await syncTime();
+    if(RSEQ===s0){S.date=today();render()}
+    ldEnd(t);return;
+  }
+  if(k==='mysigns'){S.tab='me';S.view='mysigns'}else{S.tab=k;S.view=k}
+  render()};
 window.openDept=id=>{S.deptId=id;S.view='dept';render()};
 window.openCat=n=>{S.catName=n;S.view='cat';render()};
 
@@ -2016,16 +2136,47 @@ window.openMonth=id=>{S.deptId=id;S.view='month';render()};
 
 /* 上一次成功显示的页面：进新页面加载失败时退回去，而不是停在原页面、状态却已经切走 */
 let LAST_OK=null, FALLING_BACK=false, HIST_GUARD=false;
+/* 只画最后一次：每次 render 编个号，结果回来时已经不是最新的就丢掉。
+   以前连点两下、或点了 A 马上又点 B，两次 render 同时在跑，先发的慢、后到，就把新页面盖回旧页面；
+   页面函数改全局状态（勾选、锁定、签字人名单）之前也先确认自己还是最新的（liveGuard）。 */
+let RSEQ=0, RETRY_T=null;
+const STALE=new Error('已换到别的页面');
+function liveGuard(){const s=RSEQ;return ()=>{if(s!==RSEQ)throw STALE}}
+/* 加载失败的页面：服务器忙 → 倒计时自动重试；网络问题 → 请检查网络；其他 → 服务器给的原因 */
+function failPage(e){
+  const rl=!!(e&&e.status===429&&e.code!=='PROBE_COOLDOWN');
+  const net=!!(e&&(e.code==='NETWORK'||e.code==='TIMEOUT'));
+  let wait=rl?Math.min(Math.max(Math.ceil(+e.retryAfter)||10,3),60):0;
+  if(rl){
+    const seq=RSEQ;
+    RETRY_T=setInterval(()=>{
+      const el=document.getElementById('rlcd');
+      if(seq!==RSEQ||!el){clearInterval(RETRY_T);return}
+      if(--wait<=0){clearInterval(RETRY_T);render()}else el.textContent=wait;
+    },1000);
+  }
+  const title=rl?'服务器忙':net?'网络异常':'加载失败';
+  const msg=rl?'访问太频繁，服务器让稍等一下':(e&&e.message)||'网络异常';
+  const tip=rl?`<b id="rlcd">${wait}</b> 秒后自动重试，也可以直接点「重试」`:net?'请检查网络后点「重试」':'请稍后点「重试」';
+  return header(title,null,null,null,{icon:'warn'})+`<main class="pad-tab"><div class="empty">${svg('warn')}
+      <div>${H(msg)}<br><span style="font-size:12.5px">${tip}</span></div>
+      <button class="btn pri" style="margin-top:16px" onclick="render()">重试</button></div></main>`+tabbar();
+}
 async function render(){
+  const seq=++RSEQ;
+  clearInterval(RETRY_T);
   const app=$('#app');
   if(!S.me){
-    app.innerHTML=await viewLogin();
+    const h=await viewLogin();
+    if(seq!==RSEQ) return;
+    app.innerHTML=h;
     /* 表单模式下渲染后刷新一次冻结/禁用状态（含倒计时启动） */
     if(LOGIN.mode==='form')setTimeout(()=>refreshLock(LOGIN.user),40);
     return;
   }
   if(S.me.mustChange&&S.view!=='pwd'){S.view='pwd';S.tab='me'}
   let h='';
+  const tok=ldStart();
   try{
     switch(S.view){
       case 'dept': h=await viewDept();break;
@@ -2042,20 +2193,20 @@ async function render(){
          :S.me.role==='dept'?await viewDeptHome():await viewEquipHome();
     }
   }catch(e){
+    if(e===STALE||seq!==RSEQ) return;                // 已经换到别的页面了，这次的结果作废
     /* 以前这里没有兜底：接口一失败，页面停在原处没有任何提示，S.view 却已经切走了 */
     if(!S.me) return render();                       // 登录失效 / 被停用，已转登录页
     if(e.code==='MUST_CHANGE_PASSWORD'){S.me.mustChange=true;S.view='pwd';return render()}
-    toast('加载失败：'+(e.message||'请稍后再试'),2800);
     if(LAST_OK&&!FALLING_BACK&&(LAST_OK.view!==S.view||LAST_OK.deptId!==S.deptId||LAST_OK.date!==S.date||LAST_OK.catName!==S.catName)){
+      toast('加载失败：'+errText(e),2800);            // 退回上一个页面：提示一下为什么没打开（失败页自己会说清原因，不再弹）
       Object.assign(S,LAST_OK);FALLING_BACK=true;
       try{await render()}finally{FALLING_BACK=false}
       return;
     }
-    app.innerHTML=header('加载失败',null,null,null,{icon:'warn'})+`<main class="pad-tab"><div class="empty">${svg('warn')}
-      <div>${H(e.message||'网络异常')}<br><span style="font-size:12.5px">请检查网络后点「重试」</span></div>
-      <button class="btn pri" style="margin-top:16px" onclick="render()">重试</button></div></main>`+tabbar();
+    app.innerHTML=failPage(e);
     return;
-  }
+  }finally{ldEnd(tok)}
+  if(seq!==RSEQ) return;
   LAST_OK={view:S.view,tab:S.tab,deptId:S.deptId,catName:S.catName,date:S.date,week:S.week,month:S.month,signKind:S.signKind};
   app.innerHTML=h;window.scrollTo(0,0);
   if(S.view==='sign') requestAnimationFrame(()=>initSig());
@@ -2080,8 +2231,17 @@ window.addEventListener('popstate',()=>{
   goBack();
 });
 
-(async()=>{
-  S.me=await API.me();
+/* 打开页面：先确认登录状态。网络不通 / 服务器忙时停在加载画面给「重试」——
+   以前当成「没登录」直接显示登录页，其实登录还在，让人以为被退出了 */
+window.boot=async()=>{
+  const app=$('#app');
+  app.innerHTML='<div class="boot" role="status"><div class="spin lg"></div><div>正在加载…</div></div>';
+  try{S.me=await API.me(true)}
+  catch(e){
+    app.innerHTML=`<div class="boot">${svg('warn')}<div>${H(errText(e))}<br><span style="font-size:12.5px">${e.status===429?'稍等一下再点「重试」':'请检查网络后点「重试」'}</span></div>
+      <button class="btn pri" onclick="boot()">重试</button></div>`;
+    return;
+  }
   if(!S.me){const k=await API.takeKicked();if(k&&k.reason==='disabled')LOGIN.kick=k.username}
   if(S.me){
     await syncTime();
@@ -2089,7 +2249,8 @@ window.addEventListener('popstate',()=>{
     if(S.me.role==='dept')S.deptId=S.me.deptId;
   }
   render();
-})();
+};
+boot();
 </script>
 </body>
 </html>

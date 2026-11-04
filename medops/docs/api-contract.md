@@ -87,7 +87,7 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET /api/depts/:id | 登录+范围 | 单科室 |
 | GET /api/devices?deptId= | 登录+范围 | 该科室设备（品类/台数由前端从列表计算） |
 | GET /api/members?deptId= | 登录+范围 | 签字人名单 |
-| GET /api/records?deptId=&from=&to= | 登录+范围 | deptId 可省（inspector=其全部科室）；含 sign 但不含图片体 |
+| GET /api/records?deptId=&from=&to=&limit=&active= | 登录+范围 | deptId 可省（inspector=其全部科室）；含 sign 但不含图片体。`limit=N`（≤1000）只取最近 N 条、按日期从新到旧返回；`active=1` 只要启用中的科室（手机端「记录」页用） |
 | GET /api/records/:deptId/:date | 登录+范围 | 无记录返回 404 |
 | PUT /api/records/:deptId/:date | inspector+范围 | Body `{checks,notes}` 整体覆盖。拒绝：date>今天(EARLY)、该日已签(LOCKED)、该日所在周已周签(LOCKED)、`signMonthOf(date)` 已月签(LOCKED)、科室已停用(BAD_INPUT)。checks 键须为规范正整数、≤2000 个；只能勾本科室**在用**设备，或这条记录里本来就勾过的设备（当天被调拨/停用的，早上做过的保留） |
 | POST /api/records/:deptId/:date/sign | inspector+范围 | Body `{dataUrl,opinion}`。签字人 = 登录的巡检员本人（不信前端传的姓名）。校验同上+PNG magic bytes+解码≤1MB。落盘后返回完整 record |
@@ -131,6 +131,7 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET /api/stats/signatures?month= | 各科室签字人 × 日/周/月签次数 |
 | GET /api/stats/expiry?all=&deptId= | 有效期清单：`[{deviceId,deptId,deptName,code,name,catName,location,expiryDate,expiryNote,level,days,remindDays}]`。level ∈ expired/soon/ok；默认只回 expired+soon，`all=1` 回全部已设有效期的。按紧急度→剩余天数→科室→编码排序。全角色可访问（巡检员也要看到本科室），范围由 visibleDeptIds 收窄 |
 | GET /api/stats/expiry/summary | → `{expired,soon,total}`，首页角标用 |
+| GET /api/stats/month-states?months=YYYY-MM,… | 各科室月度状态一次取齐（≤12 个月，全角色，范围由 visibleDeptIds 收窄；全院范围只含启用中的科室）。每项 `{deptId,month,weeks,signedWeeks,miss,missDue,openWeeks,checked,ng,dsign,dueDays,span:{from,to},ms,started,ended,ready,locked}`，口径与 H5 `monthState` 逐项一致（台次按月签覆盖范围 monthSpan；`ended`=覆盖范围最后一天已过；`ms`=月签 JSON 或 null）。手机端设备科首页 / 提醒用，替代逐科室查询 |
 | GET /api/export/monthly.xlsx?deptId=&month= | exceljs 生成：设备×日期矩阵(✓/✗/空) + 异常清单 + 三级签名图(嵌图)。矩阵设备行 = 该月在本科室实际巡检过的设备（调走的注明现属科室）∪ 本科室当前在用、该月前已建档、且该月没在别的科室被巡检的设备。文件名 `巡检月报_科室_月份.xlsx`（filename*） |
 | GET /api/export/ng.xlsx?from=&to=&deptId=&sign= | 异常清单表，deptId、sign 可选（同 /api/stats/ng）；末两列「当日签字」「设备现状」 |
 
@@ -166,7 +167,10 @@ Fastify v4 + better-sqlite3(WAL) + bcryptjs + @fastify/jwt + @fastify/cookie + @
 `src/plugins/{auth,error}.js` `src/routes/*.routes.js`
 `src/services/{auth,period,record,file,export,import,stats,ams}.service.js`
 `src/scripts/{create-admin,backup}.js`。健康检查 `GET /api/health` → `{ok:true}`（匿名）。
-限流（网络层，按 IP，阈值按「全院共用出口 IP」定）：全局 1200/min；login 60/min；login-state 30/min/「设备+IP」；export 20/min/用户。
+限流：全局 1200/min/「设备+IP」（X-Device-Id 头；没带的按 IP）——全院共用一个出口 IP，按 IP 计的话一台设备超限全院都被挡；
+另有整个 IP 的总上限 `RL_IP`（默认 6000/min，0=不限），防脚本换设备号狂刷；login / change-password 60/min/IP；
+login-state 30/min/「设备+IP」；export 20/min/用户；/api/health 不限。超限 429 `RATE_LIMITED`，带 `retryAfter`（秒）。
+H5 遇到 429：查询和保存勾选（PUT 整份覆盖）按 retryAfter 自动等待重发（最多 2 次，显示倒计时），签字 / 登录不自动重发。
 真正防撞库的是账号冻结（连错 5 次）与「设备+IP」枚举冷却。
 备份：node-cron 每日 02:30 `VACUUM INTO DATA_DIR/backups/app-YYYYMMDD.db` + tar files/，保留 30 天。
 

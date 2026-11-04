@@ -13,8 +13,10 @@ module.exports = async function authRoutes(app, opts) {
     return { accessToken: out.accessToken, refreshToken: out.refreshToken, user: out.user };
   };
 
+  /* 登录、改密码按 IP 限流（显式写 keyGenerator：不写会继承全局的「设备 + IP」，换设备号就能绕开） */
+  const byIp = req => req.ip;
   app.post('/api/auth/login', {
-    config: { rateLimit: { max: cfg.rl.login, timeWindow: '1 minute' } }
+    config: { rateLimit: { max: cfg.rl.login, timeWindow: '1 minute', keyGenerator: byIp } }
   }, async (req, reply) => sendTokens(reply, authSvc.login(app, req, req.body || {})));
 
   app.post('/api/auth/refresh', async (req, reply) =>
@@ -39,7 +41,7 @@ module.exports = async function authRoutes(app, opts) {
 
   app.post('/api/auth/change-password', {
     preHandler: [app.authLite],
-    config: { rateLimit: { max: cfg.rl.login, timeWindow: '1 minute' } }
+    config: { rateLimit: { max: cfg.rl.login, timeWindow: '1 minute', keyGenerator: byIp } }
   }, async req => {
     authSvc.changePassword(req, req.user.id, req.body || {});
     return { ok: true };
