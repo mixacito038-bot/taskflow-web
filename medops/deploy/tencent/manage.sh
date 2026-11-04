@@ -166,7 +166,7 @@ case "${1:-帮助}" in
     say "资产盘点数据还原（只动资产盘点系统的数据，巡检数据不动）"
     # 1) 列出最近的改动（只读），标出最像误操作的那次
     docker compose exec -T api node src/scripts/ams-restore.js || exit 1
-    SUG=$(docker compose exec -T api node src/scripts/ams-restore.js --suggest 2>/dev/null | tr -d '\r\n ')
+    SUG=$(docker compose exec -T api node src/scripts/ams-restore.js --suggest 2>/dev/null | tr -d '\r\n ' || true)
     echo
     if [ -n "${SUG}" ]; then
       read -r -p "  要撤销哪一次？输入编号后回车（直接回车 = 第 ${SUG} 次，就是标着「最像误操作」的那次）：" N || N=""
@@ -177,7 +177,8 @@ case "${1:-帮助}" in
     N=$(echo "${N}" | tr -d ' []')
     [ -n "${N}" ] || { echo "  已取消，没有改动任何数据。"; exit 0; }
     # 2) 这次之后还有改动：问要不要保留
-    LATER=$(docker compose exec -T api node src/scripts/ams-restore.js --count-later "${N}" 2>/dev/null | tr -d '\r\n ')
+    # 编号不对时这里返回非零：set -e 下不能让脚本直接退出（会什么提示都没有），交给下面显示原因
+    LATER=$(docker compose exec -T api node src/scripts/ams-restore.js --count-later "${N}" 2>/dev/null | tr -d '\r\n ' || true)
     case "${LATER}" in
       ''|*[!0-9]*) docker compose exec -T api node src/scripts/ams-restore.js --show "${N}"; exit 1 ;; # 编号不对：显示原因
     esac
