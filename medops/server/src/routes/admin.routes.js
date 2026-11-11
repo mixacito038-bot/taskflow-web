@@ -248,6 +248,13 @@ module.exports = async function adminRoutes(app) {
     return { ok: true };
   });
 
+  /* 这个账号名下还有效的签字（删除弹窗里列出来，可以就地作废）：月签、周签、日签，按作废顺序排 */
+  app.get('/api/admin/users/:id/signs', { preHandler: guard }, async req => {
+    const u = db().prepare('SELECT id FROM users WHERE id = ?').get(+req.params.id);
+    if (!u) throw E.notFound('账号不存在，可能已被删除，请刷新页面');
+    return accountSvc.validSigns(db(), u.id);
+  });
+
   /* 账号批量导入：模板 / 导入（只新增；整张表先检查，有一行不对就一个都不导入） */
   app.get('/api/admin/users/import-template', { preHandler: guard }, async (req, reply) => {
     const buf = await accountSvc.templateXlsx();

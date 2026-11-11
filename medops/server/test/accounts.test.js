@@ -124,10 +124,14 @@ test('删除：确认规则；用过的账号不能删，可以停用', async ()
   const blocked = await api('DELETE', `/api/admin/users/${u.id}`, { token: admin });
   assert.equal(blocked.status, 409);
   assert.match(blocked.json.error.message, /日签 1 条/);
+  assert.ok(blocked.json.error.message.includes(`急诊科 ${today} 日签`), '写明是哪个科室、哪一天：' + blocked.json.error.message);
+  const signs = (await api('GET', `/api/admin/users/${u.id}/signs`, { token: admin })).json;
+  assert.deepEqual(signs.map(x => [x.type, x.deptId, x.key]), [['day', deptA, today]], '列出挡住删除的签字');
   assert.match(blocked.json.error.message, /作废/);
   assert.equal((await api('PATCH', `/api/admin/users/${u.id}`, { token: admin, body: { status: 'off' } })).json.status, 'off');
   // 日签作废后：只剩勾选记录，可以删；记录里的巡检人显示当时的姓名
   assert.equal((await api('POST', '/api/admin/signs/void', { token: admin, body: { type: 'day', deptId: deptA, key: today, reason: '签错了' } })).status, 200);
+  assert.deepEqual((await api('GET', `/api/admin/users/${u.id}/signs`, { token: admin })).json, [], '作废后列表为空');
   assert.equal((await api('DELETE', `/api/admin/users/${u.id}`, { token: admin })).status, 200, '作废后可以删除');
   const rec = (await api('GET', `/api/records?from=${today}&to=${today}&deptId=${deptA}`, { token: admin })).json[0];
   assert.equal(rec.inspectorName, '用过的巡检员', '删除后记录里仍显示当时的姓名');

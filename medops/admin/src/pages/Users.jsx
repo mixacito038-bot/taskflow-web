@@ -6,6 +6,7 @@ import { asList, nz, ROLE_TEXT, fmtRetry } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 import AccountImportModal from '../components/AccountImportModal'
 import { usePaged } from '../components/Pager'
+import VoidSignModal from '../components/VoidSignModal'
 
 const ROLES = ['inspector', 'dept', 'equip', 'admin']
 
@@ -307,23 +308,35 @@ export default function Users() {
   )
 }
 
-/* 删除确认弹窗：写清楚删的是谁、删了会怎样；用过的账号服务端会拒绝（409），这时给出「改为停用」 */
+/* 删除确认弹窗：写清楚删的是谁、删了会怎样。
+   还有有效签字的账号服务端会拒绝（409）：这时把是哪几条签字列出来（哪个科室、哪一天 / 周 / 月），
+   超级管理员可以就地作废（按月签 → 周签 → 日签的顺序排好），作废完就能删；也可以直接改为停用 */
+const SIGN_TEXT = { day: '日签', week: '周签', month: '月签' }
 function DeleteModal({ user, deptLabel, onClose, onDone }) {
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
   const [blocked, setBlocked] = useState(false)
-  useEffect(() => { setErr(null); setBlocked(false); setBusy(false) }, [user])
+  const [signs, setSigns] = useState(null)     // 挡住删除的签字
+  const [voidTarget, setVoidTarget] = useState(null)
+  const iAmAdmin = getUser()?.role === 'admin'
+  useEffect(() => { setErr(null); setBlocked(false); setBusy(false); setSigns(null); setVoidTarget(null) }, [user])
   if (!user) return null
   const scope = user.role === 'equip' || user.role === 'admin' ? '全院' : (user.deptIds.map(deptLabel).join('、') || '未分配科室')
 
+  async function loadSigns() {
+    try {
+      const list = await api(`/admin/users/${user.id}/signs`)
+      setSigns(list)
+      if (!list.length) { setBlocked(false); setErr(null) } // 都作废了：可以删了
+    } catch (e) { setErr(e) }
+  }
   async function remove() {
     setBusy(true); setErr(null)
     try {
       await api(`/admin/users/${user.id}`, { method: 'DELETE' })
       onDone(); onClose()
     } catch (e) {
-      setErr(e)
-      if (e.status === 409) setBlocked(true)
+      if (e.status === 409) { setBlocked(true); await loadSigns() } else setErr(e)
     } finally { setBusy(false) }
   }
   async function disable() {
@@ -333,18 +346,53 @@ function DeleteModal({ user, deptLabel, onClose, onDone }) {
       onDone(); onClose()
     } catch (e) { setErr(e) } finally { setBusy(false) }
   }
+  const keyText = x => (x.type === 'week' ? `${x.key} 起的一周` : x.key)
 
   return (
-    <Modal open title="删除账号" onClose={onClose} width="max-w-md">
+    <Modal open title="删除账号" onClose={onClose} width={blocked ? 'max-w-3xl' : 'max-w-md'}>
       <div className="mb-4 rounded-lg bg-slate-50 p-3 text-sm leading-7">
         <div>登录账号：<b className="font-mono">{user.username}</b></div>
         <div>姓名：<b>{user.displayName}</b></div>
         <div>角色：{ROLE_TEXT[user.role] || user.role}　科室：{scope}</div>
       </div>
+      {!blocked && signs && signs.length === 0 && (
+        <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">这个账号的签字都已作废，现在可以删除了。</p>
+      )}
       {!blocked && (
         <p className="mb-3 text-sm text-slate-600">
           删除后这个账号<b className="text-red-600">不能恢复</b>，手机和电脑上的登录会立即失效。还有有效签字（日签、周签、月签）的账号不能删除：签错的先作废再删，不再使用的改为停用。确定删除？
         </p>
+      )}
+      {blocked && signs && signs.length > 0 && (
+        <div className="mb-3">
+          <p className="mb-2 text-sm text-red-700">
+            这个账号还有 <b>{signs.length}</b> 条有效的签字，删了就查不到是谁签的，所以不能删除。
+            确实签错的，{iAmAdmin ? '在下面逐条作废（已按月签 → 周签 → 日签排好，从上往下作废）' : '请超级管理员作废'}，全部作废后就能删除；
+            不再使用的，直接改为停用即可。
+          </p>
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200">
+            <table className="tbl">
+              <thead><tr><th>签字</th><th>科室</th><th>日期 / 周 / 月</th><th>签字人</th><th>签字时间</th>{iAmAdmin && <th></th>}</tr></thead>
+              <tbody>
+                {signs.map(x => (
+                  <tr key={`${x.type}-${x.deptId}-${x.key}`}>
+                    <td className="whitespace-nowrap"><Badge color={x.type === 'day' ? 'slate' : x.type === 'week' ? 'amber' : 'green'}>{SIGN_TEXT[x.type]}</Badge></td>
+                    <td className="font-medium">{x.dept}</td>
+                    <td className="whitespace-nowrap tabular-nums">{keyText(x)}</td>
+                    <td>{x.signName || '—'}</td>
+                    <td className="whitespace-nowrap tabular-nums text-slate-500">{x.at}</td>
+                    {iAmAdmin && (
+                      <td className="text-right">
+                        <button className="btn-danger whitespace-nowrap !px-2.5 !py-1 text-xs"
+                          onClick={() => setVoidTarget({ type: x.type, deptId: x.deptId, key: x.key, label: `${x.dept} ${keyText(x)}` })}>作废</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
       <ErrorTip error={err} className="mb-3" />
       {blocked && user.status === 'on' && (
@@ -355,6 +403,7 @@ function DeleteModal({ user, deptLabel, onClose, onDone }) {
         {!blocked && <button className="btn bg-red-600 text-white hover:bg-red-700" disabled={busy} onClick={remove}>{busy ? '删除中…' : '确认删除'}</button>}
         {blocked && user.status === 'on' && <button className="btn-danger" disabled={busy} onClick={disable}>改为停用</button>}
       </div>
+      <VoidSignModal target={voidTarget} onClose={() => setVoidTarget(null)} onDone={loadSigns} />
     </Modal>
   )
 }

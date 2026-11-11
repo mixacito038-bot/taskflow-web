@@ -42,15 +42,31 @@ function takenMessage(u) {
    只有「还有效的签字」挡住删除：日签、周签、月签都按账号 id 记着是谁签的，账号删了就追溯不到人。
    签字被作废以后（日签字段清空、周签/月签行删除）就不再挡；只勾选、没签字的巡检记录也不挡——
    删除时把这些记录的巡检人关联置空，页面和导出照常显示记录里保存的当时姓名（records.inspector_name）。 */
+function validSigns(db, id) {
+  const days = db.prepare(`SELECT r.dept_id AS deptId, d.name AS dept, r.date AS key, r.sign_name AS signName, r.sign_at AS at
+    FROM records r JOIN depts d ON d.id = r.dept_id
+    WHERE r.sign_at IS NOT NULL AND (r.sign_user_id = ? OR (r.sign_user_id IS NULL AND r.inspector_id = ?))
+    ORDER BY r.date DESC, r.dept_id`).all(id, id);
+  const weeks = db.prepare(`SELECT w.dept_id AS deptId, d.name AS dept, w.week_start AS key, w.sign_name AS signName, w.sign_at AS at
+    FROM week_signs w JOIN depts d ON d.id = w.dept_id WHERE w.signed_by = ? ORDER BY w.week_start DESC, w.dept_id`).all(id);
+  const months = db.prepare(`SELECT m.dept_id AS deptId, d.name AS dept, m.month AS key, m.sign_name AS signName, m.sign_at AS at
+    FROM month_signs m JOIN depts d ON d.id = m.dept_id WHERE m.signed_by = ? ORDER BY m.month DESC, m.dept_id`).all(id);
+  const tag = (l, type) => l.map(x => ({ type, ...x, deptId: String(x.deptId) }));
+  // 月签在前、日签在后：作废要自上而下，照这个顺序一条条作废就不会被挡
+  return [...tag(months, 'month'), ...tag(weeks, 'week'), ...tag(days, 'day')];
+}
+/* 签字的显示名：「6东抢救仪器 2026-10-30 日签」 */
+const signLabel = x => `${x.dept} ${x.type === 'week' ? x.key + ' 起的一周' : x.key} ${{ day: '日签', week: '周签', month: '月签' }[x.type]}`;
+
 function deleteBlock(db, id) {
-  const day = db.prepare(`SELECT COUNT(*) AS c FROM records WHERE sign_at IS NOT NULL
-    AND (sign_user_id = ? OR (sign_user_id IS NULL AND inspector_id = ?))`).get(id, id).c;
-  const week = db.prepare('SELECT COUNT(*) AS c FROM week_signs WHERE signed_by = ?').get(id).c;
-  const month = db.prepare('SELECT COUNT(*) AS c FROM month_signs WHERE signed_by = ?').get(id).c;
-  const parts = [day && `日签 ${day} 条`, week && `周签 ${week} 条`, month && `月签 ${month} 条`].filter(Boolean);
-  if (!parts.length) return null;
-  return `这个账号还有有效的签字（${parts.join('、')}），删除后这些签字就查不到是谁签的，不能删除。` +
-    '确实签错的，先在「周签 / 月签」或「巡检记录」里作废（作废自上而下：月签 → 周签 → 日签），再来删除；不再使用请改为「停用」';
+  const list = validSigns(db, id);
+  if (!list.length) return null;
+  const n = t => list.filter(x => x.type === t).length;
+  const parts = [n('day') && `日签 ${n('day')} 条`, n('week') && `周签 ${n('week')} 条`, n('month') && `月签 ${n('month')} 条`].filter(Boolean);
+  // 写明是哪几条：以前只说「日签 1 条」，巡检记录页默认只查最近 7 天，找不到是哪一天
+  const shown = list.slice(0, 6).map(signLabel).join('、') + (list.length > 6 ? ` 等 ${list.length} 条` : '');
+  return `这个账号还有有效的签字（${parts.join('、')}：${shown}），删除后这些签字就查不到是谁签的，不能删除。` +
+    '确实签错的，先作废（自上而下：月签 → 周签 → 日签）再删除；不再使用请改为「停用」';
 }
 /* 删除账号前：解开只勾选未签字的巡检记录里的巡检人关联（外键），姓名快照刷新成账号当前的姓名
    （页面平时显示的就是当前姓名，删掉以后也保持一致，不会变回勾选那天的旧名字） */
@@ -226,4 +242,4 @@ async function importAccounts(buffer) {
   return { created: accounts.length, errors: [], warnings, accounts };
 }
 
-module.exports = { usernameProblem, normUsername, usernameTaken, takenMessage, deleteBlock, detachRecords, templateXlsx, importAccounts, USERNAME_MAX };
+module.exports = { usernameProblem, normUsername, usernameTaken, takenMessage, deleteBlock, validSigns, detachRecords, templateXlsx, importAccounts, USERNAME_MAX };
