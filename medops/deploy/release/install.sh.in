@@ -157,7 +157,10 @@ sync_from() {
 }
 # 重建并启动全部容器。--force-recreate：nginx 容器也重建，挂载重新指向当前目录
 # （否则它可能还挂着以前被删掉或改了名的目录）
-rebuild() { (cd "$OPS" && docker compose up -d --build --force-recreate) 2>&1 | sed 's/^/  /'; }
+# sed -u：逐行写进记录文件。以前 sed 写文件时攒满 4KB 才写一次，构建完以后「容器已启动」等几行
+# 一直攒着不出来，屏幕停在构建输出上，看着像卡死（2026-11-11 实际 30 秒就升级完了）。
+# timeout：构建或启动万一真的卡住（docker 本身的毛病），20 分钟后按失败处理、自动回退，不会无限等下去。
+rebuild() { (cd "$OPS" && timeout "${MEDOPS_UP_TIMEOUT:-1200}" docker compose up -d --build --force-recreate) 2>&1 | sed -u 's/^/  /'; }
 
 rollback() {
   trap - ERR
@@ -165,7 +168,7 @@ rollback() {
   echo
   echo "==== 新版本没能正常运行，正在自动回退到升级前的版本 ===="
   echo "  （先把出错时的后端日志留在记录里）"
-  (cd "$OPS" && docker compose logs --tail=60 api) 2>&1 | sed 's/^/    /'
+  (cd "$OPS" && docker compose logs --tail=60 api) 2>&1 | sed -u 's/^/    /'
   sync_from "$BAK_CODE"
   rm -f "$APP/RELEASE"; [ -f "$BAK_CODE/RELEASE" ] && cp -a "$BAK_CODE/RELEASE" "$APP/RELEASE"
   rebuild
@@ -252,7 +255,7 @@ printf 'version=%s\ncommit=%s\ninstalled_at=%s\n' "$VERSION" "$COMMIT" "$(date '
 ok "新代码已就位（.env、证书、nginx 配置、资产盘点未改动）"
 
 # ============================================================================
-step 5 "重新构建并启动（1～3 分钟，请稍候）"
+step 5 "重新构建并启动（1～3 分钟，请稍候；构建输出停住时是在启动容器，不是卡死）"
 if ! rebuild; then
   echo "  ✗ 构建或启动失败"; rollback
 fi
@@ -273,7 +276,7 @@ done
 # ============================================================================
 step 7 "数据体检：签字 + 设备状态（只读）"
 if [ -f "$APP/server/src/scripts/check-signs.js" ]; then
-  (cd "$OPS" && docker compose exec -T api node src/scripts/check-signs.js) 2>&1 | sed 's/^/  /' \
+  (cd "$OPS" && docker compose exec -T api node src/scripts/check-signs.js) 2>&1 | sed -u 's/^/  /' \
     || warn "体检没跑成功（不影响使用），稍后可手动执行：cd $OPS && bash manage.sh 体检"
 fi
 # 清掉旧版本留下的无用镜像、7 天前的构建缓存（以前构建缓存攒到 17GB 把磁盘占满过）
