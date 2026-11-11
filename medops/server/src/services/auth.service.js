@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { getDb } = require('../db/connection');
 const { E } = require('../plugins/error');
+const oplog = require('./oplog.service');
 
 const PROBE_WINDOW_MS = 2 * 60 * 1000;  // 枚举冷却窗口 2 分钟
 const PROBE_MAX = 8;                    // 同一「设备+IP」窗口内失败 ≥8 → 429
@@ -94,13 +95,20 @@ function login(app, req, { username, password }) {
     throw E.badInput('请输入账号和密码');
   }
   const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  /* 登录失败也记日志：账号名照实记（不存在的账号也记，方便发现有人在试密码），密码一律不记 */
+  const fail = (why, err) => {
+    oplog.write({ req, user: row ? { id: row.id, username: row.username, displayName: row.display_name, role: row.role } : { username: String(username).slice(0, 64) },
+      action: 'login_fail', target: row ? oplog.userLabel(row) : `账号 ${String(username).slice(0, 64)}（系统里没有）`,
+      summary: `${clientOf(req)}登录失败：${why}`, detail: `device=${deviceId}` });
+    return err;
+  };
   if (!row) { // ② 账号不存在（文案与密码错一致）
     probeFail(keys);
-    throw E.unauthorized('账号或密码不正确');
+    throw fail('账号不存在', E.unauthorized('账号或密码不正确'));
   }
   const remain = frozenRemain(row);
-  if (remain > 0) throw E.frozen(remain); // ③ 冻结中
-  if (row.status !== 'on') throw E.kicked(403); // ④ 已禁用
+  if (remain > 0) throw fail(`账号冻结中（还剩约 ${Math.ceil(remain / 60)} 分钟）`, E.frozen(remain)); // ③ 冻结中
+  if (row.status !== 'on') throw fail('账号已停用', E.kicked(403)); // ④ 已禁用
   if (!bcrypt.compareSync(password, row.password_hash)) { // ⑤ 密码错
     probeFail(keys);
     const fails = row.fail_count + 1;
@@ -110,10 +118,10 @@ function login(app, req, { username, password }) {
       const until = new Date(Date.now() + mins * 60000).toISOString();
       db.prepare('UPDATE users SET fail_count = 0, freeze_level = ?, frozen_until = ?, updated_at = ? WHERE id = ?')
         .run(level, until, nowIso(), row.id);
-      throw E.frozen(mins * 60);
+      throw fail(`密码连续输错 ${FREEZE_FAILS} 次，冻结 ${mins} 分钟`, E.frozen(mins * 60));
     }
     db.prepare('UPDATE users SET fail_count = ?, updated_at = ? WHERE id = ?').run(fails, nowIso(), row.id);
-    throw E.unauthorized('账号或密码不正确');
+    throw fail(`密码不正确（连续第 ${fails} 次）`, E.unauthorized('账号或密码不正确'));
   }
   /* ⑥ 成功。不清设备/IP 的失败计数：否则手里有任意一个账号的人，每错 7 次登一次自己的号，
      就能无限试别人的账号。冻结轮次清零：本人已经登上来了，下次输错从 5 分钟重新算。 */
@@ -124,7 +132,7 @@ function login(app, req, { username, password }) {
   }
   const user = app.loadUser(row.id);
   const t = issueTokens(app, user, deviceId);
-  audit(row.id, 'login', `device=${deviceId}`, req.ip);
+  audit(row.id, 'login', `device=${deviceId}`, req.ip, { req, target: oplog.userLabel(row), summary: `${clientOf(req)}登录成功` });
   return { ...t, user: userJson(user) };
 }
 
@@ -144,7 +152,8 @@ function refresh(app, req, { refreshToken }) {
     .run(nowIso(), row.user_id, row.device_id);
   if (row.revoked_at) { // 已吊销 token 被重放 → 吊销该用户该设备全部 token
     revokeFamily();
-    audit(row.user_id, 'refresh_replay', `device=${row.device_id}`, req.ip);
+    audit(row.user_id, 'refresh_replay', `device=${row.device_id}`, req.ip,
+      { req, summary: '用已经作废的登录凭证来换新凭证（可能被盗用），这台设备上的登录已全部注销' });
     throw E.unauthorized('登录已失效，请重新登录');
   }
   if (Date.parse(row.expires_at) < Date.now()) throw E.unauthorized('登录已过期，请重新登录');
@@ -153,7 +162,8 @@ function refresh(app, req, { refreshToken }) {
      落在另一组里，正主重放旧 token 时吊销不到它，盗用者的会话就一直有效。 */
   if (row.device_id && deviceId && deviceId !== row.device_id) {
     revokeFamily();
-    audit(row.user_id, 'refresh_device_mismatch', `device=${row.device_id} req=${deviceId}`, req.ip);
+    audit(row.user_id, 'refresh_device_mismatch', `device=${row.device_id} req=${deviceId}`, req.ip,
+      { req, summary: '登录凭证被拿到另一台设备上使用，已拒绝并注销该凭证' });
     throw E.unauthorized('登录已失效，请重新登录');
   }
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?').run(nowIso(), row.id);
@@ -161,12 +171,17 @@ function refresh(app, req, { refreshToken }) {
   return { ...t, user: userJson(user) };
 }
 
-function logout(req, { refreshToken }) {
+/* 退出。userId：能认出是谁时（带了 refreshToken，或 access token 还有效）记一条日志 */
+function logout(req, { refreshToken }, userId) {
   const db = getDb();
+  let uid = userId;
   if (refreshToken) {
+    const t = db.prepare('SELECT user_id FROM refresh_tokens WHERE token_hash = ?').get(sha256(String(refreshToken)));
+    if (t) uid = t.user_id;
     db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL')
       .run(nowIso(), sha256(String(refreshToken)));
   }
+  if (uid) audit(uid, 'logout', '', req.ip, { req, summary: `${clientOf(req)}退出登录${refreshToken ? '' : '（记住了账号，下次可一键登录）'}` });
 }
 
 function revokeAllTokens(userId, exceptDeviceId) {
@@ -215,13 +230,23 @@ function changePassword(req, userId, { oldPassword, newPassword }) {
   /* 改密 = 其它设备上的登录全部失效（怀疑泄露才改密，别人的会话不能还继续有效）；
      当前这台设备保持登录，不用重新输密码 */
   revokeAllTokens(userId, String(req.headers['x-device-id'] || '').slice(0, 64));
-  audit(userId, 'change_password', '', req.ip);
+  audit(userId, 'change_password', '', req.ip, { req, summary: `${clientOf(req)}修改了自己的密码，其他设备上的登录已注销` });
 }
 
-function audit(userId, action, detail, ip) {
-  getDb().prepare('INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(userId ?? null, action, detail || '', ip || '', nowIso());
+/* 写操作日志（兼容老的调用方式）：按 userId 取账号快照；extra 里可以带 req（取 IP、设备）、target、summary、changes */
+function audit(userId, action, detail, ip, extra = {}) {
+  const u = userId != null ? getDb().prepare('SELECT id, username, display_name, role FROM users WHERE id = ?').get(userId) : null;
+  oplog.write({ req: extra.req || { ip, headers: {} },
+    user: u ? { id: u.id, username: u.username, displayName: u.display_name, role: u.role } : (userId != null ? { id: userId } : null),
+    action, detail, target: extra.target, summary: extra.summary, changes: extra.changes, module: extra.module, op: extra.op, result: extra.result });
+}
+/* 从哪个端操作的：管理后台（电脑）还是手机端，看请求来自哪个页面 */
+function clientOf(req) {
+  const ref = String((req && req.headers && (req.headers.referer || req.headers.origin)) || '');
+  if (/\/admin(\/|$)/.test(ref)) return '管理后台';
+  if (/\/xunjian(\/|$)/.test(ref)) return '手机端';
+  return '';
 }
 
 module.exports = { login, refresh, logout, loginState, changePassword, revokeAllTokens, hasActiveSession,
-  frozenRemain, userJson, audit, sha256 };
+  frozenRemain, userJson, audit, clientOf, sha256 };

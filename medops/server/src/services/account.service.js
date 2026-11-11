@@ -39,18 +39,25 @@ function takenMessage(u) {
 }
 
 /* 账号能不能删：能删返回 null，不能删返回原因。
-   巡检记录、日签、周签、月签都按账号 id 记着是谁做的；账号删了，这些记录就追溯不到人，
-   所以用过的账号只能停用（停用后登录不了，历史记录里的名字照常显示）。 */
+   只有「还有效的签字」挡住删除：日签、周签、月签都按账号 id 记着是谁签的，账号删了就追溯不到人。
+   签字被作废以后（日签字段清空、周签/月签行删除）就不再挡；只勾选、没签字的巡检记录也不挡——
+   删除时把这些记录的巡检人关联置空，页面和导出照常显示记录里保存的当时姓名（records.inspector_name）。 */
 function deleteBlock(db, id) {
-  const used = [
-    ['SELECT 1 FROM records WHERE inspector_id = ? OR sign_user_id = ? LIMIT 1', '巡检或日签'],
-    ['SELECT 1 FROM week_signs WHERE signed_by = ? LIMIT 1', '周签'],
-    ['SELECT 1 FROM month_signs WHERE signed_by = ? LIMIT 1', '月签'],
-  ];
-  for (const [sql, what] of used) {
-    if (db.prepare(sql).get(...(sql.includes('OR') ? [id, id] : [id]))) return `这个账号已有${what}记录，删除后这些记录就查不到是谁做的，不能删除；不再使用请改为「停用」`;
-  }
-  return null;
+  const day = db.prepare(`SELECT COUNT(*) AS c FROM records WHERE sign_at IS NOT NULL
+    AND (sign_user_id = ? OR (sign_user_id IS NULL AND inspector_id = ?))`).get(id, id).c;
+  const week = db.prepare('SELECT COUNT(*) AS c FROM week_signs WHERE signed_by = ?').get(id).c;
+  const month = db.prepare('SELECT COUNT(*) AS c FROM month_signs WHERE signed_by = ?').get(id).c;
+  const parts = [day && `日签 ${day} 条`, week && `周签 ${week} 条`, month && `月签 ${month} 条`].filter(Boolean);
+  if (!parts.length) return null;
+  return `这个账号还有有效的签字（${parts.join('、')}），删除后这些签字就查不到是谁签的，不能删除。` +
+    '确实签错的，先在「周签 / 月签」或「巡检记录」里作废（作废自上而下：月签 → 周签 → 日签），再来删除；不再使用请改为「停用」';
+}
+/* 删除账号前：解开只勾选未签字的巡检记录里的巡检人关联（外键），姓名快照刷新成账号当前的姓名
+   （页面平时显示的就是当前姓名，删掉以后也保持一致，不会变回勾选那天的旧名字） */
+function detachRecords(db, id) {
+  const u = db.prepare('SELECT display_name FROM users WHERE id = ?').get(id);
+  return db.prepare('UPDATE records SET inspector_id = NULL, inspector_name = ? WHERE inspector_id = ?')
+    .run(u ? u.display_name : null, id).changes;
 }
 
 /* ---------- Excel 批量导入 ---------- */
@@ -219,4 +226,4 @@ async function importAccounts(buffer) {
   return { created: accounts.length, errors: [], warnings, accounts };
 }
 
-module.exports = { usernameProblem, normUsername, usernameTaken, takenMessage, deleteBlock, templateXlsx, importAccounts, USERNAME_MAX };
+module.exports = { usernameProblem, normUsername, usernameTaken, takenMessage, deleteBlock, detachRecords, templateXlsx, importAccounts, USERNAME_MAX };

@@ -4,6 +4,7 @@ import { api, getUser } from '../api/client'
 import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, addDays } from '../utils'
 import { Empty, ErrorTip, SignCard, Spinner } from '../components/ui'
+import { usePaged } from '../components/Pager'
 import VoidSignModal from '../components/VoidSignModal'
 
 function StatChips({ stat, unit }) {
@@ -77,6 +78,7 @@ export default function Signs() {
   }, [tab, deptId, from, to, year]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sorted = [...(list || [])].sort((a, b) => String(b.week || b.month).localeCompare(String(a.week || a.month)))
+  const { items: rows, pager } = usePaged(list ? sorted : null, 'signs', { resetOn: [tab, deptId, from, to, year], defaultSize: 10 })
 
   return (
     <div>
@@ -124,7 +126,7 @@ export default function Signs() {
         <div className="card"><Empty text={`该条件下暂无${tab === 'week' ? '周签' : '月签'}记录`} /></div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {sorted.map(s => tab === 'week' ? (
+          {(rows || []).map(s => tab === 'week' ? (
             <SignItem key={s.id} unit="week"
               title={`${deptName(s.deptId)} · ${s.week} 起的一周`}
               stat={s.stat} sign={s.sign} at={s.at}
@@ -139,6 +141,7 @@ export default function Signs() {
           ))}
         </div>
       )}
+      {list && sorted.length > 0 && <div className="card mt-4">{pager}</div>}
 
       <VoidSignModal target={voidTarget} onClose={() => setVoidTarget(null)} onDone={query} />
     </div>

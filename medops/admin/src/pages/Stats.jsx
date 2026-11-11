@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, nz } from '../utils'
 import { Badge, Bar, Empty, ErrorTip, Spinner } from '../components/ui'
+import { usePaged } from '../components/Pager'
 
 function normCompletion(r) {
   return {
@@ -63,6 +64,8 @@ export default function Stats() {
 
   const shownSigs = (signatures || []).filter(s => !deptId || s.deptId === deptId)
   const maxTotal = Math.max(1, ...shownSigs.map(s => s.day + s.week + s.month))
+  const { items: compRows, pager: compPager } = usePaged(completion, 'stats-completion')
+  const { items: sigRows, pager: sigPager } = usePaged(signatures ? shownSigs : null, 'stats-signers', { resetOn: [deptId, month] })
 
   return (
     <div>
@@ -92,7 +95,7 @@ export default function Stats() {
                 <tr><th>科室</th><th className="min-w-[220px]">日签进度</th><th>巡检台次</th><th>异常台次</th><th className="min-w-[180px]">周签进度</th><th>月签</th></tr>
               </thead>
               <tbody>
-                {completion.map(r => (
+                {(compRows || []).map(r => (
                   <tr key={r.deptId}>
                     <td className="font-medium">{r.deptName || deptName(r.deptId)}{r.off && <span className="ml-1 text-xs text-slate-500">（已停用）</span>}</td>
                     <td><Bar value={r.signedDays} total={r.dueDays} /></td>
@@ -106,6 +109,7 @@ export default function Stats() {
             </table>
           </div>
         )}
+        {completion && completion.length > 0 && compPager}
       </div>
 
       <div className="card p-5">
@@ -117,7 +121,7 @@ export default function Stats() {
                 <tr><th>科室</th><th>签字人</th><th className="min-w-[240px]">签字分布</th><th>日签</th><th>周签</th><th>月签</th><th>合计</th></tr>
               </thead>
               <tbody>
-                {shownSigs.map((s, i) => {
+                {(sigRows || []).map((s, i) => {
                   const total = s.day + s.week + s.month
                   return (
                     <tr key={i}>
@@ -142,6 +146,7 @@ export default function Stats() {
             </table>
           </div>
         )}
+        {signatures && shownSigs.length > 0 && sigPager}
       </div>
     </div>
   )

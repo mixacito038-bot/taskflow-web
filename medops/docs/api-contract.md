@@ -109,7 +109,10 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | POST /api/admin/users/:id/reset-password | → `{password:"一次性初始密码"}`，置 mustChange，清冻结，吊销其全部 refreshToken |
 | POST /api/admin/users/:id/unfreeze | 解除密码连错冻结（不改密码），冻结轮次清零 |
 | PATCH /api/admin/users/:id 的 `username` | 可改登录账号：去首尾空白、不能有空格、最多 32 字；与其他账号判重**不区分大小写**（409 写明被谁占用）。新建账号同样规则。签字/巡检记录按账号 id 关联，改名不影响历史，登录状态保留（手机端「记住的账号」按旧 refreshToken 找到后换成新账号名） |
-| DELETE /api/admin/users/:id | 删除账号。不能删自己；管理员账号仅 admin 可删，且至少保留 1 个启用的管理员。有巡检（records.inspector_id / sign_user_id）、周签（week_signs.signed_by）、月签（month_signs.signed_by）记录的 → 409 + 原因（请改为停用）。删除后科室关联、refreshToken、known_devices 级联删除，原登录立即失效；记审计 user_delete |
+| DELETE /api/admin/users/:id | 删除账号。不能删自己；管理员账号仅 admin 可删，且至少保留 1 个启用的管理员。**还有有效签字**的不能删：日签（records.sign_at 非空且 sign_user_id = 该账号，或老数据 sign_user_id 为空、inspector_id = 该账号）、周签（week_signs.signed_by）、月签（month_signs.signed_by）→ 409，写明各几条、先作废（作废自上而下）。签字作废后可删；只勾选未签字的记录不挡：删除时 records.inspector_id 置空、inspector_name 刷新为账号当前姓名。科室关联、refreshToken、known_devices 级联删除，原登录立即失效 |
+| GET /api/admin/oplog | 操作日志（equip/admin）。query：from/to（上海日期）、module、op、userId、result（ok/fail）、q（搜对象、说明、原始信息、操作人、改动、IP），page、size（10/20/50/100；0 = 全部，最多 5000 条，超出 capped=true）。返回 `{total,page,size,capped,items:[{id,createdAt,userId,username,userName,userRole,module,op,action,target,summary,detail,changes:[{f,from,to}],result,ip,ua,device}]}`，按时间倒序 |
+| GET /api/admin/oplog/meta | 筛选项：`{modules,ops:[{module,op}],users:[{id,username,name}]}` |
+| GET /api/admin/oplog/export.xlsx | 同样的筛选条件导出 Excel（最多 5000 条），导出本身也记一条日志 |
 | GET /api/admin/users/import-template | 账号导入模板 xlsx：第 1 张「账号导入」（登录账号、姓名、角色、科室、初始密码、状态），第 2 张填写说明 + 现有科室名称 |
 | POST /api/admin/users/import (multipart file) | 只新增。整张表先校验，**有任何一行不对就一个都不导入**：返回 `{created:0, errors:[{row,message}], warnings, accounts:[]}`；全部通过才在一个事务里新增，返回 `{created, errors:[], warnings, accounts:[{username,displayName,role,depts,password,generated,status}]}`（初始密码只在这里出现一次）。校验：账号规则同上，与系统已有账号、表内其他行判重（不区分大小写）；姓名必填；角色只能 巡检员/护士长/设备科（超级管理员不能导入）；科室名要和系统一致（忽略空格、全角半角括号差别），巡检员 ≥1 个、护士长恰好 1 个、设备科忽略（warning）；初始密码留空随机生成，填了至少 6 位；状态 启用/停用。导入的账号 mustChange=1。最多 500 行 |
 | GET/POST/PATCH /api/admin/depts[/:id] | 有巡检或签字记录的科室禁删（改 status:off）；有护士长账号属于它时也禁删（先处理账号）。停用科室：不能再录入巡检/日签；历史统计、导出照常；在用的过期设备照常提醒 |
@@ -189,3 +192,18 @@ H5 遇到 429：查询和保存勾选（PUT 整份覆盖）按 retryAfter 自动
 ```
 证书 Let's Encrypt webroot（certbot 容器自动续期）；80→443 跳转；HSTS max-age=15552000。
 缓存：/admin/assets/* 一年 immutable；所有 .html 与 /pandian/app.bundle.js no-cache+ETag。
+
+## 操作日志（audit_log，迁移 008 起）
+
+谁（账号、姓名、角色快照）、什么时候、在哪（IP、设备号、浏览器 / 手机）、对什么（target）、做了什么（module + op + summary）、改了哪些（changes：改前 → 改后）、成没成（result）。
+只增不改，后台没有修改、删除日志的入口（服务器 reset-data 清空数据时会清掉，并留一条清空记录）。
+
+记录的操作：
+- 账号：新增、修改（含改登录账号）、停用 / 启用、重置密码、解冻、删除、批量导入
+- 科室 / 设备 / 签字人：新增、修改（改前改后）、停用 / 启用、调拨、删除、批量改状态、批量删除、Excel 导入
+- 签字：日签、周签、月签（手机端）、作废（原因 + 原签字人、签字时间）
+- 登录：登录成功、登录失败（账号不存在 / 密码错 / 冻结 / 停用，密码不记）、退出、修改密码、登录凭证被盗用的拦截
+- 导入导出：历史数据导入、导出月报、导出异常清单、导出操作日志
+- 系统：服务器上的清空数据（reset-data）、资产盘点还原（ams-restore）、数据库升级时的自动修正
+
+不单独记：巡检员每勾一台设备（每次勾选都自动保存，一天成百上千次；勾选结果和最后保存的人、时间在巡检记录里），以及普通的查看列表。

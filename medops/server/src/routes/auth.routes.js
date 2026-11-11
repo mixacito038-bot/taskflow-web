@@ -25,7 +25,10 @@ module.exports = async function authRoutes(app, opts) {
   /* 退出不要求 access token 有效：access 过期（30 分钟）后退出，也要能把 refreshToken 吊销掉；
      凭 refreshToken 本身吊销它是安全的（拿着它的人本来就能用它） */
   app.post('/api/auth/logout', async (req, reply) => {
-    authSvc.logout(req, req.body || {});
+    // access token 还有效就认出是谁（记住账号退出时不带 refreshToken，否则日志里不知道是谁退出的）
+    let uid = null;
+    try { const h = req.headers.authorization || ''; if (h.startsWith('Bearer ')) { const p = app.jwt.verify(h.slice(7)); if (p.typ !== 'sid') uid = +p.sub; } } catch { /* 过期了也照常退出 */ }
+    authSvc.logout(req, req.body || {}, uid);
     reply.clearCookie(cfg.cookieName, { path: '/api' });
     return { ok: true };
   });

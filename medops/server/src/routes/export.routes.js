@@ -1,6 +1,7 @@
 'use strict';
 const { E } = require('../plugins/error');
 const exportSvc = require('../services/export.service');
+const oplog = require('../services/oplog.service');
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const { getDb } = require('../db/connection');
@@ -24,6 +25,7 @@ module.exports = async function exportRoutes(app, opts) {
     const { deptId, month } = req.query;
     if (!deptId || !month) throw E.badInput('deptId 与 month 必填');
     const buf = await exportSvc.monthlyXlsx(+deptId, month);
+    oplog.write({ req, action: 'export_monthly', target: `${deptName(deptId)} · ${month} 月报`, summary: '导出巡检月报（Excel）', detail: `deptId=${+deptId} month=${month}` });
     reply.header('Content-Disposition', disposition(`monthly-${+deptId}-${month}.xlsx`, `巡检月报_${deptName(deptId)}_${month}.xlsx`)).type(XLSX_MIME);
     return reply.send(buf);
   });
@@ -37,6 +39,8 @@ module.exports = async function exportRoutes(app, opts) {
     if (sign && !['signed', 'unsigned'].includes(sign)) throw E.badInput('sign 只能是 signed / unsigned');
     const buf = await exportSvc.ngXlsx(null, { from, to, deptId, sign });
     const span = `${from || '全部'}_${to || '全部'}`;
+    oplog.write({ req, action: 'export_ng', target: `异常清单 ${deptId != null ? deptName(deptId) : '全部科室'} ${from || '最早'} ~ ${to || '至今'}`,
+      summary: `导出异常清单（Excel）${sign ? (sign === 'signed' ? '，只含已签字' : '，只含未签字') : ''}`, detail: `deptId=${deptId ?? ''} from=${from || ''} to=${to || ''} sign=${sign || ''}` });
     reply.header('Content-Disposition', disposition(`ng-${deptId || 'all'}-${from || 'all'}-${to || 'all'}.xlsx`,
       `异常清单_${deptId != null ? deptName(deptId) + '_' : ''}${span}.xlsx`)).type(XLSX_MIME);
     return reply.send(buf);

@@ -4,6 +4,7 @@ import { api, getUser } from '../api/client'
 import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, addDays } from '../utils'
 import { Badge, Empty, ErrorTip, Modal, SignCard, Spinner } from '../components/ui'
+import { usePaged } from '../components/Pager'
 import VoidSignModal from '../components/VoidSignModal'
 
 function RecordDetail({ rec, deptName, onClose, onVoid }) {
@@ -122,6 +123,7 @@ export default function Records() {
   }
 
   const sorted = [...(list || [])].sort((a, b) => b.date.localeCompare(a.date) || (+a.deptId - +b.deptId))
+  const { items: rows, pager } = usePaged(list ? sorted : null, 'records', { resetOn: [deptId, from, to] })
 
   return (
     <div>
@@ -154,7 +156,7 @@ export default function Records() {
               <tr><th>日期</th><th>科室</th><th>巡检人</th><th>勾选台数</th><th>异常台数</th><th>签字</th><th className="text-right">操作</th></tr>
             </thead>
             <tbody>
-              {sorted.map(r => {
+              {(rows || []).map(r => {
                 const checks = r.checks || {}
                 const ng = Object.values(checks).filter(v => v === 'ng').length
                 return (
@@ -174,6 +176,7 @@ export default function Records() {
             </tbody>
           </table>
         )}
+        {list && sorted.length > 0 && <div className="border-t border-slate-100">{pager}</div>}
       </div>
 
       {detail && (

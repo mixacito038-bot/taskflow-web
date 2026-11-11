@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useDepts, useServerTime } from '../hooks'
 import { asList, nz } from '../utils'
 import { Bar, Empty, ErrorTip, Spinner, Badge } from '../components/ui'
+import { usePaged } from '../components/Pager'
 import { Link } from 'react-router-dom'
 import ServerClock from '../components/ServerClock'
 
@@ -68,6 +69,8 @@ export default function Dashboard() {
   const weeks = unsigned?.weeks || []
   const months = unsigned?.months || []
 
+  const { items: expRows, pager: expPager } = usePaged(expiry, 'dash-expiry', { defaultSize: 10 })
+  const { items: compRows, pager: compPager } = usePaged(completion, 'dash-completion', { defaultSize: 20 })
   return (
     <div>
       <div className="mb-5 flex items-end justify-between">
@@ -119,7 +122,7 @@ export default function Dashboard() {
                 <tr><th>科室</th><th>设备编码</th><th>设备名称</th><th>说明</th><th>到期日</th><th>状态</th></tr>
               </thead>
               <tbody>
-                {expiry.map(x => (
+                {(expRows || []).map(x => (
                   <tr key={x.deviceId}>
                     <td className="font-medium">{x.deptName || deptName(x.deptId)}</td>
                     <td className="font-mono text-slate-600">{x.code}</td>
@@ -134,6 +137,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
+          {expPager}
         </div>
       )}
 
@@ -148,7 +152,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {completion.map(r => (
+                {(compRows || []).map(r => (
                   <tr key={r.deptId}>
                     <td className="font-medium">{r.deptName || deptName(r.deptId)}{r.off && <span className="ml-1 text-xs text-slate-500">（已停用）</span>}</td>
                     <td><Bar value={r.signedDays} total={r.dueDays} /></td>
@@ -162,6 +166,7 @@ export default function Dashboard() {
             </table>
           </div>
         )}
+        {completion && completion.length > 0 && compPager}
       </div>
     </div>
   )

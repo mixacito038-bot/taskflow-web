@@ -18,7 +18,7 @@ const yes = process.argv.includes('--yes');
 const db = initDb(cfg.dataDir);
 
 /* 先确认 admin 能用：清空后只剩它，它要是不存在 / 被停用 / 不是超级管理员，就谁都进不了后台了 */
-const admin = db.prepare('SELECT id, role, status FROM users WHERE username = ?').get(KEEP);
+const admin = db.prepare('SELECT id, role, status, display_name FROM users WHERE username = ?').get(KEEP);
 if (!admin || admin.role !== 'admin' || admin.status !== 'on') {
   console.log(!admin ? '✗ 找不到原始管理员账号 admin。'
     : `✗ admin 账号现在${admin.status !== 'on' ? '被停用了' : '不是超级管理员'}。`);
@@ -58,8 +58,17 @@ db.transaction(() => {
   db.prepare('DELETE FROM users WHERE username <> ?').run(KEEP);
   db.exec('DELETE FROM files; DELETE FROM auth_throttle; DELETE FROM audit_log;');
   // 只留一条：谁、什么时候、清空了多少
-  db.prepare(`INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (?, 'data_reset', ?, 'manage.sh', ?)`)
-    .run(admin.id, plan.map(([k, n]) => `${k}=${n}`).join(' '), new Date().toISOString());
+  const detail = plan.map(([k, n]) => `${k}=${n}`).join(' ');
+  // 数据库升级过（有操作日志的新列）就把模块、说明一起写上，操作日志页上看得懂；老库照旧只写基本列
+  if (db.prepare("SELECT 1 FROM pragma_table_info('audit_log') WHERE name = 'module'").get()) {
+    db.prepare(`INSERT INTO audit_log (user_id, action, detail, ip, created_at, username, user_name, user_role, module, op, target, summary, result)
+      VALUES (?, 'data_reset', ?, 'manage.sh', ?, ?, ?, ?, '系统', '清空数据', '全部巡检数据', ?, 'ok')`)
+      .run(admin.id, detail, new Date().toISOString(), KEEP, admin.display_name || KEEP, admin.role,
+        `在服务器上执行 manage.sh reset-data 清空数据，只保留 ${KEEP}。清空前：${plan.map(([k, n]) => `${k} ${n}`).join('、')}`);
+  } else {
+    db.prepare(`INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (?, 'data_reset', ?, 'manage.sh', ?)`)
+      .run(admin.id, detail, new Date().toISOString());
+  }
 })();
 
 let removed = 0;

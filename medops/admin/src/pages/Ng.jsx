@@ -4,6 +4,7 @@ import { api, download } from '../api/client'
 import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, addDays, nz, devStatusText } from '../utils'
 import { Badge, Empty, ErrorTip, Spinner } from '../components/ui'
+import { usePaged } from '../components/Pager'
 
 function normNg(r) {
   return {
@@ -57,6 +58,8 @@ export default function Ng() {
     } catch (e) { setErr(e) } finally { setLoading(false) }
   }
   useEffect(() => { if (from && to) query() }, [deptId, from, to, sign]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { items: rows, pager } = usePaged(list, 'ng', { resetOn: [deptId, from, to, sign] })
 
   /* 导出与页面同一套筛选条件（以前漏了科室：页面筛出 3 条，导出却是全院） */
   function doExport() {
@@ -115,7 +118,7 @@ export default function Ng() {
               <tr><th>日期</th><th>科室</th><th>设备编码</th><th>设备名称</th><th>品类</th><th>异常描述</th><th>巡检人</th><th>当日签字</th></tr>
             </thead>
             <tbody>
-              {list.map((r, i) => (
+              {(rows || []).map((r, i) => (
                 <tr key={i}>
                   <td className="tabular-nums">{r.date}</td>
                   <td className="font-medium">{r.deptName || deptName(r.deptId)}</td>
@@ -132,6 +135,7 @@ export default function Ng() {
             </tbody>
           </table>
         )}
+        {list && list.length > 0 && <div className="border-t border-slate-100">{pager}</div>}
       </div>
     </div>
   )

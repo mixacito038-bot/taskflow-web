@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useDepts, deptOptLabel } from '../hooks'
 import { asList, nz } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
+import { usePaged } from '../components/Pager'
 
 function normMember(m) {
   return {
@@ -100,6 +101,7 @@ export default function Members() {
   }
 
   const shown = (list || []).filter(m => !filterDept || m.deptId === filterDept)
+  const { items: rows, pager } = usePaged(list ? shown : null, 'members', { resetOn: [filterDept] })
 
   return (
     <div>
@@ -124,7 +126,7 @@ export default function Members() {
               <tr><th>姓名</th><th>职称</th><th>科室</th><th>状态</th><th className="text-right">操作</th></tr>
             </thead>
             <tbody>
-              {shown.map(m => (
+              {(rows || []).map(m => (
                 <tr key={m.id}>
                   <td className="font-medium">{m.name}</td>
                   <td className="text-slate-500">{m.title || '—'}</td>
@@ -139,6 +141,7 @@ export default function Members() {
             </tbody>
           </table>
         )}
+        {list && shown.length > 0 && <div className="border-t border-slate-100">{pager}</div>}
       </div>
 
       <MemberModal open={modal !== null} editing={modal} depts={onDepts} formDepts={formDepts}

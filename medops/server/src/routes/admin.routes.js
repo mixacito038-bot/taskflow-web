@@ -6,6 +6,15 @@ const { E } = require('../plugins/error');
 const authSvc = require('../services/auth.service');
 const importSvc = require('../services/import.service');
 const accountSvc = require('../services/account.service');
+const oplog = require('../services/oplog.service');
+const { fmt: F } = oplog;
+/* 操作日志里比较改前改后用的字段（中文名 + 怎么显示） */
+const USER_F = [['username', '登录账号'], ['displayName', '姓名'], ['role', '角色', F.role], ['deptIds', '科室', F.depts], ['status', '状态', F.onoff]];
+const DEPT_F = [['name', '名称'], ['code', '编码'], ['sort', '排序'], ['status', '状态', F.onoff]];
+const DEV_F = [['deptId', '科室', F.dept], ['catName', '品类'], ['code', '编码'], ['name', '名称'], ['model', '型号'], ['location', '位置'],
+  ['status', '状态', F.devStatus], ['sort', '排序'], ['expiryDate', '有效期'], ['expiryNote', '有效期说明'], ['remindDays', '提前提醒天数'], ['serial', '序列号']];
+const MEMBER_F = [['name', '姓名'], ['title', '职务'], ['status', '状态', F.onoff], ['sort', '排序']];
+const listOf = (l, label, max = 50) => l.slice(0, max).map(label).join('、') + (l.length > max ? ` 等 ${l.length} 个` : '');
 const exportSvc = require('../services/export.service');
 const expirySvc = require('../services/expiry.service');
 const P = require('../services/period.service');
@@ -141,13 +150,17 @@ module.exports = async function adminRoutes(app) {
       setUserDepts(db(), uid, list);
       return uid;
     })();
-    authSvc.audit(req.user.id, 'user_create', `username=${username} role=${role}`, req.ip);
-    return userJsonRow(db(), db().prepare('SELECT * FROM users WHERE id = ?').get(id));
+    const created = userJsonRow(db(), db().prepare('SELECT * FROM users WHERE id = ?').get(id));
+    oplog.write({ req, action: 'user_create', target: `账号 ${username}（${created.displayName}）`,
+      summary: `新建账号：${F.role(role)}${list.length ? '，科室 ' + F.depts(list) : ''}`,
+      changes: oplog.diff(null, created, USER_F), detail: `id=${id} username=${username} role=${role}` });
+    return created;
   });
 
   app.patch('/api/admin/users/:id', { preHandler: guard }, async req => {
     const u = db().prepare('SELECT * FROM users WHERE id = ?').get(+req.params.id);
     if (!u) throw E.notFound('用户不存在');
+    const before = userJsonRow(db(), u);
     const b = req.body || {};
     const isAdmin = req.user.role === 'admin';
     if (u.role === 'admin' && !isAdmin) throw E.forbidden('管理员账号只能由管理员修改');
@@ -185,8 +198,18 @@ module.exports = async function adminRoutes(app) {
         if (b.status === 'off') authSvc.revokeAllTokens(u.id); // 禁用即吊销全部 refreshToken
       }
     })();
-    authSvc.audit(req.user.id, 'user_patch', `id=${u.id}${nextUsername !== u.username ? ` username ${u.username}→${nextUsername}` : ''} ${JSON.stringify(b)}`, req.ip);
-    return userJsonRow(db(), db().prepare('SELECT * FROM users WHERE id = ?').get(u.id));
+    const after = userJsonRow(db(), db().prepare('SELECT * FROM users WHERE id = ?').get(u.id));
+    const changes = oplog.diff(before, after, USER_F);
+    if (changes.length) {
+      const onlyStatus = changes.length === 1 && changes[0].f === '状态';
+      oplog.write({ req, action: onlyStatus ? (after.status === 'off' ? 'user_disable' : 'user_enable') : 'user_patch',
+        module: '账号', op: onlyStatus ? (after.status === 'off' ? '停用' : '启用') : '修改',
+        target: `账号 ${after.username}（${after.displayName}）`,
+        summary: onlyStatus ? (after.status === 'off' ? '停用账号，它的登录已全部注销' : '重新启用账号')
+          : '修改了 ' + changes.map(c => c.f).join('、'),
+        changes, detail: `id=${u.id}` });
+    }
+    return after;
   });
 
   app.post('/api/admin/users/:id/reset-password', { preHandler: guard }, async req => {
@@ -198,12 +221,13 @@ module.exports = async function adminRoutes(app) {
       frozen_until = NULL, updated_at = ? WHERE id = ?`).run(bcrypt.hashSync(password, 10), nowIso(), u.id);
     // 重置密码 = 让旧会话全部失效：怀疑密码泄露才去重置，对方的登录不能还继续有效
     authSvc.revokeAllTokens(u.id);
-    authSvc.audit(req.user.id, 'user_reset_password', `id=${u.id}`, req.ip);
+    oplog.write({ req, action: 'user_reset_password', target: oplog.userLabel(u),
+      summary: '重置密码（生成一次性密码，本人首次登录必须改密；原来的登录全部注销）', detail: `id=${u.id}` });
     return { password };
   });
 
   /* 删除账号：不能删自己；管理员账号只有管理员能删，且至少保留一个启用的管理员；
-     有巡检 / 签字记录的账号不能删（删了记录就追溯不到人），返回 409 和原因，页面上可改为停用 */
+     还有有效签字的账号不能删（删了签字就追溯不到人），返回 409 和原因；作废后可删 */
   app.delete('/api/admin/users/:id', { preHandler: guard }, async req => {
     const u = db().prepare('SELECT * FROM users WHERE id = ?').get(+req.params.id);
     if (!u) throw E.notFound('账号不存在，可能已被删除，请刷新页面');
@@ -212,11 +236,15 @@ module.exports = async function adminRoutes(app) {
     if (u.role === 'admin' && u.status === 'on' && !activeAdminsExcept(u.id)) throw E.badInput('系统至少要保留一个启用的管理员账号');
     const why = accountSvc.deleteBlock(db(), u.id);
     if (why) throw E.conflict(why);
+    const snap = userJsonRow(db(), u);
     db().transaction(() => {
       authSvc.revokeAllTokens(u.id);
+      accountSvc.detachRecords(db(), u.id);
       db().prepare('DELETE FROM users WHERE id = ?').run(u.id); // 科室关联、登录凭证、设备登录记录随之删除（ON DELETE CASCADE）
     })();
-    authSvc.audit(req.user.id, 'user_delete', `id=${u.id} username=${u.username} name=${u.display_name} role=${u.role}`, req.ip);
+    oplog.write({ req, action: 'user_delete', target: oplog.userLabel(u),
+      summary: `删除账号（${F.role(u.role)}${snap.deptIds.length ? '，科室 ' + F.depts(snap.deptIds) : ''}）`,
+      changes: oplog.diff(snap, null, USER_F), detail: `id=${u.id} username=${u.username} name=${u.display_name} role=${u.role}` });
     return { ok: true };
   });
 
@@ -232,8 +260,11 @@ module.exports = async function adminRoutes(app) {
     const file = await req.file();
     if (!file) throw E.badInput('缺少上传文件');
     const out = await accountSvc.importAccounts(await file.toBuffer());
-    authSvc.audit(req.user.id, 'users_import',
-      `created=${out.created} errors=${out.errors.length}${out.created ? ' ' + out.accounts.map(a => a.username).join(',').slice(0, 1500) : ''}`, req.ip);
+    oplog.write({ req, action: 'users_import', target: `文件 ${file.filename || ''}`.trim(),
+      result: out.created ? 'ok' : 'fail',
+      summary: out.created ? `批量导入 ${out.created} 个账号：${listOf(out.accounts, a => `${a.username}（${a.displayName}）`)}`
+        : `表里有 ${out.errors.length} 行不符合要求，一个都没有导入`,
+      detail: `created=${out.created} errors=${out.errors.length}` });
     return out;
   });
 
@@ -244,7 +275,7 @@ module.exports = async function adminRoutes(app) {
     if (u.role === 'admin' && req.user.role !== 'admin') throw E.forbidden('管理员账号只能由管理员解冻');
     db().prepare('UPDATE users SET fail_count = 0, freeze_level = 0, frozen_until = NULL, updated_at = ? WHERE id = ?')
       .run(nowIso(), u.id);
-    authSvc.audit(req.user.id, 'user_unfreeze', `id=${u.id}`, req.ip);
+    oplog.write({ req, action: 'user_unfreeze', target: oplog.userLabel(u), summary: '解除密码连错冻结（密码不变）', detail: `id=${u.id}` });
     return userJsonRow(db(), db().prepare('SELECT * FROM users WHERE id = ?').get(u.id));
   });
 
@@ -259,7 +290,9 @@ module.exports = async function adminRoutes(app) {
     if (db().prepare('SELECT 1 FROM depts WHERE name = ?').get(name)) throw E.conflict('科室名称已存在');
     const id = db().prepare('INSERT INTO depts (name, code, sort, status, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(name, String(b.code || '').trim(), sortOf(b.sort, 0), b.status === 'off' ? 'off' : 'on', nowIso()).lastInsertRowid;
-    return deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(id));
+    const created = deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(id));
+    oplog.write({ req, action: 'dept_create', target: `科室 ${name}`, summary: '新建科室', changes: oplog.diff(null, created, DEPT_F), detail: `id=${id}` });
+    return created;
   });
 
   app.patch('/api/admin/depts/:id', { preHandler: guard }, async req => {
@@ -272,8 +305,15 @@ module.exports = async function adminRoutes(app) {
     if (b.status != null && !['on', 'off'].includes(b.status)) throw E.badInput('status 不正确');
     db().prepare('UPDATE depts SET name = ?, code = ?, sort = ?, status = ? WHERE id = ?')
       .run(name, String(b.code ?? d.code).trim(), sortOf(b.sort, d.sort), b.status || d.status, d.id);
-    if (b.status && b.status !== d.status) authSvc.audit(req.user.id, b.status === 'off' ? 'dept_disable' : 'dept_enable', `id=${d.id} name=${name}`, req.ip);
-    return deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(d.id));
+    const after = deptJson(db().prepare('SELECT * FROM depts WHERE id = ?').get(d.id));
+    const changes = oplog.diff(deptJson(d), after, DEPT_F);
+    if (changes.length) {
+      const onlyStatus = changes.length === 1 && changes[0].f === '状态';
+      oplog.write({ req, action: onlyStatus ? (after.status === 'off' ? 'dept_disable' : 'dept_enable') : 'dept_patch',
+        target: `科室 ${after.name}`, summary: onlyStatus ? (after.status === 'off' ? '停用科室' : '启用科室') : '修改了 ' + changes.map(c => c.f).join('、'),
+        changes, detail: `id=${d.id} name=${name}` });
+    }
+    return after;
   });
 
   /* 科室能不能删：能删返回 null，不能删返回原因（单个删除和批量删除共用） */
@@ -304,11 +344,13 @@ module.exports = async function adminRoutes(app) {
 
   app.delete('/api/admin/depts/:id', { preHandler: guard }, async req => {
     const id = +req.params.id;
-    if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(id)) throw E.notFound('科室不存在');
+    const old = db().prepare('SELECT * FROM depts WHERE id = ?').get(id);
+    if (!old) throw E.notFound('科室不存在');
     const why = deptDeleteBlock(id);
     if (why) throw E.conflict(why);
     db().transaction(() => deleteDept(id))();
-    authSvc.audit(req.user.id, 'dept_delete', `id=${id}`, req.ip);
+    oplog.write({ req, action: 'dept_delete', target: `科室 ${old.name}`, summary: '删除科室（连同它下面没巡检过的设备、签字人名单）',
+      changes: oplog.diff(deptJson(old), null, DEPT_F), detail: `id=${id}` });
     return { ok: true };
   });
 
@@ -324,7 +366,9 @@ module.exports = async function adminRoutes(app) {
     const file = await req.file();
     if (!file) throw E.badInput('缺少上传文件');
     const out = await importSvc.importDepts(await file.toBuffer());
-    authSvc.audit(req.user.id, 'depts_import', `created=${out.created} updated=${out.updated} errors=${out.errors.length}`, req.ip);
+    oplog.write({ req, action: 'depts_import', target: `文件 ${file.filename || ''}`.trim(), result: out.created || out.updated ? 'ok' : 'fail',
+      summary: `Excel 导入科室：新增 ${out.created} 个、更新 ${out.updated} 个、失败 ${out.errors.length} 行`,
+      detail: `created=${out.created} updated=${out.updated} errors=${out.errors.length}` });
     return out;
   });
 
@@ -353,9 +397,11 @@ module.exports = async function adminRoutes(app) {
         out.deleted.push(one);
       }
     })();
-    const names = l => l.map(x => x.name).slice(0, 100).join(',') + (l.length > 100 ? ` 等 ${l.length} 个` : '');
-    if (out.updated.length) authSvc.audit(req.user.id, 'dept_batch_status', `status=${b.status} n=${out.updated.length} names=${names(out.updated)}`, req.ip);
-    if (out.deleted.length) authSvc.audit(req.user.id, 'dept_batch_delete', `n=${out.deleted.length} names=${names(out.deleted)}`, req.ip);
+    const names = l => listOf(l, x => x.name, 100);
+    if (out.updated.length) oplog.write({ req, action: 'dept_batch_status', target: `${out.updated.length} 个科室`,
+      summary: `批量${F.onoff(b.status)}：${names(out.updated)}`, detail: `status=${b.status} n=${out.updated.length} names=${names(out.updated)}` });
+    if (out.deleted.length) oplog.write({ req, action: 'dept_batch_delete', target: `${out.deleted.length} 个科室`,
+      summary: `批量删除：${names(out.deleted)}${out.blocked.length ? `；另有 ${out.blocked.length} 个用过的没删` : ''}`, detail: `n=${out.deleted.length} names=${names(out.deleted)}` });
     return out;
   });
 
@@ -390,7 +436,10 @@ module.exports = async function adminRoutes(app) {
       .run(+b.deptId, catName, code, name, String(b.model || '').trim(),
         String(b.location || '').trim(), devStatus(b.status, 'in_use'), sortOf(b.sort, 0),
         exp.date, exp.note, exp.days, serial, nowIso(), nowIso()).lastInsertRowid;
-    return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(id));
+    const created = deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(id));
+    oplog.write({ req, action: 'device_create', target: oplog.deviceLabel(created), summary: `新增设备到 ${F.dept(created.deptId)}`,
+      changes: oplog.diff(null, created, DEV_F), detail: `id=${id}` });
+    return created;
   });
 
   app.patch('/api/admin/devices/:id', { preHandler: guard }, async req => {
@@ -411,9 +460,17 @@ module.exports = async function adminRoutes(app) {
       .run(deptId, catName, code, name, String(b.model ?? v.model).trim(), String(b.location ?? v.location).trim(),
         devStatus(b.status, v.status), sortOf(b.sort, v.sort),
         exp.date, exp.note, exp.days, serial, nowIso(), v.id);
-    // 调拨留痕：月报按实际巡检记录出行，调拨本身记进审计，事后能查到设备何时从哪调到哪
-    if (deptId !== v.dept_id) authSvc.audit(req.user.id, 'device_transfer', `id=${v.id} code=${code} name=${name} from=${v.dept_id} to=${deptId}`, req.ip);
-    return deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(v.id));
+    // 调拨留痕：月报按实际巡检记录出行，调拨本身记进日志，事后能查到设备何时从哪调到哪
+    const after = deviceJson(db().prepare('SELECT * FROM devices WHERE id = ?').get(v.id));
+    const changes = oplog.diff(deviceJson(v), after, DEV_F);
+    if (changes.length) {
+      const moved = deptId !== v.dept_id;
+      oplog.write({ req, action: moved ? 'device_transfer' : 'device_patch', target: oplog.deviceLabel(after),
+        summary: moved ? `调拨：${F.dept(v.dept_id)} → ${F.dept(deptId)}${changes.length > 1 ? '；另改了 ' + changes.filter(c => c.f !== '科室').map(c => c.f).join('、') : ''}`
+          : '修改了 ' + changes.map(c => c.f).join('、'),
+        changes, detail: moved ? `id=${v.id} code=${code} name=${name} from=${v.dept_id} to=${deptId}` : `id=${v.id}` });
+    }
+    return after;
   });
 
   /* 巡检过的设备不能删：删了它，历史巡检记录、月报、异常清单里这台设备就没了着落。
@@ -431,7 +488,8 @@ module.exports = async function adminRoutes(app) {
         + '手机端不再列出这台设备，历史记录和报表照常保留。');
     }
     db().prepare('DELETE FROM devices WHERE id = ?').run(id);
-    authSvc.audit(req.user.id, 'device_delete', `id=${v.id} code=${v.code} name=${v.name}`, req.ip);
+    oplog.write({ req, action: 'device_delete', target: oplog.deviceLabel(v), summary: `删除设备（原属 ${F.dept(v.dept_id)}）`,
+      changes: oplog.diff(deviceJson(v), null, DEV_F), detail: `id=${v.id} code=${v.code} name=${v.name}` });
     return { ok: true };
   });
 
@@ -464,9 +522,11 @@ module.exports = async function adminRoutes(app) {
         out.deleted.push(one);
       }
     })();
-    const codes = l => l.map(x => DC.devLabel(x)).slice(0, 100).join(',') + (l.length > 100 ? ` 等 ${l.length} 台` : '');
-    if (out.updated.length) authSvc.audit(req.user.id, 'device_batch_status', `status=${status} n=${out.updated.length} codes=${codes(out.updated)}`, req.ip);
-    if (out.deleted.length) authSvc.audit(req.user.id, 'device_batch_delete', `n=${out.deleted.length} codes=${codes(out.deleted)}`, req.ip);
+    const codes = l => listOf(l, x => DC.devLabel(x), 100);
+    if (out.updated.length) oplog.write({ req, action: 'device_batch_status', target: `${out.updated.length} 台设备`,
+      summary: `批量改为「${F.devStatus(status)}」：${codes(out.updated)}`, detail: `status=${status} n=${out.updated.length} codes=${codes(out.updated)}` });
+    if (out.deleted.length) oplog.write({ req, action: 'device_batch_delete', target: `${out.deleted.length} 台设备`,
+      summary: `批量删除：${codes(out.deleted)}${out.blocked.length ? `；另有 ${out.blocked.length} 台巡检过的没删` : ''}`, detail: `n=${out.deleted.length} codes=${codes(out.deleted)}` });
     return out;
   });
 
@@ -483,7 +543,9 @@ module.exports = async function adminRoutes(app) {
     if (!file) throw E.badInput('缺少上传文件');
     const buf = await file.toBuffer();
     const out = await importSvc.importDevices(buf);
-    authSvc.audit(req.user.id, 'devices_import', `created=${out.created} updated=${out.updated} errors=${out.errors.length}`, req.ip);
+    oplog.write({ req, action: 'devices_import', target: `文件 ${file.filename || ''}`.trim(), result: out.created || out.updated ? 'ok' : 'fail',
+      summary: `Excel 导入设备：新增 ${out.created} 台、更新 ${out.updated} 台、失败 ${out.errors.length} 行`,
+      detail: `created=${out.created} updated=${out.updated} errors=${out.errors.length}` });
     return out;
   });
 
@@ -506,7 +568,10 @@ module.exports = async function adminRoutes(app) {
     }
     const id = db().prepare('INSERT INTO members (dept_id, name, title, status, sort) VALUES (?, ?, ?, ?, ?)')
       .run(+b.deptId, name, String(b.title || '').trim(), b.status === 'off' ? 'off' : 'on', sortOf(b.sort, 0)).lastInsertRowid;
-    return memberJson(db().prepare('SELECT * FROM members WHERE id = ?').get(id));
+    const created = memberJson(db().prepare('SELECT * FROM members WHERE id = ?').get(id));
+    oplog.write({ req, action: 'member_create', target: `签字人 ${name}（${F.dept(b.deptId)}）`, summary: '新增签字人',
+      changes: oplog.diff(null, created, MEMBER_F), detail: `id=${id}` });
+    return created;
   });
 
   app.patch('/api/admin/members/:id', { preHandler: guard }, async req => {
@@ -536,12 +601,19 @@ module.exports = async function adminRoutes(app) {
         WHERE dept_id = ? AND (sign_member_id = ? OR (sign_member_id IS NULL AND sign_name = ?))`)
         .run(m.id, name, title, m.dept_id, m.id, m.name);
     })();
-    return memberJson(db().prepare('SELECT * FROM members WHERE id = ?').get(m.id));
+    const after = memberJson(db().prepare('SELECT * FROM members WHERE id = ?').get(m.id));
+    const changes = oplog.diff(memberJson(m), after, MEMBER_F);
+    if (changes.length) oplog.write({ req, action: 'member_patch', target: `签字人 ${after.name}（${F.dept(m.dept_id)}）`,
+      summary: '修改了 ' + changes.map(c => c.f).join('、') + (changes.some(c => c.f === '姓名') ? '（历史周签里的姓名同步更新）' : ''), changes, detail: `id=${m.id}` });
+    return after;
   });
 
   app.delete('/api/admin/members/:id', { preHandler: guard }, async req => {
-    if (!db().prepare('SELECT 1 FROM members WHERE id = ?').get(+req.params.id)) throw E.notFound('签字人不存在');
-    db().prepare('DELETE FROM members WHERE id = ?').run(+req.params.id);
+    const m = db().prepare('SELECT * FROM members WHERE id = ?').get(+req.params.id);
+    if (!m) throw E.notFound('签字人不存在');
+    db().prepare('DELETE FROM members WHERE id = ?').run(m.id);
+    oplog.write({ req, action: 'member_delete', target: `签字人 ${m.name}（${F.dept(m.dept_id)}）`,
+      summary: '删除签字人（历史周签里仍显示这个名字）', changes: oplog.diff(memberJson(m), null, MEMBER_F), detail: `id=${m.id}` });
     return { ok: true };
   });
 
@@ -552,7 +624,7 @@ module.exports = async function adminRoutes(app) {
     if (!['day', 'week', 'month'].includes(type)) throw E.badInput('type 必须是 day/week/month');
     if (!deptId || !key) throw E.badInput('deptId/key 必填');
     if (!reason) throw E.badInput('请填写作废原因');
-    let orig = '';   // 被作废的签字原样写进审计：签字行会被清空/删除，事后要能查到原来是谁、何时签的
+    let orig = '', origWho = '', origAt = '';   // 被作废的签字原样写进日志：签字行会被清空/删除，事后要能查到原来是谁、何时签的
     const did = +deptId;
     /* 作废必须「自上而下」：上级签字建立在下级签字之上，且上级签字会锁定下级记录。
        若允许先作废下级（如周签还在时作废日签），就会出现「周签已签、其中一天却没有日签」，
@@ -567,6 +639,7 @@ module.exports = async function adminRoutes(app) {
       const mo = P.signMonthOf(r.date);   // 这一天所在的周归哪个月，就由哪个月的月签管
       if (monthSigned(mo)) throw E.locked(`这一天所属的 ${mo} 已月签，请先作废月签`);
       orig = `签字人=${r.sign_name} 签字人账号=${r.sign_user_id ?? ''} 时间=${r.sign_at} 签名图=${r.sign_file_id} 意见=${r.sign_opinion || ''}`;
+      origWho = r.sign_name; origAt = r.sign_at;
       db().prepare(`UPDATE records SET sign_name = NULL, sign_title = NULL, sign_opinion = NULL,
         sign_file_id = NULL, sign_user_id = NULL, sign_at = NULL, updated_at = ? WHERE id = ?`).run(P.stamp(), r.id);
     } else if (type === 'week') {
@@ -575,14 +648,20 @@ module.exports = async function adminRoutes(app) {
       const m = P.moOf(r.week_start);   // 周按周一所在月份归属
       if (monthSigned(m)) throw E.locked(`这一周归属的 ${m} 已月签，请先作废月签，再作废周签`);
       orig = `签字人=${r.sign_name} 名单ID=${r.sign_member_id ?? ''} 时间=${r.sign_at} 签名图=${r.sign_file_id} 统计=台次${r.stat_checked}/异常${r.stat_ng}/天数${r.stat_days}`;
+      origWho = r.sign_name; origAt = r.sign_at;
       db().prepare('DELETE FROM week_signs WHERE id = ?').run(r.id);
     } else {
       const r = db().prepare('SELECT * FROM month_signs WHERE dept_id = ? AND month = ?').get(did, String(key));
       if (!r) throw E.notFound('该月无签字');
       orig = `签字人=${r.sign_name} 账号=${r.signed_by ?? ''} 时间=${r.sign_at} 签名图=${r.sign_file_id} 统计=台次${r.stat_checked}/异常${r.stat_ng}/周数${r.stat_weeks}`;
+      origWho = r.sign_name; origAt = r.sign_at;
       db().prepare('DELETE FROM month_signs WHERE id = ?').run(r.id);
     }
-    authSvc.audit(req.user.id, 'sign_void', `type=${type} deptId=${did} key=${key} reason=${reason} 原签字：${orig}`, req.ip);
+    const kind = { day: '日签', week: '周签', month: '月签' }[type];
+    oplog.write({ req, action: 'sign_void', target: `${F.dept(did)} · ${type === 'week' ? key + ' 起的一周' : key} ${kind}`,
+      summary: `作废${kind}。原因：${reason}。原签字人：${origWho}，签于 ${origAt}`,
+      changes: [{ f: kind, from: `${origWho}（${origAt}）`, to: '已作废' }],
+      detail: `type=${type} deptId=${did} key=${key} reason=${reason} 原签字：${orig}` });
     return { ok: true };
   });
 
@@ -593,7 +672,12 @@ module.exports = async function adminRoutes(app) {
     // dryRun=1：「先检查」——完整走一遍、整体回滚，不写任何数据
     const dryRun = req.query.dryRun === '1';
     const out = importSvc.importLegacy(req.body, { dryRun });
-    if (!dryRun) authSvc.audit(req.user.id, 'import_legacy', JSON.stringify(out.imported), req.ip);
+    if (!dryRun) {
+      const I = out.imported || {};
+      oplog.write({ req, action: 'import_legacy', target: '历史数据（JSON）',
+        summary: `导入：科室 ${I.depts || 0}、设备 ${I.devices || 0}、签字人 ${I.members || 0}、账号 ${I.users || 0}、巡检记录 ${I.records || 0}、周签 ${I.weeksigns || 0}、月签 ${I.monthsigns || 0}；跳过 ${out.errors.length} 条`,
+        detail: JSON.stringify(out.imported) });
+    }
     return out;
   });
 
@@ -609,5 +693,36 @@ module.exports = async function adminRoutes(app) {
       .all(...args)
       .map(a => ({ id: String(a.id), userId: a.user_id != null ? String(a.user_id) : null,
         action: a.action, detail: a.detail, ip: a.ip, createdAt: a.created_at }));
+  });
+
+  /* ---------- 操作日志（后台「操作日志」页） ----------
+     筛选：from/to（上海日期）、module、op、userId、result、q（搜对象 / 说明 / 操作人 / IP / 改动内容）；
+     分页：page、size（10/20/50/100，0 = 全部，最多 5000 条，超出时 capped=true） */
+  const logFilter = q => {
+    const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+    for (const k of ['from', 'to']) if (q[k] && !isDay(q[k])) throw E.badInput('日期格式应为 YYYY-MM-DD');
+    if (q.result && !['ok', 'fail'].includes(q.result)) throw E.badInput('result 只能是 ok / fail');
+    return { fromIso: q.from ? P.shDayStartIso(q.from) : null, toIso: q.to ? P.shDayEndIso(q.to) : null,
+      module: q.module || null, op: q.op || null, userId: q.userId && /^\d+$/.test(q.userId) ? q.userId : null,
+      result: q.result || null, q: String(q.q || '').trim().slice(0, 100) || null };
+  };
+  app.get('/api/admin/oplog', { preHandler: guard }, async req => {
+    const q = req.query || {};
+    const size = q.size == null || q.size === '' ? 20 : Number(q.size);
+    if (!Number.isInteger(size) || size < 0) throw E.badInput('size 不正确');
+    const page = Number(q.page) > 0 ? Math.floor(Number(q.page)) : 1;
+    return oplog.query(logFilter(q), { page, size });
+  });
+  app.get('/api/admin/oplog/meta', { preHandler: guard }, async () => oplog.meta());
+  app.get('/api/admin/oplog/export.xlsx', { preHandler: [app.authAny, app.requireRole('equip', 'admin')] }, async (req, reply) => {
+    const f = logFilter(req.query || {});
+    const { items, total } = oplog.query(f, { page: 1, size: 0 });
+    const buf = await exportSvc.oplogXlsx(items, total);
+    oplog.write({ req, action: 'export_oplog', target: `操作日志 ${req.query.from || '最早'} ~ ${req.query.to || '至今'}`,
+      summary: `导出操作日志 ${items.length} 条${total > items.length ? `（共 ${total} 条，只导出最近 ${items.length} 条）` : ''}`, detail: JSON.stringify(req.query || {}).slice(0, 500) });
+    const name = `操作日志_${req.query.from || '最早'}_${req.query.to || '至今'}.xlsx`;
+    reply.header('Content-Disposition', `attachment; filename="oplog.xlsx"; filename*=UTF-8''${encodeURIComponent(name)}`)
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return reply.send(buf);
   });
 };

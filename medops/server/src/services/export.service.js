@@ -191,4 +191,24 @@ async function deptTemplateXlsx() {
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-module.exports = { monthlyXlsx, ngXlsx, importTemplateXlsx, deptTemplateXlsx };
+/* 操作日志导出：一行一条，改动内容展开成「字段：改前 → 改后」 */
+async function oplogXlsx(items, total) {
+  const ROLE = { inspector: '巡检员', dept: '护士长', equip: '设备科', admin: '超级管理员' };
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('操作日志');
+  const cols = [['时间', 20], ['操作人账号', 14], ['操作人姓名', 12], ['角色', 10], ['模块', 8], ['操作', 14], ['对象', 34],
+    ['说明', 50], ['改动内容', 50], ['结果', 6], ['IP', 16], ['设备号', 20], ['浏览器 / 手机', 40]];
+  ws.addRow(cols.map(c => c[0])).font = { bold: true };
+  cols.forEach(([, w], i) => { ws.getColumn(i + 1).width = w; });
+  const sh = iso => { const d = new Date(new Date(iso).getTime() + 8 * 3600e3); return d.toISOString().replace('T', ' ').slice(0, 19); };
+  for (const a of items) {
+    const row = ws.addRow([sh(a.createdAt), a.username, a.userName, ROLE[a.userRole] || a.userRole, a.module, a.op, a.target, a.summary,
+      a.changes.map(c => `${c.f}：${c.from || '—'} → ${c.to || '—'}`).join('\n'), a.result === 'fail' ? '失败' : '成功', a.ip, a.device, a.ua]);
+    row.alignment = { vertical: 'top', wrapText: true };
+  }
+  if (total > items.length) ws.addRow([`共 ${total} 条，这里只导出了最近的 ${items.length} 条；请缩小时间范围分几次导出`]);
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+module.exports = { monthlyXlsx, ngXlsx, importTemplateXlsx, deptTemplateXlsx, oplogXlsx };

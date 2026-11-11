@@ -4,6 +4,7 @@ import { api, download } from '../api/client'
 import { useDepts, useServerTime, deptOptLabel } from '../hooks'
 import { asList, nz, DEVICE_STATUS, devStatusText, isDevStatus } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
+import { usePaged } from '../components/Pager'
 import XlsxImportModal from '../components/XlsxImportModal'
 
 function normDevice(d) {
@@ -296,9 +297,16 @@ export default function Devices() {
       return next.size === prev.size ? prev : next
     })
   }, [shownKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  const allOn = shown.length > 0 && shown.every(d => sel.has(d.id))
-  const someOn = shown.some(d => sel.has(d.id))
-  const toggleAll = () => setSel(allOn ? new Set() : new Set(shown.map(d => d.id)))
+  /* 分页：表头的勾选框只管这一页；要选全部筛选结果，用上面选择条里的「选中全部」 */
+  const { items: pageRows, pager } = usePaged(list ? shown : null, 'devices', { resetOn: [filterDept, filterStatus, kw] })
+  const rows = pageRows || []
+  const allOn = rows.length > 0 && rows.every(d => sel.has(d.id))
+  const someOn = rows.some(d => sel.has(d.id))
+  const toggleAll = () => setSel(prev => {
+    const next = new Set(prev)
+    rows.forEach(d => (allOn ? next.delete(d.id) : next.add(d.id)))
+    return next
+  })
   const toggle = id => setSel(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
@@ -369,6 +377,9 @@ export default function Devices() {
           ))}
           <span className="mx-1 h-4 w-px bg-slate-300" aria-hidden="true" />
           <button className="btn-danger !px-2.5 !py-1 text-xs" disabled={busy} onClick={() => batch('delete')}>批量删除</button>
+          {sel.size < shown.length && (
+            <button className="text-xs text-primary hover:underline" onClick={() => setSel(new Set(shown.map(d => d.id)))}>选中全部 {shown.length} 台（含其他页）</button>
+          )}
           <button className="ml-auto text-xs text-slate-600 hover:text-slate-800" onClick={() => setSel(new Set())}>取消选择</button>
         </div>
       )}
@@ -379,14 +390,14 @@ export default function Devices() {
             <thead>
               <tr>
                 <th className="w-8">
-                  <input type="checkbox" aria-label="全选当前列表" checked={allOn} onChange={toggleAll}
+                  <input type="checkbox" aria-label="全选这一页" checked={allOn} onChange={toggleAll}
                     ref={el => { if (el) el.indeterminate = someOn && !allOn }} />
                 </th>
                 <th>编码</th><th>名称</th><th>序列号</th><th>品类</th><th>科室</th><th>位置</th><th>状态</th><th>有效期</th><th className="text-right">操作</th>
               </tr>
             </thead>
             <tbody>
-              {shown.map(d => (
+              {rows.map(d => (
                 <tr key={d.id} className={sel.has(d.id) ? 'bg-primary-light/60' : ''}>
                   <td><input type="checkbox" aria-label={`选择 ${d.code} ${d.name}`} checked={sel.has(d.id)} onChange={() => toggle(d.id)} /></td>
                   <td className="font-mono text-slate-600">{d.code}</td>
@@ -421,6 +432,7 @@ export default function Devices() {
             </tbody>
           </table>
         )}
+        {list && shown.length > 0 && <div className="border-t border-slate-100">{pager}</div>}
       </div>
 
       <DeviceModal open={modal !== null} editing={modal} depts={onDepts} formDepts={formDepts} onClose={() => setModal(null)} onSaved={load} time={time} />

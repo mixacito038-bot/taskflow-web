@@ -29,6 +29,7 @@ const NAV = [
     group: '系统',
     items: [
       { to: '/users', label: '账号管理', icon: '◑' },
+      { to: '/oplog', label: '操作日志', icon: '≡' },
       { to: '/import-legacy', label: '历史数据导入', icon: '⇪', adminOnly: true }
     ]
   }

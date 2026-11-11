@@ -14,6 +14,7 @@ import Ng from './pages/Ng'
 import Stats from './pages/Stats'
 import ExportPage from './pages/Export'
 import LegacyImport from './pages/LegacyImport'
+import OpLog from './pages/OpLog'
 
 function RequireAuth({ children }) {
   if (!getToken()) return <Navigate to="/login" replace />
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="devices" element={<Devices />} />
           <Route path="members" element={<Members />} />
           <Route path="users" element={<Users />} />
+          <Route path="oplog" element={<OpLog />} />
           <Route path="import-legacy" element={<RequireAdmin><LegacyImport /></RequireAdmin>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

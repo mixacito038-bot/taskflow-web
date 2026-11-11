@@ -253,8 +253,16 @@ function apply(idx, db = getDb(), opts = {}) {
     e.code = 'CONFLICT';
     throw e;
   }
-  db.prepare(`INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (NULL, 'ams_restore', ?, 'manage.sh', ?)`)
-    .run(`before=${p.event.start} dev=${p.event.dev} keys=${p.changes.length} keepLater=${p.keepLater ? 1 : 0}`, new Date().toISOString());
+  const detail = `before=${p.event.start} dev=${p.event.dev} keys=${p.changes.length} keepLater=${p.keepLater ? 1 : 0}`;
+  if (db.prepare("SELECT 1 FROM pragma_table_info('audit_log') WHERE name = 'module'").get()) {
+    db.prepare(`INSERT INTO audit_log (user_id, action, detail, ip, created_at, module, op, target, summary, result)
+      VALUES (NULL, 'ams_restore', ?, 'manage.sh', ?, '系统', '资产盘点数据还原', '资产盘点', ?, 'ok')`)
+      .run(detail, new Date().toISOString(),
+        `在服务器上执行 manage.sh ams-restore：还原到 ${p.event.start} 那次覆盖之前，共 ${p.changes.length} 份数据${p.keepLater ? '，保留了覆盖之后的改动' : ''}`);
+  } else {
+    db.prepare(`INSERT INTO audit_log (user_id, action, detail, ip, created_at) VALUES (NULL, 'ams_restore', ?, 'manage.sh', ?)`)
+      .run(detail, new Date().toISOString());
+  }
   return { ...p, written: p.changes.length };
 }
 

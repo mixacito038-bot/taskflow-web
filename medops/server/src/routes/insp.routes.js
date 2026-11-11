@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('fs');
+const oplog = require('../services/oplog.service');
 const { getDb } = require('../db/connection');
 const { E } = require('../plugins/error');
 const recSvc = require('../services/record.service');
@@ -81,7 +82,11 @@ module.exports = async function inspRoutes(app) {
     preHandler: [app.auth, app.requireRole('inspector')]
   }, async req => {
     app.assertDeptScope(req.user, +req.params.deptId);
-    return recSvc.signRecord(req.user, +req.params.deptId, req.params.date, req.body || {});
+    const r = recSvc.signRecord(req.user, +req.params.deptId, req.params.date, req.body || {});
+    const vals = Object.values(r.checks || {});
+    oplog.write({ req, action: 'sign_day', target: `${oplog.deptNames([r.deptId])} · ${r.date} 日签`,
+      summary: `日签：勾选 ${vals.length} 台，其中异常 ${vals.filter(v => v === 'ng').length} 台；这一天已锁定`, detail: `recordId=${r.id}` });
+    return r;
   });
 
   /* ---------- 周签 ---------- */
@@ -98,7 +103,10 @@ module.exports = async function inspRoutes(app) {
     preHandler: [app.auth, app.requireRole('dept')]
   }, async req => {
     app.assertDeptScope(req.user, +req.params.deptId);
-    return recSvc.signWeek(req.user, +req.params.deptId, req.params.week, req.body || {});
+    const w = recSvc.signWeek(req.user, +req.params.deptId, req.params.week, req.body || {});
+    oplog.write({ req, action: 'sign_week', target: `${oplog.deptNames([w.deptId])} · ${w.week} 起的一周 周签`,
+      summary: `周签（确认人 ${w.sign.name}）：${w.stat.days} 天、${w.stat.checked} 台次、异常 ${w.stat.ng} 台次；这一周已锁定`, detail: `weekSignId=${w.id}` });
+    return w;
   });
 
   /* ---------- 月签 ---------- */
@@ -113,7 +121,12 @@ module.exports = async function inspRoutes(app) {
 
   app.post('/api/monthsigns/:deptId/:month/sign', {
     preHandler: [app.auth, app.requireRole('equip', 'admin')]
-  }, async req => recSvc.signMonth(req.user, +req.params.deptId, req.params.month, req.body || {}));
+  }, async req => {
+    const m = recSvc.signMonth(req.user, +req.params.deptId, req.params.month, req.body || {});
+    oplog.write({ req, action: 'sign_month', target: `${oplog.deptNames([m.deptId])} · ${m.month} 月签`,
+      summary: `月签：${m.stat.weeks} 周、${m.stat.checked} 台次、异常 ${m.stat.ng} 台次；整月已锁定`, detail: `monthSignId=${m.id}` });
+    return m;
+  });
 
   /* ---------- 签名图（Bearer 或 Cookie；范围校验） ---------- */
   app.get('/api/files/:id', { preHandler: [app.authAny] }, async (req, reply) => {

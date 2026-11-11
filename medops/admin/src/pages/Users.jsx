@@ -5,6 +5,7 @@ import { useDepts, deptOptLabel } from '../hooks'
 import { asList, nz, ROLE_TEXT, fmtRetry } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 import AccountImportModal from '../components/AccountImportModal'
+import { usePaged } from '../components/Pager'
 
 const ROLES = ['inspector', 'dept', 'equip', 'admin']
 
@@ -174,6 +175,11 @@ export default function Users() {
   const [copied, setCopied] = useState(false)
   const [delTarget, setDelTarget] = useState(null) // 待删除的账号
   const [importOpen, setImportOpen] = useState(false)
+  const [kw, setKw] = useState('')
+  const [roleF, setRoleF] = useState('')
+  const shown = (list || []).filter(u => (!roleF || u.role === roleF)
+    && (!kw || `${u.username} ${u.displayName}`.toLowerCase().includes(kw.trim().toLowerCase())))
+  const { items: pageList, pager } = usePaged(list ? shown : null, 'users', { resetOn: [kw, roleF] })
 
   function load() {
     api('/admin/users').then(res => setList(asList(res).map(normUser))).catch(setErr)
@@ -220,16 +226,23 @@ export default function Users() {
           <button className="btn-primary" onClick={() => setModal({})}>+ 新建账号</button>
         </div>
       </div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <select className="inp !w-36" value={roleF} onChange={e => setRoleF(e.target.value)} aria-label="按角色筛选">
+          <option value="">全部角色</option>
+          {ROLES.map(r => <option key={r} value={r}>{ROLE_TEXT[r]}</option>)}
+        </select>
+        <input className="inp !w-64" placeholder="搜索账号 / 姓名" value={kw} onChange={e => setKw(e.target.value)} />
+      </div>
       <ErrorTip error={err || deptErr} className="mb-4" />
 
       <div className="card overflow-x-auto">
-        {!list ? <Spinner /> : list.length === 0 ? <Empty /> : (
+        {!list ? <Spinner /> : shown.length === 0 ? <Empty /> : (
           <table className="tbl">
             <thead>
               <tr><th>账号</th><th>姓名</th><th>角色</th><th>科室</th><th>状态</th><th className="text-right">操作</th></tr>
             </thead>
             <tbody>
-              {list.map(u => {
+              {pageList.map(u => {
                 /* 管理员账号只有管理员能动；自己的账号不能在这里停用（会把自己锁在门外） */
                 const locked = u.role === 'admin' && !iAmAdmin
                 const isSelf = String(u.id) === String(me?.id)
@@ -270,6 +283,7 @@ export default function Users() {
             </tbody>
           </table>
         )}
+        {list && shown.length > 0 && <div className="border-t border-slate-100">{pager}</div>}
       </div>
 
       <UserModal open={modal !== null} editing={modal} depts={onDepts} allDepts={depts} users={list || []} onClose={() => setModal(null)} onSaved={load} />
@@ -329,7 +343,7 @@ function DeleteModal({ user, deptLabel, onClose, onDone }) {
       </div>
       {!blocked && (
         <p className="mb-3 text-sm text-slate-600">
-          删除后这个账号<b className="text-red-600">不能恢复</b>，手机和电脑上的登录会立即失效。已经有巡检或签字记录的账号不能删除，只能停用。确定删除？
+          删除后这个账号<b className="text-red-600">不能恢复</b>，手机和电脑上的登录会立即失效。还有有效签字（日签、周签、月签）的账号不能删除：签错的先作废再删，不再使用的改为停用。确定删除？
         </p>
       )}
       <ErrorTip error={err} className="mb-3" />

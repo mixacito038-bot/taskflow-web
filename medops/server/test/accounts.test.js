@@ -112,16 +112,26 @@ test('删除：确认规则；用过的账号不能删，可以停用', async ()
   const et = (await login('equip_y', 'pass123')).json.accessToken;
   assert.equal((await api('DELETE', `/api/admin/users/${adminId}`, { token: et })).status, 403);
 
-  // 有巡检记录的账号：409，原因写清楚；停用照常
+  // 有有效日签的账号：409，原因写清楚（几条、先作废）；停用照常
   const dev = (await api('POST', '/api/admin/devices', { token: admin, body: { deptId: deptA, catName: '除颤仪', code: 'JZ-1', name: '除颤仪' } })).json.id;
   const u = (await mk('used_insp', 'inspector', [deptA])).json;
+  await api('PATCH', `/api/admin/users/${u.id}`, { token: admin, body: { displayName: '用过的巡检员' } });
   const ut = (await login('used_insp', 'pass123')).json.accessToken;
   const today = (await api('GET', '/api/time', { token: ut })).json.date;
   assert.equal((await api('PUT', `/api/records/${deptA}/${today}`, { token: ut, body: { checks: { [dev]: 'ok' } } })).status, 200);
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  assert.equal((await api('POST', `/api/records/${deptA}/${today}/sign`, { token: ut, body: { name: 'x', dataUrl: PNG } })).status, 200);
   const blocked = await api('DELETE', `/api/admin/users/${u.id}`, { token: admin });
   assert.equal(blocked.status, 409);
-  assert.match(blocked.json.error.message, /停用/);
+  assert.match(blocked.json.error.message, /日签 1 条/);
+  assert.match(blocked.json.error.message, /作废/);
   assert.equal((await api('PATCH', `/api/admin/users/${u.id}`, { token: admin, body: { status: 'off' } })).json.status, 'off');
+  // 日签作废后：只剩勾选记录，可以删；记录里的巡检人显示当时的姓名
+  assert.equal((await api('POST', '/api/admin/signs/void', { token: admin, body: { type: 'day', deptId: deptA, key: today, reason: '签错了' } })).status, 200);
+  assert.equal((await api('DELETE', `/api/admin/users/${u.id}`, { token: admin })).status, 200, '作废后可以删除');
+  const rec = (await api('GET', `/api/records?from=${today}&to=${today}&deptId=${deptA}`, { token: admin })).json[0];
+  assert.equal(rec.inspectorName, '用过的巡检员', '删除后记录里仍显示当时的姓名');
+  assert.equal(rec.checks[dev] || rec.items?.find?.(i => i.deviceId === dev)?.result || 'ok', 'ok');
 });
 
 test('导入模板能下载，是 xlsx，第 1 张表是表头', async () => {
