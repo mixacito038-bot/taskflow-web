@@ -5,6 +5,7 @@ const { getDb } = require('../db/connection');
 const { E } = require('../plugins/error');
 const authSvc = require('../services/auth.service');
 const importSvc = require('../services/import.service');
+const accountSvc = require('../services/account.service');
 const exportSvc = require('../services/export.service');
 const expirySvc = require('../services/expiry.service');
 const P = require('../services/period.service');
@@ -122,15 +123,16 @@ module.exports = async function adminRoutes(app) {
 
   app.post('/api/admin/users', { preHandler: guard }, async req => {
     const { password, displayName, role, deptIds } = req.body || {};
-    const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
-    if (!username) throw E.badInput('缺少 username');
+    const username = accountSvc.normUsername(req.body?.username);
     if (!password || String(password).length < 6) throw E.badInput('密码至少 6 位');
     if (!ROLES.includes(role)) throw E.badInput('role 不正确');
     if (role === 'admin' && req.user.role !== 'admin') throw E.forbidden('只有管理员可以创建管理员账号');
     const list = (Array.isArray(deptIds) ? deptIds : []).map(Number);
     if (role === 'dept' && list.length !== 1) throw E.badInput('护士长账号必须指定恰好 1 个科室');
     assertDeptsExist(list);
-    if (db().prepare('SELECT 1 FROM users WHERE username = ?').get(username)) throw E.conflict('账号已存在');
+    const taken = accountSvc.usernameTaken(db(), username);
+    if (taken) throw E.conflict(accountSvc.takenMessage(taken));
+    if (displayName != null && String(displayName).trim().length > 50) throw E.badInput('姓名最多 50 个字');
     const id = db().transaction(() => {
       const uid = db().prepare(`INSERT INTO users (username, password_hash, display_name, role, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)`)
@@ -153,6 +155,14 @@ module.exports = async function adminRoutes(app) {
     if (b.role != null && !ROLES.includes(b.role)) throw E.badInput('role 不正确');
     if (b.status != null && !['on', 'off'].includes(b.status)) throw E.badInput('status 不正确');
     if (b.displayName != null && !String(b.displayName).trim()) throw E.badInput('显示名不能为空');
+    if (b.displayName != null && String(b.displayName).trim().length > 50) throw E.badInput('姓名最多 50 个字');
+    /* 登录账号可以改：规则和新建一样，不能和别的账号重复（不区分大小写）。
+       历史记录、签字都按账号 id 关联，改账号名不影响它们；登录状态也保留 */
+    const nextUsername = b.username != null ? accountSvc.normUsername(b.username) : u.username;
+    if (nextUsername !== u.username) {
+      const taken = accountSvc.usernameTaken(db(), nextUsername, u.id);
+      if (taken) throw E.conflict(accountSvc.takenMessage(taken));
+    }
     const nextRole = b.role != null ? b.role : u.role;
     const nextDepts = Array.isArray(b.deptIds) ? b.deptIds.map(Number)
       : db().prepare('SELECT dept_id FROM user_depts WHERE user_id = ?').all(u.id).map(r => r.dept_id);
@@ -166,6 +176,7 @@ module.exports = async function adminRoutes(app) {
       throw E.badInput('系统至少要保留一个启用的管理员账号');
     }
     db().transaction(() => {
+      if (nextUsername !== u.username) db().prepare('UPDATE users SET username = ?, updated_at = ? WHERE id = ?').run(nextUsername, nowIso(), u.id);
       if (b.displayName != null) db().prepare('UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?').run(String(b.displayName).trim(), nowIso(), u.id);
       if (b.role != null) db().prepare('UPDATE users SET role = ?, updated_at = ? WHERE id = ?').run(b.role, nowIso(), u.id);
       if (Array.isArray(b.deptIds)) setUserDepts(db(), u.id, nextDepts);
@@ -174,7 +185,7 @@ module.exports = async function adminRoutes(app) {
         if (b.status === 'off') authSvc.revokeAllTokens(u.id); // 禁用即吊销全部 refreshToken
       }
     })();
-    authSvc.audit(req.user.id, 'user_patch', `id=${u.id} ${JSON.stringify(b)}`, req.ip);
+    authSvc.audit(req.user.id, 'user_patch', `id=${u.id}${nextUsername !== u.username ? ` username ${u.username}→${nextUsername}` : ''} ${JSON.stringify(b)}`, req.ip);
     return userJsonRow(db(), db().prepare('SELECT * FROM users WHERE id = ?').get(u.id));
   });
 
@@ -189,6 +200,41 @@ module.exports = async function adminRoutes(app) {
     authSvc.revokeAllTokens(u.id);
     authSvc.audit(req.user.id, 'user_reset_password', `id=${u.id}`, req.ip);
     return { password };
+  });
+
+  /* 删除账号：不能删自己；管理员账号只有管理员能删，且至少保留一个启用的管理员；
+     有巡检 / 签字记录的账号不能删（删了记录就追溯不到人），返回 409 和原因，页面上可改为停用 */
+  app.delete('/api/admin/users/:id', { preHandler: guard }, async req => {
+    const u = db().prepare('SELECT * FROM users WHERE id = ?').get(+req.params.id);
+    if (!u) throw E.notFound('账号不存在，可能已被删除，请刷新页面');
+    if (u.id === req.user.id) throw E.badInput('不能删除自己正在使用的账号');
+    if (u.role === 'admin' && req.user.role !== 'admin') throw E.forbidden('管理员账号只能由管理员删除');
+    if (u.role === 'admin' && u.status === 'on' && !activeAdminsExcept(u.id)) throw E.badInput('系统至少要保留一个启用的管理员账号');
+    const why = accountSvc.deleteBlock(db(), u.id);
+    if (why) throw E.conflict(why);
+    db().transaction(() => {
+      authSvc.revokeAllTokens(u.id);
+      db().prepare('DELETE FROM users WHERE id = ?').run(u.id); // 科室关联、登录凭证、设备登录记录随之删除（ON DELETE CASCADE）
+    })();
+    authSvc.audit(req.user.id, 'user_delete', `id=${u.id} username=${u.username} name=${u.display_name} role=${u.role}`, req.ip);
+    return { ok: true };
+  });
+
+  /* 账号批量导入：模板 / 导入（只新增；整张表先检查，有一行不对就一个都不导入） */
+  app.get('/api/admin/users/import-template', { preHandler: guard }, async (req, reply) => {
+    const buf = await accountSvc.templateXlsx();
+    reply.header('Content-Disposition', 'attachment; filename="accounts-template.xlsx"')
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return reply.send(buf);
+  });
+
+  app.post('/api/admin/users/import', { preHandler: guard }, async req => {
+    const file = await req.file();
+    if (!file) throw E.badInput('缺少上传文件');
+    const out = await accountSvc.importAccounts(await file.toBuffer());
+    authSvc.audit(req.user.id, 'users_import',
+      `created=${out.created} errors=${out.errors.length}${out.created ? ' ' + out.accounts.map(a => a.username).join(',').slice(0, 1500) : ''}`, req.ip);
+    return out;
   });
 
   /* 解冻：密码连错被冻结的账号，确认是本人后直接解除（不改密码）；冻结轮次一并清零 */

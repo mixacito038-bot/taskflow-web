@@ -504,9 +504,15 @@ function devid(){
 }
 const session=()=>DB.get('session',null);
 const setSession=d=>DB.set('session',{accessToken:d.accessToken,refreshToken:d.refreshToken,user:d.user});
-function updSavedToken(username,rt){
-  const all=DB.get('saved',[]),a=all.find(x=>x.username===username);
-  if(a){a.refreshToken=rt;DB.set('saved',all)}
+/* 换到新的 refreshToken 后更新「记住的账号」。先按旧 refreshToken 找：后台改了登录账号名后，
+   这台手机上记的还是旧账号名，按名字找不到，旧的一键登录就会一直提示「登录已过期」。
+   找到后把账号名、姓名一起换成服务端最新的 */
+function updSavedToken(user,oldRt,rt){
+  const all=DB.get('saved',[]);
+  const a=(oldRt&&all.find(x=>x.refreshToken===oldRt))||all.find(x=>x.username===user.username);
+  if(!a)return;
+  a.refreshToken=rt;a.username=user.username;a.displayName=user.displayName;a.role=user.role;
+  DB.set('saved',all.filter(x=>x===a||x.username!==user.username));
 }
 
 /* 服务端时间（登录后同步、进入首页刷新；today() 未同步时才用本机时间兜底） */
@@ -571,7 +577,7 @@ function refreshSession(){
     const s=session();if(!s||!s.refreshToken)return false;
     try{
       const d=await req('/auth/refresh',{method:'POST',body:{refreshToken:s.refreshToken},auth:false});
-      setSession(d);updSavedToken(d.user.username,d.refreshToken);
+      setSession(d);updSavedToken(d.user,s.refreshToken,d.refreshToken);
       return true;
     }catch(e){if(e.code==='KICKED')onKicked();return false}
   })().finally(()=>{REFRESHING=null});
@@ -610,7 +616,7 @@ const API={
   /* 一键登录：用保存的 refreshToken 换新 token 对（轮换后回写 saved） */
   async loginByToken(refreshToken){
     const d=await req('/auth/refresh',{method:'POST',body:{refreshToken},auth:false});
-    setSession(d);DEVCACHE.clear();updSavedToken(d.user.username,d.refreshToken);
+    setSession(d);DEVCACHE.clear();updSavedToken(d.user,refreshToken,d.refreshToken);
     return d.user;
   },
   /* GET /auth/login-state → {frozen,retryAfter,disabled} */

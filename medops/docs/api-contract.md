@@ -108,6 +108,10 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET/POST /api/admin/users; PATCH /api/admin/users/:id | 建号/改 displayName/role/deptIds/status。**status→off 时吊销其全部 refreshToken**。POST body `{username,password,displayName,role,deptIds:[]}`。护士长恰好 1 个科室（PATCH 按最终角色+科室校验）。管理员账号的创建/修改/重置/解冻、授予管理员角色仅 admin 可做；不能停用自己、不能改自己的角色；至少保留 1 个启用的管理员。列表返回 `frozenUntil`/`frozenSec` |
 | POST /api/admin/users/:id/reset-password | → `{password:"一次性初始密码"}`，置 mustChange，清冻结，吊销其全部 refreshToken |
 | POST /api/admin/users/:id/unfreeze | 解除密码连错冻结（不改密码），冻结轮次清零 |
+| PATCH /api/admin/users/:id 的 `username` | 可改登录账号：去首尾空白、不能有空格、最多 32 字；与其他账号判重**不区分大小写**（409 写明被谁占用）。新建账号同样规则。签字/巡检记录按账号 id 关联，改名不影响历史，登录状态保留（手机端「记住的账号」按旧 refreshToken 找到后换成新账号名） |
+| DELETE /api/admin/users/:id | 删除账号。不能删自己；管理员账号仅 admin 可删，且至少保留 1 个启用的管理员。有巡检（records.inspector_id / sign_user_id）、周签（week_signs.signed_by）、月签（month_signs.signed_by）记录的 → 409 + 原因（请改为停用）。删除后科室关联、refreshToken、known_devices 级联删除，原登录立即失效；记审计 user_delete |
+| GET /api/admin/users/import-template | 账号导入模板 xlsx：第 1 张「账号导入」（登录账号、姓名、角色、科室、初始密码、状态），第 2 张填写说明 + 现有科室名称 |
+| POST /api/admin/users/import (multipart file) | 只新增。整张表先校验，**有任何一行不对就一个都不导入**：返回 `{created:0, errors:[{row,message}], warnings, accounts:[]}`；全部通过才在一个事务里新增，返回 `{created, errors:[], warnings, accounts:[{username,displayName,role,depts,password,generated,status}]}`（初始密码只在这里出现一次）。校验：账号规则同上，与系统已有账号、表内其他行判重（不区分大小写）；姓名必填；角色只能 巡检员/护士长/设备科（超级管理员不能导入）；科室名要和系统一致（忽略空格、全角半角括号差别），巡检员 ≥1 个、护士长恰好 1 个、设备科忽略（warning）；初始密码留空随机生成，填了至少 6 位；状态 启用/停用。导入的账号 mustChange=1。最多 500 行 |
 | GET/POST/PATCH /api/admin/depts[/:id] | 有巡检或签字记录的科室禁删（改 status:off）；有护士长账号属于它时也禁删（先处理账号）。停用科室：不能再录入巡检/日签；历史统计、导出照常；在用的过期设备照常提醒 |
 | GET /api/admin/depts/import-template (equip/admin) | 科室导入模板 xlsx：第 1 张表只有表头「科室名称 / 编码 / 排序 / 状态」，示例与说明在第 2 张表 |
 | POST /api/admin/depts/import (equip/admin) | multipart 上传 xlsx（只读第 1 张表）。按科室名称新增或更新；编码、排序、状态留空 = 已有科室不改动（编码填「无」清空）；新科室默认编码空、排序 0、启用。状态只认 启用 / 停用；排序须为整数；文件内重名、缺名称逐行报错。返回 `{created,updated,errors:[{row,message}]}`，记审计 depts_import |

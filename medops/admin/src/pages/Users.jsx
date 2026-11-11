@@ -1,11 +1,23 @@
-// 账号管理：列表 / 新建 / 编辑（角色、科室多选、启停）/ 重置密码显示一次性密码 / 解冻
+// 账号管理：列表 / 新建 / 编辑（登录账号、角色、科室多选、启停）/ 重置密码显示一次性密码 / 解冻 / 删除 / Excel 批量导入
 import { useEffect, useState } from 'react'
-import { api, getUser } from '../api/client'
+import { api, getUser, setUser } from '../api/client'
 import { useDepts, deptOptLabel } from '../hooks'
 import { asList, nz, ROLE_TEXT, fmtRetry } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
+import AccountImportModal from '../components/AccountImportModal'
 
 const ROLES = ['inspector', 'dept', 'equip', 'admin']
+
+/* 登录账号的规则，和服务端一致（服务端最终把关）：不能为空、不能有空格、最多 32 个字、不能和别的账号重复（不区分大小写） */
+export function usernameProblem(name, list, selfId) {
+  const t = (name || '').trim()
+  if (!t) return '登录账号不能为空'
+  if (/\s/.test(t)) return '登录账号里不能有空格'
+  if (t.length > 32) return '登录账号最多 32 个字'
+  const dup = (list || []).find(u => String(u.id) !== String(selfId || '') && u.username.toLowerCase() === t.toLowerCase())
+  if (dup) return `登录账号「${dup.username}」已被「${dup.displayName}」使用（不区分大小写），请换一个`
+  return null
+}
 
 function normUser(u) {
   return {
@@ -42,7 +54,7 @@ function DeptMultiSelect({ value, onChange, depts, single }) {
   )
 }
 
-function UserModal({ open, onClose, editing, depts, allDepts, onSaved }) {
+function UserModal({ open, onClose, editing, depts, allDepts, users, onSaved }) {
   const isNew = !editing?.id
   const me = getUser()
   const isSelf = !isNew && String(editing?.id) === String(me?.id)
@@ -75,20 +87,25 @@ function UserModal({ open, onClose, editing, depts, allDepts, onSaved }) {
     if (needDept && !(form.deptIds || []).length) return setErr({ message: '该角色需要至少选择一个科室' })
     if (form.role === 'dept' && form.deptIds.length !== 1) return setErr({ message: '护士长只能属于 1 个科室' })
     if (!(form.displayName || '').trim()) return setErr({ message: '姓名不能为空' })
+    const why = usernameProblem(form.username, users, isNew ? '' : editing.id)
+    if (why) return setErr({ message: why })
+    const username = form.username.trim()
     setBusy(true)
     try {
       if (isNew) {
         await api('/admin/users', {
           method: 'POST',
-          body: { username: form.username.trim(), password: form.password, displayName: form.displayName.trim(), role: form.role, deptIds: needDept ? form.deptIds : [] }
+          body: { username, password: form.password, displayName: form.displayName.trim(), role: form.role, deptIds: needDept ? form.deptIds : [] }
         })
       } else {
-        await api(`/admin/users/${editing.id}`, {
+        const saved = await api(`/admin/users/${editing.id}`, {
           method: 'PATCH',
           body: isSelf
-            ? { displayName: form.displayName.trim(), deptIds: needDept ? form.deptIds : [] }
-            : { displayName: form.displayName.trim(), role: form.role, deptIds: needDept ? form.deptIds : [], status: form.status }
+            ? { username, displayName: form.displayName.trim(), deptIds: needDept ? form.deptIds : [] }
+            : { username, displayName: form.displayName.trim(), role: form.role, deptIds: needDept ? form.deptIds : [], status: form.status }
         })
+        // 改的是自己：左下角显示的名字跟着变
+        if (isSelf && saved) setUser({ ...me, username: saved.username, displayName: saved.displayName })
       }
       onSaved()
       onClose()
@@ -99,15 +116,22 @@ function UserModal({ open, onClose, editing, depts, allDepts, onSaved }) {
     <Modal open={open} title={isNew ? '新建账号' : `编辑账号：${editing?.username}`} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorTip error={err} className="mb-3" />
-        {isNew && (
+        {isNew ? (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="登录账号" required>
-              <input className="inp" value={form.username || ''} onChange={e => set('username', e.target.value)} required />
+            <Field label="登录账号" required hint="不能有空格，不能和已有账号重复">
+              <input className="inp" value={form.username || ''} onChange={e => set('username', e.target.value)} required maxLength={32} />
             </Field>
             <Field label="初始密码" required hint="至少 6 位">
               <input className="inp" value={form.password || ''} onChange={e => set('password', e.target.value)} required minLength={6} />
             </Field>
           </div>
+        ) : (
+          <Field label="登录账号" required
+            hint={(form.username || '').trim() !== editing.username
+              ? `改好后，本人要用新账号「${(form.username || '').trim()}」登录（密码不变）；以前的巡检和签字记录不受影响`
+              : '不能有空格，不能和已有账号重复（不区分大小写）'}>
+            <input className="inp font-mono" value={form.username || ''} onChange={e => set('username', e.target.value)} required maxLength={32} />
+          </Field>
         )}
         <Field label="姓名" required>
           <input className="inp" value={form.displayName || ''} onChange={e => set('displayName', e.target.value)} required />
@@ -148,6 +172,8 @@ export default function Users() {
   const [modal, setModal] = useState(null)        // null | {} | user
   const [resetInfo, setResetInfo] = useState(null) // {username, password}
   const [copied, setCopied] = useState(false)
+  const [delTarget, setDelTarget] = useState(null) // 待删除的账号
+  const [importOpen, setImportOpen] = useState(false)
 
   function load() {
     api('/admin/users').then(res => setList(asList(res).map(normUser))).catch(setErr)
@@ -189,7 +215,10 @@ export default function Users() {
     <div>
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-lg font-semibold">账号管理</h2>
-        <button className="btn-primary" onClick={() => setModal({})}>+ 新建账号</button>
+        <div className="flex gap-2">
+          <button className="btn-ghost" onClick={() => setImportOpen(true)}>批量导入</button>
+          <button className="btn-primary" onClick={() => setModal({})}>+ 新建账号</button>
+        </div>
       </div>
       <ErrorTip error={err || deptErr} className="mb-4" />
 
@@ -226,9 +255,12 @@ export default function Users() {
                       <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => setModal(u)}>编辑</button>
                       {!isSelf && <button className="btn-ghost !px-2.5 !py-1 text-xs mr-1.5" onClick={() => resetPwd(u)}>重置密码</button>}
                       {!isSelf && (
-                        <button className={`!px-2.5 !py-1 text-xs ${u.status === 'on' ? 'btn-danger' : 'btn-ghost'}`} onClick={() => toggleStatus(u)}>
+                        <button className={`!px-2.5 !py-1 text-xs mr-1.5 ${u.status === 'on' ? 'btn-danger' : 'btn-ghost'}`} onClick={() => toggleStatus(u)}>
                           {u.status === 'on' ? '停用' : '启用'}
                         </button>
+                      )}
+                      {!isSelf && (
+                        <button className="!px-2.5 !py-1 text-xs btn bg-red-600 text-white hover:bg-red-700" onClick={() => setDelTarget(u)}>删除</button>
                       )}
                     </>)}
                   </td>
@@ -240,7 +272,11 @@ export default function Users() {
         )}
       </div>
 
-      <UserModal open={modal !== null} editing={modal} depts={onDepts} allDepts={depts} onClose={() => setModal(null)} onSaved={load} />
+      <UserModal open={modal !== null} editing={modal} depts={onDepts} allDepts={depts} users={list || []} onClose={() => setModal(null)} onSaved={load} />
+
+      <DeleteModal user={delTarget} deptLabel={deptLabel} onClose={() => setDelTarget(null)} onDone={load} />
+
+      <AccountImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
 
       <Modal open={!!resetInfo} title="密码已重置" onClose={() => setResetInfo(null)} width="max-w-sm">
         {resetInfo && (
@@ -254,5 +290,57 @@ export default function Users() {
         )}
       </Modal>
     </div>
+  )
+}
+
+/* 删除确认弹窗：写清楚删的是谁、删了会怎样；用过的账号服务端会拒绝（409），这时给出「改为停用」 */
+function DeleteModal({ user, deptLabel, onClose, onDone }) {
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [blocked, setBlocked] = useState(false)
+  useEffect(() => { setErr(null); setBlocked(false); setBusy(false) }, [user])
+  if (!user) return null
+  const scope = user.role === 'equip' || user.role === 'admin' ? '全院' : (user.deptIds.map(deptLabel).join('、') || '未分配科室')
+
+  async function remove() {
+    setBusy(true); setErr(null)
+    try {
+      await api(`/admin/users/${user.id}`, { method: 'DELETE' })
+      onDone(); onClose()
+    } catch (e) {
+      setErr(e)
+      if (e.status === 409) setBlocked(true)
+    } finally { setBusy(false) }
+  }
+  async function disable() {
+    setBusy(true); setErr(null)
+    try {
+      await api(`/admin/users/${user.id}`, { method: 'PATCH', body: { status: 'off' } })
+      onDone(); onClose()
+    } catch (e) { setErr(e) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal open title="删除账号" onClose={onClose} width="max-w-md">
+      <div className="mb-4 rounded-lg bg-slate-50 p-3 text-sm leading-7">
+        <div>登录账号：<b className="font-mono">{user.username}</b></div>
+        <div>姓名：<b>{user.displayName}</b></div>
+        <div>角色：{ROLE_TEXT[user.role] || user.role}　科室：{scope}</div>
+      </div>
+      {!blocked && (
+        <p className="mb-3 text-sm text-slate-600">
+          删除后这个账号<b className="text-red-600">不能恢复</b>，手机和电脑上的登录会立即失效。已经有巡检或签字记录的账号不能删除，只能停用。确定删除？
+        </p>
+      )}
+      <ErrorTip error={err} className="mb-3" />
+      {blocked && user.status === 'on' && (
+        <p className="mb-3 text-sm text-slate-600">停用后这个账号就登录不了了，历史记录里的名字照常显示，以后需要还能重新启用。</p>
+      )}
+      <div className="flex justify-end gap-2">
+        <button className="btn-ghost" onClick={onClose}>{blocked ? '关闭' : '取消'}</button>
+        {!blocked && <button className="btn bg-red-600 text-white hover:bg-red-700" disabled={busy} onClick={remove}>{busy ? '删除中…' : '确认删除'}</button>}
+        {blocked && user.status === 'on' && <button className="btn-danger" disabled={busy} onClick={disable}>改为停用</button>}
+      </div>
+    </Modal>
   )
 }
