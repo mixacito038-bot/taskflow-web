@@ -17,8 +17,9 @@
   以及之前的账号批量导入 / 删除 / 改登录账号、手机端加载进度条与批量取数、限流按「设备+IP」计、ams-restore 改进。
   分支上之后还有没发的改动：删除账号被挡时列出是哪几条签字、弹窗里就地作废（提交 841e4e6，无迁移）；
   manage.sh cert / update-cert.sh 一条命令换 HTTPS 证书（提交 276317c，升级包默认带上 update-cert.sh），下次发包带上。
-- HTTPS 证书：2026-11-13 线上证书过期（ERR_CERT_DATE_INVALID），用户另买了证书（youhukang.com.pem + .key，Nginx 版）。
-  给了独立脚本 medops-cert-update.sh（= deploy/tencent/update-cert.sh），上传到 /root/ 和证书一起执行；
+- HTTPS 证书：2026-11-13 线上证书过期（ERR_CERT_DATE_INVALID），用户另买了证书，当天用独立脚本 medops-cert-update.sh
+  （= deploy/tencent/update-cert.sh）换好并确认生效：泛域名 *.youhukang.com + youhukang.com，
+  Xcc Trust DV TLS G3 R31 CA 签发、带完整链，**有效期至 2027-05-15**（到期前约两周提醒用户换）；旧证书备份在 /root/medops-cert-backup-20261113-130010；
   以后换证书：证书传到 /root/ 后 `bash manage.sh cert`（装过下一个升级包之后才有这个子命令）。
   证书文件在服务器 /opt/medops/deploy/tencent/certs/server.crt、server.key（nginx 容器挂载 certs 目录本身）。
   做下一个升级包时以这个提交为模拟起点；用户每确认一次升级成功就更新这一行
