@@ -23,7 +23,7 @@ const ACTION_MAP = {
   login: ['登录', '登录'], login_fail: ['登录', '登录失败'], logout: ['登录', '退出登录'], change_password: ['登录', '修改密码'],
   refresh_replay: ['登录', '登录凭证重放（已全部吊销）'], refresh_device_mismatch: ['登录', '登录凭证换设备使用（已拒绝）'],
   import_legacy: ['导入', '历史数据导入'], export_monthly: ['导出', '导出月报'], export_ng: ['导出', '导出异常清单'],
-  export_oplog: ['导出', '导出操作日志'], data_reset: ['系统', '清空数据'], ams_restore: ['系统', '资产盘点数据还原'],
+  export_oplog: ['导出', '导出操作日志'], data_reset: ['系统', '清空数据'], ams_restore: ['系统', '资产盘点数据还原'], cert_update: ['系统', '更换 HTTPS 证书'],
 };
 const FAIL_ACTIONS = new Set(['login_fail', 'refresh_replay', 'refresh_device_mismatch']);
 

@@ -33,6 +33,12 @@ if [ "${1:-}" = "--off" ]; then
 fi
 
 CRT="${1:-}"; KEY="${2:-}"
+# 已经是 HTTPS（证书到期续换）：交给 update-cert.sh。
+# 以前这里接着往下走：docker compose up -d 在配置没变时不会重启 nginx，换上的新证书不生效，网站继续发旧证书；
+# 下面检测 80 端口时，80 被自己的跳转层占着，还会把 http→https 跳转摘掉
+if grep -q '^NGINX_CONF=nginx-https.conf' .env 2>/dev/null && grep -q '^WEB_INNER_PORT=443' .env 2>/dev/null; then
+  exec bash ./update-cert.sh "$@"
+fi
 [ -f "${CRT:-}" ] && [ -f "${KEY:-}" ] || {
   echo "用法：bash enable-https.sh /root/cert/xxx.crt /root/cert/xxx.key"
   echo "      bash enable-https.sh --off      # 改回 HTTP"
@@ -89,7 +95,7 @@ if docker compose exec -T web nginx -t >/dev/null 2>&1; then
   echo "想去掉地址里的端口号（变成 https://你的域名/）："
   echo "  bash manage.sh 改端口 443     然后在腾讯云安全组放行 443"
   echo
-  echo "⚠ 腾讯云免费证书 90 天到期。到期前重新申请、下载，再跑一次本脚本即可。"
+  echo "⚠ 证书到期前重新申请、下载，上传到 /root/ 后执行：bash manage.sh cert"
   echo "  建议现在就在手机日历上设一个提前 10 天的提醒。"
 else
   echo "!! nginx 配置校验失败，已自动回滚到 HTTP"
@@ -97,6 +103,6 @@ else
   setenv WEB_INNER_PORT 80
   setenv COMPOSE_FILE docker-compose.yml
   docker compose up -d
-  echo "请检查证书文件是否是「Nginx 版」的 .crt / .key（不是 .pem/.jks）"
+  echo "请检查证书文件是否是「Nginx 版」的 .pem/.crt + .key（不是 .jks/.pfx），也可以用 bash update-cert.sh 看具体哪里不对"
   exit 1
 fi

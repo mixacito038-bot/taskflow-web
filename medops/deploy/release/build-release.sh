@@ -5,7 +5,7 @@
 # 用法（在仓库任意目录）：
 #   bash medops/deploy/release/build-release.sh [输出目录] [额外路径...]
 #     输出目录默认 medops/deploy/release/out/
-#     额外路径：相对 medops/ 的路径。默认只带「程序」（后端、手机端、管理后台、manage.sh），
+#     额外路径：相对 medops/ 的路径。默认只带「程序」（后端、手机端、管理后台、manage.sh、update-cert.sh），
 #     不带 nginx 配置、docker-compose、资产盘点 —— 这些在服务器上可能被改过，
 #     确实要一起更新时才把路径加在后面，例如：deploy/tencent/docker-compose.yml
 #
@@ -23,7 +23,8 @@ fi
 VERSION=$(TZ=Asia/Shanghai date +%Y%m%d-%H%M)
 COMMIT=$(git -C "$ROOT" rev-parse --short HEAD)
 PATHS=(server/src server/scripts server/test server/package.json server/package-lock.json
-       server/Dockerfile server/.dockerignore h5 admin/dist admin/src deploy/tencent/manage.sh "$@")
+       server/Dockerfile server/.dockerignore h5 admin/dist admin/src deploy/tencent/manage.sh
+       deploy/tencent/update-cert.sh "$@")
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 git -C "$ROOT" archive --format=tar "HEAD:medops" "${PATHS[@]}" | gzip -9n > "$TMP/payload.tgz"
 SHA=$(sha256sum "$TMP/payload.tgz" | cut -d' ' -f1)

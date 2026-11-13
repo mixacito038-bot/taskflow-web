@@ -39,8 +39,8 @@ case "${1:-帮助}" in
         if [ "${ENDS}" -gt 0 ]; then
           LEFT=$(( (ENDS - NOWS) / 86400 ))
           echo "  到期：$(date -d "${END}" '+%Y-%m-%d' 2>/dev/null)  剩余 ${LEFT} 天"
-          [ "${LEFT}" -lt 0 ]  && echo "  ✗ 证书已过期！浏览器会报不安全，请立即重新申请并跑 enable-https.sh"
-          [ "${LEFT}" -ge 0 ] && [ "${LEFT}" -le 15 ] && echo "  ! 快到期了，请尽快重新申请证书（腾讯云免费证书 90 天一续）"
+          [ "${LEFT}" -lt 0 ]  && echo "  ✗ 证书已过期！浏览器会报不安全。把新证书（.pem/.crt + .key）上传到 /root/ 后执行：bash manage.sh cert"
+          [ "${LEFT}" -ge 0 ] && [ "${LEFT}" -le 15 ] && echo "  ! 快到期了，请尽快换新证书：上传到 /root/ 后执行 bash manage.sh cert"
         else
           echo "  到期：${END}"
         fi
@@ -251,6 +251,12 @@ case "${1:-帮助}" in
     echo "  2. 二维码里写死了地址，换端口后要重新生成打印"
     ;;
 
+  证书|cert)
+    # 更换 HTTPS 证书：检查（配对、域名、有效期、证书链、私钥密码）→ 备份 → 覆盖 → nginx 平滑重载 → 确认已生效
+    shift
+    exec bash ./update-cert.sh "$@"
+    ;;
+
   *)
     cat <<'EOF'
 急救设备巡检系统 · 运维命令
@@ -267,6 +273,8 @@ case "${1:-帮助}" in
   bash manage.sh 重置管理员       忘记管理员密码时用
   bash manage.sh reset-data       清空巡检数据（科室、设备、账号、记录、签字），只保留 admin 账号；会先自动备份
   bash manage.sh 改端口 <新端口>  换对外端口（会先查端口是否被占用）
+  bash manage.sh cert            更换 HTTPS 证书：先把新证书（.pem/.crt + .key）上传到 /root/，再执行这条；
+                                 也可以指定文件：bash manage.sh cert 证书.pem 私钥.key
 
 系统每天凌晨 2:30 会自动备份到数据目录里，但仍建议每周用「备份」命令拉一份到院内电脑。
 EOF
