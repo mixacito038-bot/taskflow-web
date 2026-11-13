@@ -15,7 +15,12 @@
 - 线上当前版本：**20261111-1542（提交 ef171eb）**，2026-11-11 15:59 用户已升级成功（健康检查、体检全部正常）：
   含操作日志（迁移 008 已在线上执行）、各列表分页、作废签字后可删账号、升级包逐行输出与超时回退；
   以及之前的账号批量导入 / 删除 / 改登录账号、手机端加载进度条与批量取数、限流按「设备+IP」计、ams-restore 改进。
-  分支上之后还有没发的改动：删除账号被挡时列出是哪几条签字、弹窗里就地作废（提交 841e4e6，无迁移），下次发包带上。
+  分支上之后还有没发的改动：删除账号被挡时列出是哪几条签字、弹窗里就地作废（提交 841e4e6，无迁移）；
+  manage.sh cert / update-cert.sh 一条命令换 HTTPS 证书（提交 276317c，升级包默认带上 update-cert.sh），下次发包带上。
+- HTTPS 证书：2026-11-13 线上证书过期（ERR_CERT_DATE_INVALID），用户另买了证书（youhukang.com.pem + .key，Nginx 版）。
+  给了独立脚本 medops-cert-update.sh（= deploy/tencent/update-cert.sh），上传到 /root/ 和证书一起执行；
+  以后换证书：证书传到 /root/ 后 `bash manage.sh cert`（装过下一个升级包之后才有这个子命令）。
+  证书文件在服务器 /opt/medops/deploy/tencent/certs/server.crt、server.key（nginx 容器挂载 certs 目录本身）。
   做下一个升级包时以这个提交为模拟起点；用户每确认一次升级成功就更新这一行
 
 ## 发布更新的固定做法（用户明确要求）
