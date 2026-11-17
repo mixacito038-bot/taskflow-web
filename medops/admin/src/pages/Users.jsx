@@ -138,7 +138,7 @@ function UserModal({ open, onClose, editing, depts, allDepts, users, onSaved }) 
         <Field label="姓名" required>
           <input className="inp" value={form.displayName || ''} onChange={e => set('displayName', e.target.value)} required />
         </Field>
-        <Field label="角色" required hint={isSelf ? '不能修改自己正在使用的账号的角色' : '巡检员可多科室；护士长单科室；设备科/超管为全院'}>
+        <Field label="角色" required hint={isSelf ? '不能修改自己正在使用的账号的角色' : '巡检员可多科室（只用手机）；护士长单科室，可登录电脑后台、只看只管本科室；设备科/超管为全院'}>
           <select className="inp" value={form.role || 'inspector'} onChange={e => setRole(e.target.value)} disabled={isSelf}>
             {(form.role && !roles.includes(form.role) ? [...roles, form.role] : roles).map(r => <option key={r} value={r}>{ROLE_TEXT[r]}</option>)}
           </select>

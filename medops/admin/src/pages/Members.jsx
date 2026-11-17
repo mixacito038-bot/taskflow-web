@@ -1,7 +1,7 @@
 // 签字人名单：科室维度增删改（周签时护士长从中选人）
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { useDepts, deptOptLabel } from '../hooks'
+import { useDepts, deptOptLabel, isDeptUser } from '../hooks'
 import { asList, nz } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 import { usePaged } from '../components/Pager'
@@ -111,10 +111,11 @@ export default function Members() {
       </div>
 
       <div className="mb-4 flex gap-2">
-        <select className="inp !w-48" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
-          <option value="">全部科室</option>
-          {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
-        </select>
+        {/* 护士长只有本科室，不用选 */}
+        {!isDeptUser() && (<select className="inp !w-48" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+            <option value="">全部科室</option>
+            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
+          </select>)}
         <span className="self-center text-sm text-slate-500">共 {shown.length} 人</span>
       </div>
       <ErrorTip error={err || deptErr} className="mb-4" />

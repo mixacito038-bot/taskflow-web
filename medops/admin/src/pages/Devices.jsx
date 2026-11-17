@@ -1,7 +1,7 @@
 // 设备台账：增删改 + xlsx 导入（上传→逐行结果）+ 模板下载
 import { useEffect, useState } from 'react'
 import { api, download } from '../api/client'
-import { useDepts, useServerTime, deptOptLabel } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel, isDeptUser } from '../hooks'
 import { asList, nz, DEVICE_STATUS, devStatusText, isDevStatus } from '../utils'
 import { Badge, Empty, ErrorTip, Field, Modal, Spinner } from '../components/ui'
 import { usePaged } from '../components/Pager'
@@ -346,10 +346,11 @@ export default function Devices() {
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <select className="inp !w-48" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
-          <option value="">全部科室</option>
-          {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
-        </select>
+        {/* 护士长只有本科室，不用选 */}
+        {!isDeptUser() && (<select className="inp !w-48" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+            <option value="">全部科室</option>
+            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
+          </select>)}
         <select className="inp !w-36" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} aria-label="按状态筛选">
           <option value="">全部状态</option>
           {DEVICE_STATUS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
@@ -439,7 +440,7 @@ export default function Devices() {
       <XlsxImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load}
         title="批量导入设备（xlsx）" uploadPath="/admin/devices/import"
         template={{ path: '/admin/devices/import-template', name: '设备导入模板.xlsx' }}
-        intro="按「设备编码」新增或更新；科室名称必须已存在，不会自动创建。"
+        intro={isDeptUser() ? <>按「设备编码」新增或更新。<b>只能导入本科室（{onDepts.map(d => d.name).join('、')}）的设备</b>：「科室名称」一列填本科室；别的科室的行会被拒绝，调拨请联系设备科。</> : '按「设备编码」新增或更新；科室名称必须已存在，不会自动创建。'}
         columns="科室名称 / 设备品类 / 设备编码 / 设备名称 / 型号 / 位置 / 状态 / 有效期 / 提醒提前天数 / 序列号"
         note={<>「设备编码」「序列号」不能和别的设备重复；<b>没有的填「/」</b>（可以多台都填「/」）。编码是「/」的设备，重新导入时按序列号（或科室 + 品类 + 名称 + 型号 + 位置）对应原来那台，不会重复新增。<br />
           「有效期」「提醒提前天数」「序列号」留空表示<b>本次不改动</b>，不会清掉设备上已录的内容；有效期要清空请在该格填「无」。</>} />

@@ -1,7 +1,7 @@
 // 异常清单：GET /stats/ng + 导出 /export/ng.xlsx
 import { useEffect, useState } from 'react'
 import { api, download } from '../api/client'
-import { useDepts, useServerTime, deptOptLabel } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel, isDeptUser } from '../hooks'
 import { asList, addDays, nz, devStatusText } from '../utils'
 import { Badge, Empty, ErrorTip, Spinner } from '../components/ui'
 import { usePaged } from '../components/Pager'
@@ -81,10 +81,11 @@ export default function Ng() {
       <div className="card mb-4 flex flex-wrap items-end gap-3 p-4">
         <label className="text-sm">
           <span className="mb-1 block text-slate-500">科室</span>
-          <select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
-            <option value="">全部科室</option>
-            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
-          </select>
+          {/* 护士长只有本科室，不用选 */}
+          {!isDeptUser() && (<select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
+              <option value="">全部科室</option>
+              {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
+            </select>)}
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-slate-500">起始日期</span>

@@ -13,7 +13,7 @@ const deptName = id => { const d = getDb().prepare('SELECT name FROM depts WHERE
 /* 导出：equip/admin；Bearer 或 Cookie（供 <a> 直接下载）；限流 20/min/用户 */
 module.exports = async function exportRoutes(app, opts) {
   const cfg = opts.cfg;
-  const guard = [app.authAny, app.requireRole('equip', 'admin')];
+  const guard = [app.authAny, app.requireRole('dept', 'equip', 'admin')];   // 护士长（科室后台）只能导出本科室
   const rl = {
     rateLimit: {
       max: cfg.rl.export, timeWindow: '1 minute',
@@ -24,6 +24,7 @@ module.exports = async function exportRoutes(app, opts) {
   app.get('/api/export/monthly.xlsx', { preHandler: guard, config: rl }, async (req, reply) => {
     const { deptId, month } = req.query;
     if (!deptId || !month) throw E.badInput('deptId 与 month 必填');
+    app.assertDeptScope(req.user, +deptId);
     const buf = await exportSvc.monthlyXlsx(+deptId, month);
     oplog.write({ req, action: 'export_monthly', target: `${deptName(deptId)} · ${month} 月报`, summary: '导出巡检月报（Excel）', detail: `deptId=${+deptId} month=${month}` });
     reply.header('Content-Disposition', disposition(`monthly-${+deptId}-${month}.xlsx`, `巡检月报_${deptName(deptId)}_${month}.xlsx`)).type(XLSX_MIME);
@@ -37,7 +38,8 @@ module.exports = async function exportRoutes(app, opts) {
     if (deptId != null && !getDb().prepare('SELECT 1 FROM depts WHERE id = ?').get(deptId)) throw E.notFound('科室不存在');
     const sign = req.query.sign || undefined;
     if (sign && !['signed', 'unsigned'].includes(sign)) throw E.badInput('sign 只能是 signed / unsigned');
-    const buf = await exportSvc.ngXlsx(null, { from, to, deptId, sign });
+    if (deptId != null) app.assertDeptScope(req.user, deptId);
+    const buf = await exportSvc.ngXlsx(app.visibleDeptIds(req.user), { from, to, deptId, sign });
     const span = `${from || '全部'}_${to || '全部'}`;
     oplog.write({ req, action: 'export_ng', target: `异常清单 ${deptId != null ? deptName(deptId) : '全部科室'} ${from || '最早'} ~ ${to || '至今'}`,
       summary: `导出异常清单（Excel）${sign ? (sign === 'signed' ? '，只含已签字' : '，只含未签字') : ''}`, detail: `deptId=${deptId ?? ''} from=${from || ''} to=${to || ''} sign=${sign || ''}` });

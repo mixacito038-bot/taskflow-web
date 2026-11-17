@@ -23,6 +23,12 @@ function RequireAuth({ children }) {
   return children
 }
 
+/* 只给设备科 / 超级管理员的页面（账号、科室、操作日志）：护士长直接在地址栏打开也回首页 */
+function RequireEquip({ children }) {
+  if (!['equip', 'admin'].includes(getUser()?.role)) return <Navigate to="/" replace />
+  return children
+}
+
 function RequireAdmin({ children }) {
   if (getUser()?.role !== 'admin') return <Navigate to="/" replace />
   return children
@@ -40,11 +46,11 @@ export default function App() {
           <Route path="ng" element={<Ng />} />
           <Route path="stats" element={<Stats />} />
           <Route path="export" element={<ExportPage />} />
-          <Route path="depts" element={<Depts />} />
+          <Route path="depts" element={<RequireEquip><Depts /></RequireEquip>} />
           <Route path="devices" element={<Devices />} />
           <Route path="members" element={<Members />} />
-          <Route path="users" element={<Users />} />
-          <Route path="oplog" element={<OpLog />} />
+          <Route path="users" element={<RequireEquip><Users /></RequireEquip>} />
+          <Route path="oplog" element={<RequireEquip><OpLog /></RequireEquip>} />
           <Route path="import-legacy" element={<RequireAdmin><LegacyImport /></RequireAdmin>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,7 +1,7 @@
 // 巡检记录：按科室+日期范围查询；详情看勾选明细/异常/签名图；admin 可作废日签
 import { useEffect, useState } from 'react'
 import { api, getUser } from '../api/client'
-import { useDepts, useServerTime, deptOptLabel } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel, isDeptUser } from '../hooks'
 import { asList, addDays } from '../utils'
 import { Badge, Empty, ErrorTip, Modal, SignCard, Spinner } from '../components/ui'
 import { usePaged } from '../components/Pager'
@@ -12,8 +12,8 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
   const [devices, setDevices] = useState(null)
   const [err, setErr] = useState(null)
 
-  /* 取全院台账：记录里勾过、后来调拨到别的科室的设备也要显示出编码和名称。
-     以前只取本科室当前台账，调走的设备显示成「设备#4（已移出台账）」，看不出是哪台 */
+  /* 取台账（设备科是全院，护士长是本科室）：记录里勾过、后来调拨到别的科室的设备，
+     编码和名称由记录自带的 deviceInfo 补上（护士长看不到别科室台账） */
   useEffect(() => {
     if (!rec) return
     setDevices(null)
@@ -28,7 +28,7 @@ function RecordDetail({ rec, deptName, onClose, onVoid }) {
      停用/报废的设备没勾过就不列出来，不算漏查 */
   const byId = new Map((devices || []).map(d => [d.id, d]))
   const rows = devices ? [
-    ...Object.keys(checks).map(id => byId.get(String(id)) || { id: String(id), missing: true }),
+    ...Object.keys(checks).map(id => byId.get(String(id)) || rec.deviceInfo?.[String(id)] || { id: String(id), missing: true }),
     ...devices.filter(d => d.deptId === String(rec.deptId) && d.status === 'in_use' && !checks[d.id])
   ].sort((a, b) => (a.missing ? 1 : 0) - (b.missing ? 1 : 0) || String(a.code || '').localeCompare(String(b.code || ''))) : []
 
@@ -132,10 +132,11 @@ export default function Records() {
       <div className="card mb-4 flex flex-wrap items-end gap-3 p-4">
         <label className="text-sm">
           <span className="mb-1 block text-slate-500">科室</span>
-          <select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
-            <option value="">全部科室</option>
-            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
-          </select>
+          {/* 护士长只有本科室，不用选 */}
+          {!isDeptUser() && (<select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
+              <option value="">全部科室</option>
+              {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
+            </select>)}
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-slate-500">起始日期</span>

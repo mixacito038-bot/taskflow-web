@@ -116,6 +116,12 @@ module.exports = async function adminRoutes(app) {
 
   const guard = [app.auth, app.requireRole('equip', 'admin')];
   const adminOnly = [app.auth, app.requireRole('admin')];
+  /* 科室后台：护士长账号也能登录电脑后台，只看、只管本科室的设备和签字人名单。
+     下面用 deptGuard 的接口，每次读写都按 scopeIds 卡住科室；账号、科室、作废签字、操作日志等仍只给设备科（guard） */
+  const deptGuard = [app.auth, app.requireRole('dept', 'equip', 'admin')];
+  const scopeIds = user => app.visibleDeptIds(user);           // null = 全院
+  const inScope = (user, deptId) => { const ids = scopeIds(user); return ids == null || ids.includes(+deptId); };
+  const needScope = (user, deptId, msg) => { if (!inScope(user, deptId)) throw E.forbidden(msg || '只能管理本科室的数据；别的科室请联系设备科'); };
   const db = () => getDb();
 
   /* ---------- 用户 ----------
@@ -413,11 +419,14 @@ module.exports = async function adminRoutes(app) {
   });
 
   /* ---------- 设备台账 ---------- */
-  app.get('/api/admin/devices', { preHandler: guard }, async req => {
+  app.get('/api/admin/devices', { preHandler: deptGuard }, async req => {
     const { deptId } = req.query;
+    if (deptId) needScope(req.user, deptId, '只能查看本科室的设备');
+    const ids = scopeIds(req.user);
     const rows = deptId
       ? db().prepare(`SELECT * FROM devices WHERE dept_id = ? ORDER BY sort, ${DC.SQL_ORDER()}`).all(+deptId)
-      : db().prepare(`SELECT * FROM devices ORDER BY dept_id, sort, ${DC.SQL_ORDER()}`).all();
+      : db().prepare(`SELECT * FROM devices ORDER BY dept_id, sort, ${DC.SQL_ORDER()}`).all()
+        .filter(v => ids == null || ids.includes(v.dept_id));
     return rows.map(deviceJson);
   });
 
@@ -427,9 +436,10 @@ module.exports = async function adminRoutes(app) {
     if (DC.isReal(serial)) { const o = DC.serialOwner(db(), serial, selfId); if (o) throw E.conflict(DC.serialTaken(serial, o)); }
   }
 
-  app.post('/api/admin/devices', { preHandler: guard }, async req => {
+  app.post('/api/admin/devices', { preHandler: deptGuard }, async req => {
     const b = req.body || {};
     if (!b.deptId) throw E.badInput('请选择所属科室');
+    needScope(req.user, b.deptId, '只能给本科室新增设备');
     const catName = reqText(b.catName ?? '', '', '设备品类', 40);
     const code = devCode(b.code ?? '', '');
     const name = reqText(b.name ?? '', '', '设备名称', 100);
@@ -449,10 +459,12 @@ module.exports = async function adminRoutes(app) {
     return created;
   });
 
-  app.patch('/api/admin/devices/:id', { preHandler: guard }, async req => {
+  app.patch('/api/admin/devices/:id', { preHandler: deptGuard }, async req => {
     const v = db().prepare('SELECT * FROM devices WHERE id = ?').get(+req.params.id);
     if (!v) throw E.notFound('设备不存在');
+    needScope(req.user, v.dept_id, '只能修改本科室的设备');
     const b = req.body || {};
+    if (b.deptId != null && +b.deptId !== v.dept_id) needScope(req.user, b.deptId, '只能在本科室内管理设备；调拨到别的科室请联系设备科');
     const code = devCode(b.code, v.code);
     const catName = reqText(b.catName, v.cat_name, '设备品类', 40);
     const name = reqText(b.name, v.name, '设备名称', 100);
@@ -483,10 +495,11 @@ module.exports = async function adminRoutes(app) {
   /* 巡检过的设备不能删：删了它，历史巡检记录、月报、异常清单里这台设备就没了着落。
      作废签字只撤销签字、不删巡检记录，所以「日签作废了」也照样删不掉——提示里说清楚，
      并给出该怎么做（停用 / 报废：手机端不再列出，历史保留）；管理后台据此提供一键改状态。 */
-  app.delete('/api/admin/devices/:id', { preHandler: guard }, async req => {
+  app.delete('/api/admin/devices/:id', { preHandler: deptGuard }, async req => {
     const id = +req.params.id;
     const v = db().prepare('SELECT * FROM devices WHERE id = ?').get(id);
     if (!v) throw E.notFound('设备不存在');
+    needScope(req.user, v.dept_id, '只能删除本科室的设备');
     const used = db().prepare(`SELECT COUNT(*) AS n, MAX(r.date) AS last FROM record_items i
       JOIN records r ON r.id = i.record_id WHERE i.device_id = ?`).get(id);
     if (used.n) {
@@ -503,9 +516,13 @@ module.exports = async function adminRoutes(app) {
   /* 批量处理：勾选多台设备，一次改状态或删除（导错一批设备时不用一台台点）。
      body { ids:[...], action:'status'|'delete', status? }
      删除同单台规则：巡检过的设备不删（保留历史），列在 blocked 里，后台据此提供一键改停用 / 报废。 */
-  app.post('/api/admin/devices/batch', { preHandler: guard }, async req => {
+  app.post('/api/admin/devices/batch', { preHandler: deptGuard }, async req => {
     const b = req.body || {};
     const ids = batchIds(b.ids, '设备');
+    if (scopeIds(req.user) != null) {
+      const outside = ids.filter(id => { const v = db().prepare('SELECT dept_id FROM devices WHERE id = ?').get(id); return v && !inScope(req.user, v.dept_id); });
+      if (outside.length) throw E.forbidden(`选中的设备里有 ${outside.length} 台不是本科室的，只能批量处理本科室的设备`);
+    }
     if (!['status', 'delete'].includes(b.action)) throw E.badInput('action 只能是 status / delete');
     const status = b.action === 'status' ? devStatus(b.status, null) : null;
     if (b.action === 'status' && !status) throw E.badInput('请选择要改成的状态');
@@ -538,18 +555,18 @@ module.exports = async function adminRoutes(app) {
   });
 
   /* 设备导入模板 / 导入 */
-  app.get('/api/admin/devices/import-template', { preHandler: guard }, async (req, reply) => {
+  app.get('/api/admin/devices/import-template', { preHandler: deptGuard }, async (req, reply) => {
     const buf = await exportSvc.importTemplateXlsx();
     reply.header('Content-Disposition', 'attachment; filename="devices-template.xlsx"')
       .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     return reply.send(buf);
   });
 
-  app.post('/api/admin/devices/import', { preHandler: guard }, async req => {
+  app.post('/api/admin/devices/import', { preHandler: deptGuard }, async req => {
     const file = await req.file();
     if (!file) throw E.badInput('缺少上传文件');
     const buf = await file.toBuffer();
-    const out = await importSvc.importDevices(buf);
+    const out = await importSvc.importDevices(buf, { deptIds: scopeIds(req.user) });
     oplog.write({ req, action: 'devices_import', target: `文件 ${file.filename || ''}`.trim(), result: out.created || out.updated ? 'ok' : 'fail',
       summary: `Excel 导入设备：新增 ${out.created} 台、更新 ${out.updated} 台、失败 ${out.errors.length} 行`,
       detail: `created=${out.created} updated=${out.updated} errors=${out.errors.length}` });
@@ -557,18 +574,21 @@ module.exports = async function adminRoutes(app) {
   });
 
   /* ---------- 签字人名单 ---------- */
-  app.get('/api/admin/members', { preHandler: guard }, async req => {
+  app.get('/api/admin/members', { preHandler: deptGuard }, async req => {
     const { deptId } = req.query;
+    if (deptId) needScope(req.user, deptId, '只能查看本科室的签字人');
+    const ids = scopeIds(req.user);
     const rows = deptId
       ? db().prepare('SELECT * FROM members WHERE dept_id = ? ORDER BY sort, id').all(+deptId)
-      : db().prepare('SELECT * FROM members ORDER BY dept_id, sort, id').all();
+      : db().prepare('SELECT * FROM members ORDER BY dept_id, sort, id').all().filter(m => ids == null || ids.includes(m.dept_id));
     return rows.map(memberJson);
   });
 
-  app.post('/api/admin/members', { preHandler: guard }, async req => {
+  app.post('/api/admin/members', { preHandler: deptGuard }, async req => {
     const b = req.body || {};
     const name = String(b.name || '').trim();
     if (!b.deptId || !name) throw E.badInput('科室和姓名必填');
+    needScope(req.user, b.deptId, '只能给本科室添加签字人');
     if (!db().prepare('SELECT 1 FROM depts WHERE id = ?').get(+b.deptId)) throw E.badInput('科室不存在');
     if (db().prepare('SELECT 1 FROM members WHERE dept_id = ? AND name = ?').get(+b.deptId, name)) {
       throw E.conflict('该科室已有同名签字人');
@@ -581,9 +601,10 @@ module.exports = async function adminRoutes(app) {
     return created;
   });
 
-  app.patch('/api/admin/members/:id', { preHandler: guard }, async req => {
+  app.patch('/api/admin/members/:id', { preHandler: deptGuard }, async req => {
     const m = db().prepare('SELECT * FROM members WHERE id = ?').get(+req.params.id);
     if (!m) throw E.notFound('签字人不存在');
+    needScope(req.user, m.dept_id, '只能修改本科室的签字人');
     const b = req.body || {};
     /* 签字人不能换科室：他签过的周签都挂在原科室，换过去会让原科室的历史周签显示成别科室的人。
        以前静默忽略，界面提示保存成功、实际没变。 */
@@ -615,9 +636,10 @@ module.exports = async function adminRoutes(app) {
     return after;
   });
 
-  app.delete('/api/admin/members/:id', { preHandler: guard }, async req => {
+  app.delete('/api/admin/members/:id', { preHandler: deptGuard }, async req => {
     const m = db().prepare('SELECT * FROM members WHERE id = ?').get(+req.params.id);
     if (!m) throw E.notFound('签字人不存在');
+    needScope(req.user, m.dept_id, '只能删除本科室的签字人');
     db().prepare('DELETE FROM members WHERE id = ?').run(m.id);
     oplog.write({ req, action: 'member_delete', target: `签字人 ${m.name}（${F.dept(m.dept_id)}）`,
       summary: '删除签字人（历史周签里仍显示这个名字）', changes: oplog.diff(memberJson(m), null, MEMBER_F), detail: `id=${m.id}` });

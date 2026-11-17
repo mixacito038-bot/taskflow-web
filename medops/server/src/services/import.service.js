@@ -84,7 +84,8 @@ function findCol(hdr, re, fallback) {
      · 填了日期                          → 覆盖
    反过来做（留空即清空）会让任何一次常规重导入静默抹掉全院的急救耗材到期日，
    而界面只报"更新 N 台"，没人会发现。 */
-async function importDevices(buffer) {
+/* deptIds：只允许导入这些科室的设备（科室后台的护士长账号）；null = 全院（设备科） */
+async function importDevices(buffer, { deptIds = null } = {}) {
   const db = getDb();
   const wb = new ExcelJS.Workbook();
   try { await wb.xlsx.load(buffer); } catch { throw E.badInput('无法解析 xlsx 文件'); }
@@ -126,6 +127,7 @@ async function importDevices(buffer) {
       if (code.length > 60) { errors.push({ row: n, message: `设备编码最多 60 个字（这一行有 ${code.length} 个）；本行未导入` }); continue; }
       const deptId = deptByName.get(deptName);
       if (!deptId) { errors.push({ row: n, message: `科室「${deptName}」不存在` }); continue; }
+      if (deptIds && !deptIds.includes(deptId)) { errors.push({ row: n, message: `「${deptName}」不是本科室，只能导入本科室的设备；本行未导入` }); continue; }
       /* 状态必须是模板列出的四个词之一。写成「正常」「使用中」这类同义词若原样入库，
          设备会照常出现在台账里，却被有效期提醒和巡检清单永久排除，过期了没人知道 */
       /* 留空：新设备默认「在用」；已有设备「本次不改动」（与有效期两列同一语义）。
@@ -197,6 +199,13 @@ async function importDevices(buffer) {
         // 这一行带了真实序列号：只对应还没录序列号的那几台（录了别的序列号的是另一台设备）
         const i = l.findIndex(v => !realSerial || !DC.isReal(v.serial));
         if (i >= 0) target = l[i];
+      }
+      /* 科室账号：编码 / 序列号对上的是别的科室的设备 → 不能借导入把它改到本科室（调拨要设备科做） */
+      if (deptIds && target) {
+        const cur = db.prepare('SELECT d.id, d.name FROM devices v JOIN depts d ON d.id = v.dept_id WHERE v.id = ?').get(target.id);
+        if (cur && !deptIds.includes(cur.id)) {
+          errors.push({ row: n, message: `设备编码 / 序列号对应的是「${cur.name}」的设备，不是本科室的；调拨请联系设备科，本行未导入` }); continue;
+        }
       }
       if (target && used.has(target.id)) {
         errors.push({ row: n, message: `和第 ${used.get(target.id)} 行是同一台设备（序列号相同），本行未导入` }); continue;

@@ -36,7 +36,8 @@ export default function Login() {
     setBusy(true)
     try {
       const data = await api('/auth/login', { method: 'POST', body: { username: username.trim(), password } })
-      if (!['equip', 'admin'].includes(data.user?.role)) {
+      // 护士长：科室后台（只看、只管本科室）；巡检员只用手机端
+      if (!['dept', 'equip', 'admin'].includes(data.user?.role)) {
         // 非管理角色：吊销刚发的 refreshToken，不留会话
         try {
           await fetch('/api/auth/logout', {
@@ -45,7 +46,7 @@ export default function Login() {
             body: JSON.stringify({ refreshToken: data.refreshToken })
           })
         } catch { /* 忽略 */ }
-        setErr({ message: '该账号无权访问管理后台（仅设备科 / 超级管理员）' })
+        setErr({ message: '巡检员账号请在手机上使用（扫科室二维码）；电脑后台给护士长、设备科、超级管理员用' })
         return
       }
       setSession(data)

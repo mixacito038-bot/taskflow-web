@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { api, clearSession, getUser } from '../api/client'
 import { ROLE_TEXT } from '../utils'
+import { useDepts } from '../hooks'
 import { Modal, Field, ErrorTip } from './ui'
 
 const NAV = [
@@ -20,7 +21,7 @@ const NAV = [
   {
     group: '基础资料',
     items: [
-      { to: '/depts', label: '科室管理', icon: '▦' },
+      { to: '/depts', label: '科室管理', icon: '▦', equipOnly: true },
       { to: '/devices', label: '设备台账', icon: '✚' },
       { to: '/members', label: '签字人名单', icon: '☰' }
     ]
@@ -28,8 +29,8 @@ const NAV = [
   {
     group: '系统',
     items: [
-      { to: '/users', label: '账号管理', icon: '◑' },
-      { to: '/oplog', label: '操作日志', icon: '≡' },
+      { to: '/users', label: '账号管理', icon: '◑', equipOnly: true },
+      { to: '/oplog', label: '操作日志', icon: '≡', equipOnly: true },
       { to: '/import-legacy', label: '历史数据导入', icon: '⇪', adminOnly: true }
     ]
   }
@@ -87,6 +88,8 @@ export default function Layout() {
   const nav = useNavigate()
   const [pwdOpen, setPwdOpen] = useState(false)
   const isAdmin = user?.role === 'admin'
+  const isEquip = isAdmin || user?.role === 'equip'
+  const { depts } = useDepts()   // 护士长：只返回本科室
 
   async function logout() {
     try { await api('/auth/logout', { method: 'POST', body: { refreshToken: localStorage.getItem('insp_admin_rt') } }) } catch { /* 忽略 */ }
@@ -102,12 +105,18 @@ export default function Layout() {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white text-lg font-bold">巡</span>
           <div>
             <div className="text-sm font-semibold leading-tight">急救设备巡检</div>
-            <div className="text-xs text-slate-500">管理后台</div>
+            <div className="text-xs text-slate-500">{isEquip ? '管理后台' : '科室后台'}</div>
           </div>
         </div>
+        {!isEquip && (
+          <div className="mx-3 mt-3 rounded-lg bg-primary-light px-3 py-2 text-xs leading-5 text-primary">
+            本科室：<b>{depts.map(d => d.name).join('、') || '—'}</b>
+            <div className="text-slate-500">只显示、只能管理本科室的设备和记录</div>
+          </div>
+        )}
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           {NAV.map(g => {
-            const items = g.items.filter(i => !i.adminOnly || isAdmin)
+            const items = g.items.filter(i => (!i.adminOnly || isAdmin) && (!i.equipOnly || isEquip))
             if (!items.length) return null
             return (
               <div key={g.group} className="mb-4">

@@ -88,7 +88,7 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET /api/devices?deptId= | 登录+范围 | 该科室设备（品类/台数由前端从列表计算） |
 | GET /api/members?deptId= | 登录+范围 | 签字人名单 |
 | GET /api/records?deptId=&from=&to=&limit=&active= | 登录+范围 | deptId 可省（inspector=其全部科室）；含 sign 但不含图片体。`limit=N`（≤1000）只取最近 N 条、按日期从新到旧返回；`active=1` 只要启用中的科室（手机端「记录」页用） |
-| GET /api/records/:deptId/:date | 登录+范围 | 无记录返回 404 |
+| GET /api/records/:deptId/:date | 登录+范围 | 无记录返回 404。附 `deviceInfo:{[deviceId]:{id,deptId,code,name,catName,status}}`：这天勾过的设备的当前信息（含已调到别的科室的），科室后台据此显示明细 |
 | PUT /api/records/:deptId/:date | inspector+范围 | Body `{checks,notes}` 整体覆盖。拒绝：date>今天(EARLY)、该日已签(LOCKED)、该日所在周已周签(LOCKED)、`signMonthOf(date)` 已月签(LOCKED)、科室已停用(BAD_INPUT)。checks 键须为规范正整数、≤2000 个；只能勾本科室**在用**设备，或这条记录里本来就勾过的设备（当天被调拨/停用的，早上做过的保留） |
 | POST /api/records/:deptId/:date/sign | inspector+范围 | Body `{dataUrl,opinion}`。签字人 = 登录的巡检员本人（不信前端传的姓名）。校验同上+PNG magic bytes+解码≤1MB。落盘后返回完整 record |
 | GET /api/weeksigns?deptId=&from=&to= | 登录+范围 | from/to 匹配 week 字段；from 不是周一时对齐到所在周周一 |
@@ -101,7 +101,12 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 周签 = 该周 7 天都有已签 record；月签 = 归属该月的全部周都有周签。
 ⚠ 旧版周签只看「已到的天」（周一签完当天就能签本周）、月签只看「已开始的周」，都属于提前签，已废弃。
 
-## 3. 管理后台（equip/admin；标注 admin 的仅 admin）
+## 3. 管理后台（equip/admin；标注 admin 的仅 admin；标注 dept 的护士长也可用、只限本科室）
+
+**科室后台**：护士长（dept，单科室）也能登录电脑后台。devices / members 的全部接口（含 batch、import-template、import）
+和导出接口对 dept 开放，范围 = `visibleDeptIds(user)`：列表只返回本科室；`?deptId=` 指向别的科室、读写别科室的设备 / 签字人、
+新增到别科室、PATCH 把设备调到别科室、batch 里夹带别科室的设备 → 403 FORBIDDEN。导入时别科室的行、编码 / 序列号对上别科室设备的行逐行报错不导入。
+users / depts / signs/void / oplog / audit / import/legacy / ams 仍只给 equip/admin（或 admin）。巡检员（inspector）不能登录电脑后台。
 
 | 端点 | 说明 |
 |---|---|
@@ -119,16 +124,16 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | GET /api/admin/depts/import-template (equip/admin) | 科室导入模板 xlsx：第 1 张表只有表头「科室名称 / 编码 / 排序 / 状态」，示例与说明在第 2 张表 |
 | POST /api/admin/depts/import (equip/admin) | multipart 上传 xlsx（只读第 1 张表）。按科室名称新增或更新；编码、排序、状态留空 = 已有科室不改动（编码填「无」清空）；新科室默认编码空、排序 0、启用。状态只认 启用 / 停用；排序须为整数；文件内重名、缺名称逐行报错。返回 `{created,updated,errors:[{row,message}]}`，记审计 depts_import |
 | POST /api/admin/depts/batch (equip/admin) | Body `{ids:[...],action:'status'\|'delete',status?:'on'\|'off'}`，ids ≤2000。delete 与单个删除同一规则：有巡检/签字记录、有护士长账号、本科室设备被巡检过的不删，放进 `blocked:[{id,name,reason}]`；能删的连同签字人名单、设备、账号科室关联一起删除。返回 `{updated,deleted,blocked,missing}`，单个事务；记审计 dept_batch_status / dept_batch_delete |
-| GET/POST/PATCH/DELETE /api/admin/devices[/:id] | 台账维护。code / serial 判重见 device 定义，重复 → 409 CONFLICT，message 写明被哪个科室的哪台设备占用；PATCH 只在 code / serial 有变化时判重（判重之前录入的重号不挡别的编辑，体检会列出）。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records）。status 只能是 in_use/repair/retired/scrapped，其它值 400（报错里带上原值）。DELETE devices：被巡检记录引用→409 CONFLICT，message 写明记录天数、最近日期，并提示改为停用/报废（作废签字不删巡检记录）；删除成功记审计 device_delete |
+| GET/POST/PATCH/DELETE /api/admin/devices[/:id] (dept 限本科室) | 台账维护。code / serial 判重见 device 定义，重复 → 409 CONFLICT，message 写明被哪个科室的哪台设备占用；PATCH 只在 code / serial 有变化时判重（判重之前录入的重号不挡别的编辑，体检会列出）。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records）。status 只能是 in_use/repair/retired/scrapped，其它值 400（报错里带上原值）。DELETE devices：被巡检记录引用→409 CONFLICT，message 写明记录天数、最近日期，并提示改为停用/报废（作废签字不删巡检记录）；删除成功记审计 device_delete |
 | GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数/序列号；序列号列为文本格式）。导入时按表头找「序列号」列：没有这一列或留空 = 不改动，填「清空」清空（填「无」等 = 「/」），单元格是 ≥16 位的数字（Excel 已截断）或超过 60 字 → 该行报错 |
 | POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。code 为「/」的行：有真实序列号先按序列号对应已有设备，否则按（科室, 品类, 名称, 型号, 位置）对应 code='/' 的已有设备（多重集一对一，按 id 顺序），都对不上才新增；有 code 的行若序列号属于某台 code='/' 的设备 → 更新那台并补上编码。文件内编码重复、序列号重复（不分大小写）、同一台设备被两行对应 → 后一行报错；序列号被别的设备占用 → 该行报错。每行一个保存点。→ `{created,updated,errors:[{row,message}]}`。有效期两列的写入语义：**列不存在或该格留空 = 本次不改动**（老 7 列模板重导入不会清空已录到期日），填「无/-/清空」= 清空，填日期 = 覆盖。日期必须年月日填全（不做 `new Date()` 宽松兜底），状态须命中白名单否则整行报错 |
-| GET/POST/PATCH/DELETE /api/admin/members[/:id] | 签字人名单。同科室重名 → 409；不能改科室（400）；改名后历史周签显示新名 |
+| GET/POST/PATCH/DELETE /api/admin/members[/:id] (dept 限本科室) | 签字人名单。同科室重名 → 409；不能改科室（400）；改名后历史周签显示新名 |
 | POST /api/admin/signs/void (admin) | Body `{type:'day'|'week'|'month',deptId,key,reason}`。作废签字（记录退回未签态）。**必须自上而下**：周签在时不能作废其中的日签，月签在时不能作废其中的周签（409 LOCKED）。reason 去空白后不能为空。审计记下原签字人、时间、签名图、统计 |
 | POST /api/admin/import/legacy[?dryRun=1] (admin) | Body = H5 导出的 `{depts,devices,members,users,records,weeksigns,monthsigns}` JSON，事务导入（users 密码重置为随机+mustChange）。返回 `{imported:{各类新增条数},passwords:{账号:初始密码},errors:[{where,message}] 跳过的,warnings:[{where,message}] 导入了但要留意的,dryRun}`。每条一个保存点：缺必填项（科室名/签字人姓名/账号名；设备编码和名称都没有）或单条出错只跳过该条，不整单失败。设备没写编码按「/」导入（汇总一条 warning），「/」设备与 Excel 导入同样按序列号、再按（科室, 品类, 名称, 型号, 位置）对应已有设备，重复导入不重复新增；序列号被别的设备占用 → 该项不导入 + warning。不导入：今天以后的记录、周日在今天之后的周签、最后一周周日在今天之后的月签（会锁住本周/本月）。已结束周期里不符合签字规则的周签/月签照原样导入并逐条 warning。设备状态按同义词换算（active→in_use、inactive/停用→retired、报废→scrapped，表同迁移 005），认不出的新设备按 in_use + warning、已有设备保持原状态；空品类记「未分类」；已有设备只更新 JSON 里给了值的字段。巡检人/日签人关联账号（旧 id 映射，或显示名全库唯一匹配），周签人关联本科室签字人名单，月签人按显示名关联设备科/管理员账号；周签/月签没带 stat 时按库里记录现算。dryRun=1 完整执行后整体回滚，不写数据和签名图文件、不生成密码、不记审计 |
-| POST /api/admin/devices/batch (equip/admin) | Body `{ids:[...],action:'status'\|'delete',status?}`，ids ≤2000。status：全部改为该状态（只认四个值）；delete：没有巡检记录的删除，有记录的不删、放进 `blocked:[{id,code,name,days,last}]`。返回 `{updated,deleted,blocked,missing}`，单个事务；记审计 device_batch_status / device_batch_delete |
+| POST /api/admin/devices/batch (equip/admin；dept 限本科室) | Body `{ids:[...],action:'status'\|'delete',status?}`，ids ≤2000。status：全部改为该状态（只认四个值）；delete：没有巡检记录的删除，有记录的不删、放进 `blocked:[{id,code,name,days,last}]`。返回 `{updated,deleted,blocked,missing}`，单个事务；记审计 device_batch_status / device_batch_delete |
 | GET /api/admin/audit?from=&to= | 审计日志 |
 
-## 4. 统计与导出（equip/admin；dept 可查本科室 stats）
+## 4. 统计与导出（equip/admin；dept 只限本科室：stats 与 export 都可用，指定别的科室 → 403）
 
 | 端点 | 说明 |
 |---|---|

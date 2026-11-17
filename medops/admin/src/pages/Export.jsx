@@ -14,6 +14,8 @@ export default function ExportPage() {
   const [done, setDone] = useState('')
 
   useEffect(() => { if (time?.month && !month) setMonth(time.month) }, [time]) // eslint-disable-line react-hooks/exhaustive-deps
+  /* 只有一个科室可选（护士长只看得到本科室）时直接选好，不用再点 */
+  useEffect(() => { if (!deptId && filterDepts.length === 1) setDeptId(String(filterDepts[0].id)) }, [filterDepts.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function doExport(e) {
     e.preventDefault()

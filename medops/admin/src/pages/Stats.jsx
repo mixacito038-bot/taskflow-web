@@ -1,7 +1,7 @@
 // 统计分析：completion（完成率）+ signatures（签字人×日/周/月签次数）；Tailwind div 条形，不用图表库
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { useDepts, useServerTime, deptOptLabel } from '../hooks'
+import { useDepts, useServerTime, deptOptLabel, isDeptUser } from '../hooks'
 import { asList, nz } from '../utils'
 import { Badge, Bar, Empty, ErrorTip, Spinner } from '../components/ui'
 import { usePaged } from '../components/Pager'
@@ -78,10 +78,11 @@ export default function Stats() {
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-slate-500">科室</span>
-          <select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
-            <option value="">全部科室</option>
-            {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
-          </select>
+          {/* 护士长只有本科室，不用选 */}
+          {!isDeptUser() && (<select className="inp !w-44" value={deptId} onChange={e => setDeptId(e.target.value)}>
+              <option value="">全部科室</option>
+              {filterDepts.map(d => <option key={d.id} value={String(d.id)}>{deptOptLabel(d)}</option>)}
+            </select>)}
         </label>
       </div>
       <ErrorTip error={err || deptErr} className="mb-4" />

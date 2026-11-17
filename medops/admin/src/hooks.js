@@ -1,6 +1,6 @@
 // 公共数据 hooks：科室列表、服务端时间（业务日期只信 /api/time）
 import { useEffect, useState } from 'react'
-import { api } from './api/client'
+import { api, getUser } from './api/client'
 import { asList, ymd } from './utils'
 
 /* 科室列表。停用科室不能从筛选和导出里消失：停用而不删除，就是为了历史数据还能查、能导出。
@@ -36,6 +36,9 @@ export function useDepts() {
   }
   return { depts, onDepts, filterDepts, formDepts, deptName, deptLabel, loading, error }
 }
+
+/** 护士长（科室后台）：只看、只管本科室，科室筛选没有意义（服务端也只给本科室的数据） */
+export const isDeptUser = () => getUser()?.role === 'dept'
 
 /** 下拉选项文字：停用科室加标记 */
 export const deptOptLabel = d => d.name + (d.status === 'off' ? '（已停用）' : '')

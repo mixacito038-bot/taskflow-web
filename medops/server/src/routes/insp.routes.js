@@ -68,6 +68,15 @@ module.exports = async function inspRoutes(app) {
     app.assertDeptScope(req.user, +req.params.deptId);
     const r = recSvc.getRecord(+req.params.deptId, req.params.date);
     if (!r) throw E.notFound('该日无巡检记录');
+    /* 这天勾过的设备的编码、名称（含后来调到别的科室的）：科室后台只能列本科室台账，
+       不带上的话，调走的设备在明细里只能显示成「台账中已不存在」 */
+    const ids = Object.keys(r.checks || {}).map(Number).filter(Boolean);
+    r.deviceInfo = {};
+    if (ids.length) {
+      for (const v of db().prepare(`SELECT id, dept_id, code, name, cat_name, status FROM devices WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)) {
+        r.deviceInfo[String(v.id)] = { id: String(v.id), deptId: String(v.dept_id), code: v.code, name: v.name, catName: v.cat_name, status: v.status };
+      }
+    }
     return r;
   });
 
