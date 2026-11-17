@@ -154,7 +154,12 @@ select.in{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .sig-wrap.blank::after{
   content:"请在此处签名";position:absolute;inset:0;display:grid;place-items:center;
   color:#C3CFCC;font-size:15px;pointer-events:none;letter-spacing:2px}
-#sigpad{display:block;width:100%;height:190px;touch-action:none}
+#sigpad{display:block;width:100%;height:190px;touch-action:none;-webkit-user-select:none;user-select:none;
+  -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+/* 签名时把整页锁住：华为 / 荣耀自带浏览器、微信内置浏览器常常不认画布上的 touch-action 和 preventDefault，
+   一落笔整页跟着笔画上下滑。手指在签名框里的这段时间，页面滚动整个关掉，抬笔再恢复 */
+.sig-wrap{touch-action:none;overscroll-behavior:contain;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html.signing,html.signing body{overflow:hidden!important;overscroll-behavior:none;touch-action:none}
 .sig-line{position:absolute;left:24px;right:24px;bottom:38px;border-bottom:1px dashed var(--line);pointer-events:none}
 .sig-done{padding:14px;background:#fff;border-radius:16px;box-shadow:inset 0 0 0 1px var(--line);text-align:center}
 .sig-done img{max-width:100%;height:auto;display:block;margin:0 auto}
@@ -1828,8 +1833,15 @@ function initSig(){
   let go=false,lx=0,ly=0;
   const pos=e=>{const b=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;
     return [t.clientX-b.left,t.clientY-b.top]};
+  /* 页面级的兜底：画布上取消滚动不管用的浏览器，在整页的 touchmove 上取消（必须是非 passive 才能取消） */
+  if(!window.__sigLock){window.__sigLock=true;
+    document.addEventListener('touchmove',e=>{if(SIG.active&&e.cancelable)e.preventDefault()},{passive:false});
+    /* 兜底解锁：笔抬起后既没有 touchend 也没有 mouseup 的机型，不能让整页一直滚不动 */
+    window.addEventListener('pointerup',()=>setTimeout(()=>{if(SIG.active&&!SIG.go){SIG.active=false;document.documentElement.classList.remove('signing')}},0));}
+  const lock=on=>{SIG.active=on;document.documentElement.classList.toggle('signing',on)};
   const st=e=>{
-    e.preventDefault();
+    e.preventDefault();SIG.go=true;
+    if(e.touches)lock(true);   // 只锁触摸：电脑上用鼠标签时锁了滚动条会消失，整页横移，笔画会错位
     setup(true);                       /* 落笔前再校一次，杜绝错位 */
     if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
     go=true;[lx,ly]=pos(e);
@@ -1838,12 +1850,15 @@ function initSig(){
   };
   const mv=e=>{if(!go||!SIG.ctx)return;e.preventDefault();const[x,y]=pos(e);
     SIG.ctx.beginPath();SIG.ctx.moveTo(lx,ly);SIG.ctx.lineTo(x,y);SIG.ctx.stroke();lx=x;ly=y};
-  const en=()=>{go=false};
+  const en=()=>{go=false;SIG.go=false;lock(false)};
   cv.addEventListener('touchstart',st,{passive:false});
   cv.addEventListener('touchmove',mv,{passive:false});
   cv.addEventListener('touchend',en);cv.addEventListener('touchcancel',en);
   cv.addEventListener('mousedown',st);cv.addEventListener('mousemove',mv);
   window.addEventListener('mouseup',en);
+  /* 手写笔：有的机型笔只给 pointer / mouse 事件、不给 touch 事件，落笔时同样把页面锁住，抬笔（mouseup / touchend）解锁 */
+  cv.addEventListener('pointerdown',e=>{if(e.pointerType&&e.pointerType!=='mouse')lock(true)});
+  cv.addEventListener('pointercancel',()=>{if(!go)lock(false)});
 }
 window.clearSig=()=>{if(!SIG.cv||!SIG.ctx)return;
   SIG.ctx.save();SIG.ctx.setTransform(1,0,0,1,0,0);
@@ -2216,6 +2231,7 @@ async function render(){
   LAST_OK={view:S.view,tab:S.tab,deptId:S.deptId,catName:S.catName,date:S.date,week:S.week,month:S.month,signKind:S.signKind};
   app.innerHTML=h;window.scrollTo(0,0);
   if(S.view==='sign') requestAnimationFrame(()=>initSig());
+  else if(SIG.active){SIG.active=false;document.documentElement.classList.remove('signing')}  // 签到一半离开签字页：解锁滚动
   const hd=$('#hd');
   if(hd){const on=()=>hd.classList.toggle('sc',window.scrollY>4);window.onscroll=on;on()}
   /* 返回键：不在首页时保留一条历史记录，安卓返回键 / iOS 侧滑先回上一级，而不是直接离开巡检页面 */
