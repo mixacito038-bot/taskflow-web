@@ -24,7 +24,7 @@ VERSION=$(TZ=Asia/Shanghai date +%Y%m%d-%H%M)
 COMMIT=$(git -C "$ROOT" rev-parse --short HEAD)
 PATHS=(server/src server/scripts server/test server/package.json server/package-lock.json
        server/Dockerfile server/.dockerignore h5 admin/dist admin/src deploy/tencent/manage.sh
-       deploy/tencent/update-cert.sh deploy/tencent/server-check.sh "$@")
+       deploy/tencent/update-cert.sh deploy/tencent/server-check.sh deploy/tencent/ssh-guard.sh "$@")
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 git -C "$ROOT" archive --format=tar "HEAD:medops" "${PATHS[@]}" | gzip -9n > "$TMP/payload.tgz"
 SHA=$(sha256sum "$TMP/payload.tgz" | cut -d' ' -f1)
