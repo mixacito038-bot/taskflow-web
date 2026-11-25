@@ -68,7 +68,7 @@ H5 启动后所有 today()/wkOf(today())/moOf(today()) 用它（S.date/S.week/S.
 
 数据形状（与 H5 localStorage 结构一致，仅 sign.dataUrl → sign.url）：
 ```
-dept   {id,name,code,sort,status:'on'|'off',startDate}   # startDate：应巡起算日（建科室日与最早记录取早）
+dept   {id,name,code,sort,status:'on'|'off',startDate}   # startDate：应巡起算日 = max(科室起算日[建科室日与最早记录取早], 巡检起算日[系统设置 inspect_start，可空])
 device {id,deptId,catName,code,name,model,location,status:'in_use'|...,serial}   # code：必填，「/」= 没有编码（可多台），其他值全院唯一（区分大小写，库里 ux_devices_code 部分唯一索引）；serial：出厂序列号，选填，≤60 字，「/」或空 = 没有/未录（可重复），其他值全院唯一（不区分大小写，程序判重）；两者「无/-/、/／/暂无/不适用/N/A」一律归一为「/」。列表排序：有编码的在前按编码，「/」的在后按名称
         # 有效期三字段 expiryDate/expiryNote/remindDays 只由 /api/admin/devices 返回，
         # H5 侧的 GET /api/devices 不含（H5 的有效期数据走 /api/stats/expiry）
@@ -93,7 +93,7 @@ monthsign {id,deptId,month,sign:{...同上},stat:{checked,ng,weeks},at}
 | POST /api/records/:deptId/:date/sign | inspector+范围 | Body `{dataUrl,opinion}`。签字人 = 登录的巡检员本人（不信前端传的姓名）。校验同上+PNG magic bytes+解码≤1MB。落盘后返回完整 record |
 | GET /api/weeksigns?deptId=&from=&to= | 登录+范围 | from/to 匹配 week 字段；from 不是周一时对齐到所在周周一 |
 | POST /api/weeksigns/:deptId/:week/sign | dept+范围 | Body `{memberId,dataUrl,opinion}`，签字人必须是本科室签字人名单里的在用成员。校验：week 是周一(BAD_INPUT)；周一 > 今天(EARLY)；该周**周一到周日 7 天全部已日签**才能签——有已到却没日签的天 → NOT_READY（指明日期），还有没到的天 → EARLY（所以最早在周日签完当天）；(dept,week) 未签过(LOCKED)。stat 服务端重算 |
-| POST /api/monthsigns/:deptId/:month/sign | equip/admin | 签字人 = 登录账号。校验：月份 01–12；`wksOfMonth(month)` **全部**周都已周签——有该签未签的周 → NOT_READY，最后一周还没结束 → EARLY；月未签过(LOCKED)。stat 按 `monthSpan(month)` 统计（= 各周之和） |
+| POST /api/monthsigns/:deptId/:month/sign | equip/admin | 签字人 = 登录账号。校验：月份 01–12；`requiredWeeks(month, startDate)` 的周都已周签（= 归属该月、且周日不早于科室 startDate 的周；整个月都在 startDate 以前时 = 全部周，补签以前的月份不放宽）——有该签未签的周 → NOT_READY，最后一周还没结束 → EARLY；月未签过(LOCKED)。stat 按 `monthSpan(month)` 统计（= 各周之和） |
 | GET /api/monthsigns?deptId=&year= | 登录+范围 | |
 | GET /api/files/:id | 登录(Bearer或Cookie)+范围 | 流式 PNG，ETag=sha256，Cache-Control: private,max-age=86400 |
 
@@ -124,6 +124,8 @@ users / depts / signs/void / oplog / audit / import/legacy / ams 仍只给 equip
 | GET /api/admin/depts/import-template (equip/admin) | 科室导入模板 xlsx：第 1 张表只有表头「科室名称 / 编码 / 排序 / 状态」，示例与说明在第 2 张表 |
 | POST /api/admin/depts/import (equip/admin) | multipart 上传 xlsx（只读第 1 张表）。按科室名称新增或更新；编码、排序、状态留空 = 已有科室不改动（编码填「无」清空）；新科室默认编码空、排序 0、启用。状态只认 启用 / 停用；排序须为整数；文件内重名、缺名称逐行报错。返回 `{created,updated,errors:[{row,message}]}`，记审计 depts_import |
 | POST /api/admin/depts/batch (equip/admin) | Body `{ids:[...],action:'status'\|'delete',status?:'on'\|'off'}`，ids ≤2000。delete 与单个删除同一规则：有巡检/签字记录、有护士长账号、本科室设备被巡检过的不删，放进 `blocked:[{id,name,reason}]`；能删的连同签字人名单、设备、账号科室关联一起删除。返回 `{updated,deleted,blocked,missing}`，单个事务；记审计 dept_batch_status / dept_batch_delete |
+| GET /api/admin/settings (dept/equip/admin) | `{inspectStart:'YYYY-MM-DD'|null}`：巡检起算日 |
+| PUT /api/admin/settings/inspect-start (equip/admin) | Body `{date:'YYYY-MM-DD'|''}`。空串 = 清除。须为真实日期、**周一**、不晚于本周周一，否则 400 BAD_INPUT。设了之后：这天以前的日子、周、月不提醒（stats/unsigned、手机端提醒）、不算缺签（completion 应巡天数 / 已日签天数 / 周签进度、month-states）；起算日所在月的月签只要求 requiredWeeks。以前已签的不受影响，以前的日子仍可补签。记操作日志（系统 / 修改巡检起算日，改前改后）。存于 settings 表（迁移 009） |
 | GET/POST/PATCH/DELETE /api/admin/devices[/:id] (dept 限本科室) | 台账维护。code / serial 判重见 device 定义，重复 → 409 CONFLICT，message 写明被哪个科室的哪台设备占用；PATCH 只在 code / serial 有变化时判重（判重之前录入的重号不挡别的编辑，体检会列出）。有效期入参 `{expiryDate,expiryNote,remindDays}`：日期须为真实存在的 `YYYY-MM-DD`（空串=不适用）且年份 ∈ [1970, 今年+30]（挡两位年份误输入与 2026→2062 手滑），remindDays 为 0～365 的整数，非法→400 BAD_INPUT。DELETE depts 时若本科室设备被任何巡检记录引用→409（设备可跨科室调拨，不能只看本科室有无 records）。status 只能是 in_use/repair/retired/scrapped，其它值 400（报错里带上原值）。DELETE devices：被巡检记录引用→409 CONFLICT，message 写明记录天数、最近日期，并提示改为停用/报废（作废签字不删巡检记录）；删除成功记审计 device_delete |
 | GET /api/admin/devices/import-template | 下载 xlsx 模板（列：科室名称/设备品类/设备编码/设备名称/型号/位置/状态/有效期/提醒提前天数/序列号；序列号列为文本格式）。导入时按表头找「序列号」列：没有这一列或留空 = 不改动，填「清空」清空（填「无」等 = 「/」），单元格是 ≥16 位的数字（Excel 已截断）或超过 60 字 → 该行报错 |
 | POST /api/admin/devices/import | multipart xlsx≤5MB，**按 code upsert**，科室名不存在→该行报错不自动建。code 为「/」的行：有真实序列号先按序列号对应已有设备，否则按（科室, 品类, 名称, 型号, 位置）对应 code='/' 的已有设备（多重集一对一，按 id 顺序），都对不上才新增；有 code 的行若序列号属于某台 code='/' 的设备 → 更新那台并补上编码。文件内编码重复、序列号重复（不分大小写）、同一台设备被两行对应 → 后一行报错；序列号被别的设备占用 → 该行报错。每行一个保存点。→ `{created,updated,errors:[{row,message}]}`。有效期两列的写入语义：**列不存在或该格留空 = 本次不改动**（老 7 列模板重导入不会清空已录到期日），填「无/-/清空」= 清空，填日期 = 覆盖。日期必须年月日填全（不做 `new Date()` 宽松兜底），状态须命中白名单否则整行报错 |
@@ -138,12 +140,12 @@ users / depts / signs/void / oplog / audit / import/legacy / ams 仍只给 equip
 | 端点 | 说明 |
 |---|---|
 | GET /api/stats/unsigned | → `{days:[{deptId,date}...最近7天未日签，不早于科室起算日，无在用设备的科室不算], weeks:[{deptId,week}上周及更早未周签，最多 12 周], months:[{deptId,month}最后一周已结束、覆盖范围内有记录、未月签的月，最多 12 个月]}`。只含启用中的科室 |
-| GET /api/stats/completion?month=&deptId= | 按科室：应巡天数（从科室起算日算）/已日签天数/巡检台次/异常台次/周签进度（分母=全部周）/月签状态/deptStatus。全院范围含「该月有记录」的停用科室 |
+| GET /api/stats/completion?month=&deptId= | 按科室：应巡天数（从科室起算日算）/已日签天数/巡检台次/异常台次/周签进度（分母=requiredWeeks：起算日及以后的周）/月签状态/deptStatus。全院范围含「该月有记录」的停用科室 |
 | GET /api/stats/ng?from=&to=&deptId=&sign= | 异常明细：[{date,deptId,deptName,deviceCode,deviceName,catName,deviceStatus,note,inspectorName,signed,signVoided}]。列出巡检员记下的全部 ng 结果（作废日签不删结果）；signed=当天是否已日签，signVoided=未签且这天的日签被作废过（据审计 sign_void）；deviceStatus=设备现在的状态。sign 可选 signed/unsigned 只看已日签/未日签，其它值 400；日期须为 YYYY-MM-DD |
 | GET /api/stats/signatures?month= | 各科室签字人 × 日/周/月签次数 |
 | GET /api/stats/expiry?all=&deptId= | 有效期清单：`[{deviceId,deptId,deptName,code,name,catName,location,expiryDate,expiryNote,level,days,remindDays}]`。level ∈ expired/soon/ok；默认只回 expired+soon，`all=1` 回全部已设有效期的。按紧急度→剩余天数→科室→编码排序。全角色可访问（巡检员也要看到本科室），范围由 visibleDeptIds 收窄 |
 | GET /api/stats/expiry/summary | → `{expired,soon,total}`，首页角标用 |
-| GET /api/stats/month-states?months=YYYY-MM,… | 各科室月度状态一次取齐（≤12 个月，全角色，范围由 visibleDeptIds 收窄；全院范围只含启用中的科室）。每项 `{deptId,month,weeks,signedWeeks,miss,missDue,openWeeks,checked,ng,dsign,dueDays,span:{from,to},ms,started,ended,ready,locked}`，口径与 H5 `monthState` 逐项一致（台次按月签覆盖范围 monthSpan；`ended`=覆盖范围最后一天已过；`ms`=月签 JSON 或 null）。手机端设备科首页 / 提醒用，替代逐科室查询 |
+| GET /api/stats/month-states?months=YYYY-MM,… | 各科室月度状态一次取齐（≤12 个月，全角色，范围由 visibleDeptIds 收窄；全院范围只含启用中的科室）。每项 `{deptId,month,weeks（=requiredWeeks，月签要求的周）,allWeeks（该月全部周）,start（科室 startDate）,signedWeeks,miss,missDue,openWeeks,checked,ng,dsign,dueDays,span:{from,to},ms,started,ended,ready,locked}`，口径与 H5 `monthState` 逐项一致（台次按月签覆盖范围 monthSpan；`ended`=覆盖范围最后一天已过；`ms`=月签 JSON 或 null）。手机端设备科首页 / 提醒用，替代逐科室查询 |
 | GET /api/export/monthly.xlsx?deptId=&month= | exceljs 生成：设备×日期矩阵(✓/✗/空) + 异常清单 + 三级签名图(嵌图)。矩阵设备行 = 该月在本科室实际巡检过的设备（调走的注明现属科室）∪ 本科室当前在用、该月前已建档、且该月没在别的科室被巡检的设备。文件名 `巡检月报_科室_月份.xlsx`（filename*） |
 | GET /api/export/ng.xlsx?from=&to=&deptId=&sign= | 异常清单表，deptId、sign 可选（同 /api/stats/ng）；末两列「当日签字」「设备现状」 |
 

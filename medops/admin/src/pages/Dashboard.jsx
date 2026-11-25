@@ -1,9 +1,9 @@
 // 未签提醒总览：GET /stats/unsigned 三组列表 + 本月完成率概览 GET /stats/completion
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { api, getUser } from '../api/client'
 import { useDepts, useServerTime } from '../hooks'
 import { asList, nz } from '../utils'
-import { Bar, Empty, ErrorTip, Spinner, Badge } from '../components/ui'
+import { Bar, Empty, ErrorTip, Spinner, Badge, Modal, Field } from '../components/ui'
 import { usePaged } from '../components/Pager'
 import { Link } from 'react-router-dom'
 import ServerClock from '../components/ServerClock'
@@ -22,6 +22,61 @@ function normRow(r) {
     monthSigned: nz(r.monthSigned, r.month_signed, false),
     off: r.deptStatus === 'off'
   }
+}
+
+/* 某天所在周的周一（YYYY-MM-DD，按日期本身算，不受浏览器时区影响） */
+function mondayOf(s) {
+  const d = new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)))
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+  return d.toISOString().slice(0, 10)
+}
+
+/* 巡检起算日：设备早就录进系统、真正开始巡检是后来某个周一时，设成那天——以前的不再提醒、不算缺签 */
+function StartSetting({ value, today, canEdit, onSaved }) {
+  const [open, setOpen] = useState(false)
+  const [date, setDate] = useState('')
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const thisMonday = today ? mondayOf(today) : ''
+  function show() { setDate(value || thisMonday); setErr(null); setOpen(true) }
+  async function save(v) {
+    setErr(null)
+    if (v && mondayOf(v) !== v) return setErr({ message: `要选周一（周签按周一到周日算）：${v} 所在周的周一是 ${mondayOf(v)}` })
+    setBusy(true)
+    try {
+      await api('/admin/settings/inspect-start', { method: 'PUT', body: { date: v } })
+      setOpen(false)
+      onSaved()
+    } catch (e) { setErr(e) } finally { setBusy(false) }
+  }
+  return (
+    <>
+      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="text-slate-600">巡检起算日：</span>
+        {value
+          ? <span><b className="tabular-nums text-slate-800">{value}</b><span className="text-slate-600"> 起（这天以前的不提醒、不算缺签）</span></span>
+          : <span className="text-slate-600">未设置（按各科室建立日算）</span>}
+        {canEdit && <button type="button" className="text-primary hover:underline" onClick={show}>{value ? '修改' : '设置'}</button>}
+      </p>
+      <Modal open={open} title="巡检起算日" onClose={() => setOpen(false)}>
+        <p className="mb-3 text-sm leading-6 text-slate-600">
+          设备早就录进系统、从某个周一才真正开始巡检时，把那天设为起算日：<br />
+          · 这天以前的日子、周、月<b>不再提醒、不算缺签</b>（后台和手机端都是）；<br />
+          · 这个月的月签只要求起算日所在周及以后的周签；<br />
+          · 以前已经签了的照常保留；以前的日子仍然可以补签。
+        </p>
+        <Field label="起算日（周一）" required hint={thisMonday ? `本周一是 ${thisMonday}` : ''}>
+          <input type="date" className="inp" value={date} max={thisMonday || undefined} onChange={e => setDate(e.target.value)} />
+        </Field>
+        <ErrorTip error={err} className="mb-3" />
+        <div className="flex flex-wrap justify-end gap-2">
+          {value && <button type="button" className="btn-ghost mr-auto" disabled={busy} onClick={() => save('')}>清除（不限）</button>}
+          <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>取消</button>
+          <button type="button" className="btn-primary" disabled={busy || !date} onClick={() => save(date)}>{busy ? '保存中…' : '保存'}</button>
+        </div>
+      </Modal>
+    </>
+  )
 }
 
 function UnsignedCard({ title, color, items, render }) {
@@ -50,20 +105,24 @@ export default function Dashboard() {
   const [expiryErr, setExpiryErr] = useState(null)
   const [completion, setCompletion] = useState(null)
   const [err, setErr] = useState(null)
+  const [start, setStart] = useState(undefined)   // 巡检起算日；undefined = 还在加载
+  const [reload, setReload] = useState(0)
+  const canEdit = ['equip', 'admin'].includes(getUser()?.role)
 
   useEffect(() => {
+    api('/admin/settings').then(r => setStart(r.inspectStart || null)).catch(() => setStart(null))
     api('/stats/unsigned').then(setUnsigned).catch(setErr)
     /* 单独记失败原因：这是安全类提醒，加载失败时界面必须和"全院都在有效期内"区分开，
        否则设备科看到一片干净就以为没事了 */
     api('/stats/expiry').then(res => setExpiry(asList(res)))
       .catch(e => setExpiryErr(e?.message || '加载失败'))
-  }, [])
+  }, [reload])
   useEffect(() => {
     if (!time?.month) return
     api(`/stats/completion?month=${time.month}`)
       .then(res => setCompletion(asList(res).map(normRow)))
       .catch(setErr)
-  }, [time?.month])
+  }, [time?.month, reload])
 
   const days = unsigned?.days || []
   const weeks = unsigned?.weeks || []
@@ -73,10 +132,11 @@ export default function Dashboard() {
   const { items: compRows, pager: compPager } = usePaged(completion, 'dash-completion', { defaultSize: 20 })
   return (
     <div>
-      <div className="mb-5 flex items-end justify-between">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">未签提醒</h2>
           <p className="mt-0.5 text-sm text-slate-600">日签缺失（近 7 天）· 周签缺失（上周及更早）· 月签缺失（最后一周已结束、还没月签的月份）</p>
+          {start !== undefined && <StartSetting value={start} today={time?.date} canEdit={canEdit} onSaved={() => { setUnsigned(null); setReload(n => n + 1) }} />}
         </div>
         <ServerClock className="text-sm text-slate-600" />
       </div>

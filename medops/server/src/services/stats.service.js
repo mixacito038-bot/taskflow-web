@@ -3,6 +3,7 @@ const { getDb } = require('../db/connection');
 const P = require('./period.service');
 const { SQL_ORDER } = require('./device-code');
 const recSvc = require('./record.service');
+const startSvc = require('./start.service');
 
 /* 数据范围：deptIds=null 表示全院。
    month 给定时（按月的统计），全院范围除了启用中的科室，还要带上「该月有巡检记录」的停用科室——
@@ -21,13 +22,8 @@ function scopedDepts(deptIds, month) {
   return db.prepare(`SELECT * FROM depts WHERE id IN (${qs}) ORDER BY sort, id`).all(...deptIds);
 }
 
-/* 科室从哪天开始算「应巡」：建科室那天；导入过更早的历史记录的，从最早一条记录算起。
-   旧版不看起点：今天新建的科室，首页立刻多出「前 7 天未日签」7 条提醒。 */
-function deptStart(d) {
-  const first = getDb().prepare('SELECT MIN(date) AS d FROM records WHERE dept_id = ?').get(d.id).d;
-  const created = P.shDateOf(d.created_at);
-  return first && first < created ? first : created;
-}
+/* 科室从哪天开始算「应巡」：科室建立日（或更早的第一条记录）与巡检起算日取晚的，见 start.service */
+const deptStart = d => startSvc.deptStart(d);
 const inUseCount = deptId =>
   getDb().prepare("SELECT COUNT(*) AS c FROM devices WHERE dept_id = ? AND status = 'in_use'").get(deptId).c;
 
@@ -56,6 +52,7 @@ function unsigned(deptIds) {
       let w = P.wkOf(first);
       const floor = P.addDay(curWeek, -7 * 12);
       if (w < floor) w = floor;
+      if (w < P.wkOf(start)) w = P.wkOf(start);   // 起算日以前的周不提醒
       const signed = new Set(db.prepare('SELECT week_start FROM week_signs WHERE dept_id = ?').all(d.id).map(r => r.week_start));
       while (w < curWeek) {
         if (!signed.has(w)) weeks.push({ deptId: String(d.id), week: w });
@@ -68,9 +65,10 @@ function unsigned(deptIds) {
       for (let i = 0; i < 12; i++) {
         m = P.prevMonth(m);
         const span = P.monthSpan(m);
-        if (span.to < P.wkOf(first)) break;
+        if (span.to < P.wkOf(first) || span.to < start) break;   // 整个月都在起算日以前：不提醒
         if (span.to >= t || signedMo.has(m)) continue;
-        if (db.prepare('SELECT 1 FROM records WHERE dept_id = ? AND date >= ? AND date <= ? LIMIT 1').get(d.id, span.from, span.to)) {
+        const from = span.from > start ? span.from : start;     // 只看起算日以后有没有巡检
+        if (db.prepare('SELECT 1 FROM records WHERE dept_id = ? AND date >= ? AND date <= ? LIMIT 1').get(d.id, from, span.to)) {
           months.push({ deptId: String(d.id), month: m });
         }
       }
@@ -86,21 +84,20 @@ function completion(deptIds, month, deptId) {
   const t = P.today();
   let depts = scopedDepts(deptIds, month);
   if (deptId != null) depts = depts.filter(d => d.id === +deptId);
-  /* 周签进度的分母 = 归属该月的全部周（与月签就绪条件一致）；
+  /* 周签进度的分母 = 归属该月、起算日及以后的全部周（requiredWeeks，与月签就绪条件一致）；
      旧版只算已开始的周，本月中途会显示 1/2 这种"看着快齐了"的假进度 */
-  const wks = P.wksOfMonth(month);
-  /* 应巡天数：该月内、科室起算日之后、≤今天 的天数（按科室分别算：月中新建的科室不该按整月算缺签） */
+  /* 应巡天数：该月内、科室起算日（含巡检起算日）之后、≤今天 的天数（按科室分别算：月中新建的科室不该按整月算缺签） */
   const monthEnd = (() => { const d = P.D(`${month}-01`); d.setMonth(d.getMonth() + 1); d.setDate(0); return P.fmt(d); })();
-  const dueOf = d => {
-    let from = `${month}-01`; const to = monthEnd < t ? monthEnd : t;
-    const st = deptStart(d); if (st > from) from = st;
-    if (from > to) return 0;
-    return Math.round((P.D(to) - P.D(from)) / 864e5) + 1;
-  };
+  const g = startSvc.inspectStart();
   return depts.map(d => {
-    const dueDays = dueOf(d);
+    let start = startSvc.deptStart(d, g);
+    // 整个月都在巡检起算日以前（看以前的月份）：按科室自己的起算日照实统计，不把以前签的天数抹成 0
+    if (start > P.monthSpan(month).to) start = startSvc.ownStart(d);
+    const from = start > `${month}-01` ? start : `${month}-01`, to = monthEnd < t ? monthEnd : t;
+    const dueDays = from > to ? 0 : Math.round((P.D(to) - P.D(from)) / 864e5) + 1;
+    const wks = P.requiredWeeks(month, start);
     const rows = db.prepare("SELECT * FROM records WHERE dept_id = ? AND date LIKE ? || '-%'").all(d.id, month);
-    const signedDays = rows.filter(r => r.sign_at).length;
+    const signedDays = rows.filter(r => r.sign_at && r.date >= start).length;   // 与应巡天数同一口径
     let checked = 0, ng = 0;
     if (rows.length) {
       const qs = rows.map(() => '?').join(',');
@@ -223,7 +220,9 @@ function monthStates(deptIds, months) {
   const depts = scopedDepts(deptIds);
   if (!depts.length || !months.length) return [];
   const ids = depts.map(d => d.id), inIds = `(${ids.map(() => '?').join(',')})`;
-  const per = months.map(m => ({ m, wks: P.wksOfMonth(m), sp: P.monthSpan(m) }));
+  const per = months.map(m => ({ m, all: P.wksOfMonth(m), sp: P.monthSpan(m) }));
+  const g = startSvc.inspectStart();
+  const starts = new Map(depts.map(d => [d.id, startSvc.deptStart(d, g)]));
   const from = per.map(x => x.sp.from).sort()[0], to = per.map(x => x.sp.to).sort().pop();
   const ws = new Set(db.prepare(`SELECT dept_id, week_start FROM week_signs
       WHERE dept_id IN ${inIds} AND week_start >= ? AND week_start <= ?`).all(...ids, from, to)
@@ -241,20 +240,25 @@ function monthStates(deptIds, months) {
   const ms = new Map(recSvc.listMonthSigns({ deptIds: ids })
     .filter(x => want.has(x.month)).map(x => [`${x.deptId}|${x.month}`, x]));
   const out = [];
-  for (const { m, wks, sp } of per) {
+  for (const { m, all, sp } of per) {
     const last = sp.to < t ? sp.to : t;
-    const dueDays = last < sp.from ? 0 : Math.round((P.D(last) - P.D(sp.from)) / 864e5) + 1;
-    const openWeeks = wks.filter(w => P.addDay(w, 6) > t);
     for (const d of depts) {
+      /* 起算日以前的周不要求、不算应巡天数（与手机端 monthState 同一规则） */
+      const start = starts.get(d.id);
+      const wks = P.requiredWeeks(m, start);
+      const cs = start <= sp.to ? start : null;   // 整个月都在起算日以前：照实统计（同手机端）
+      const from = cs && cs > sp.from ? cs : sp.from;
+      const dueDays = last < from ? 0 : Math.round((P.D(last) - P.D(from)) / 864e5) + 1;
+      const openWeeks = wks.filter(w => P.addDay(w, 6) > t);
       const miss = wks.filter(w => !ws.has(`${d.id}|${w}`));
       let checked = 0, ng = 0, dsign = 0;
       for (const r of days.get(d.id) || []) {
         if (r.date < sp.from || r.date > sp.to) continue;
-        checked += r.checked; ng += r.ng; if (r.signed) dsign++;
+        checked += r.checked; ng += r.ng; if (r.signed && (!cs || r.date >= cs)) dsign++;
       }
       const msj = ms.get(`${d.id}|${m}`) || null;
       out.push({
-        deptId: String(d.id), month: m, weeks: wks, signedWeeks: wks.length - miss.length,
+        deptId: String(d.id), month: m, weeks: wks, allWeeks: all, start, signedWeeks: wks.length - miss.length,
         miss, missDue: miss.filter(w => P.addDay(w, 6) <= t), openWeeks,
         checked, ng, dsign, dueDays, span: sp, ms: msj,
         started: m <= P.moOf(t), ended: sp.to < t,

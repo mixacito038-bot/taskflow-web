@@ -2,6 +2,7 @@
 const { getDb } = require('../db/connection');
 const { E } = require('../plugins/error');
 const P = require('./period.service');
+const startSvc = require('./start.service');
 const fileSvc = require('./file.service');
 const { devLabel } = require('./device-code');
 
@@ -310,7 +311,10 @@ function deptMonthState(deptId, month, today) {
     return { date: r.date, sign: !!r.sign_at, checks };
   });
   const ms = db.prepare(`${MS_SELECT} WHERE ms.dept_id = ? AND ms.month = ?`).get(deptId, month) || null;
-  return P.monthState({ month, today, weekSignWeeks, recs, ms });
+  /* 起算日（巡检起算日、科室建立日取晚的）以前的周不要求周签 */
+  const dept = db.prepare('SELECT * FROM depts WHERE id = ?').get(deptId);
+  const start = dept ? startSvc.deptStart(dept) : null;
+  return P.monthState({ month, today, weekSignWeeks, recs, ms, start });
 }
 
 function signMonth(user, deptId, month, body) {

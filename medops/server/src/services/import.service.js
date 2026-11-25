@@ -8,6 +8,7 @@ const { E } = require('../plugins/error');
 const fs = require('fs');
 const fileSvc = require('./file.service');
 const P = require('./period.service');
+const startSvc = require('./start.service');
 const { normDeviceStatus, onOff, STATUS_TEXT } = require('./device-status');
 const DC = require('./device-code');
 
@@ -646,7 +647,8 @@ function importLegacy(data, { dryRun = false } = {}) {
     }
     for (const x of months) {
       const signedW = new Set(db.prepare('SELECT week_start FROM week_signs WHERE dept_id = ?').all(x.deptId).map(r => r.week_start));
-      const miss = P.wksOfMonth(x.month).filter(w => !signedW.has(w));
+      const dept = db.prepare('SELECT * FROM depts WHERE id = ?').get(x.deptId);
+      const miss = P.requiredWeeks(x.month, dept ? startSvc.deptStart(dept) : null).filter(w => !signedW.has(w));
       if (miss.length) {
         warn(x.where, `这个月有 ${miss.length} 周没有周签（${miss.map(w => w.slice(5) + ' 起').join('、')}），按规则还不能月签。`
           + '已照原样导入；要更正：作废这个月签，补齐周签后重新月签');

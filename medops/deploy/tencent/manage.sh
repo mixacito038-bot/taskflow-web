@@ -257,6 +257,12 @@ case "${1:-帮助}" in
     exec bash ./update-cert.sh "$@"
     ;;
 
+  服务器体检|doctor)
+    # 服务器整体情况（只读）：负载、内存、磁盘、时间、Docker、容器、网页、证书、备份、最近报错、端口
+    shift
+    exec bash ./server-check.sh "$@"
+    ;;
+
   *)
     cat <<'EOF'
 急救设备巡检系统 · 运维命令
@@ -269,6 +275,7 @@ case "${1:-帮助}" in
   bash manage.sh 恢复 <备份文件>  用备份覆盖当前数据
   bash manage.sh 升级            上传新代码后重新构建启动
   bash manage.sh 体检            检查不符合签字规则的周签/月签（如旧版提前签的）、状态无效的设备，只读
+  bash manage.sh doctor          服务器体检：负载、内存、磁盘、Docker、网页、证书、备份、最近报错，只读
   bash manage.sh ams-restore     资产盘点数据还原：列出最近的改动，把误操作（如误选「使用本机数据」）撤销回去
   bash manage.sh 重置管理员       忘记管理员密码时用
   bash manage.sh reset-data       清空巡检数据（科室、设备、账号、记录、签字），只保留 admin 账号；会先自动备份

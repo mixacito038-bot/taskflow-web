@@ -1,7 +1,7 @@
 'use strict';
 /* 数据体检：找出不符合规则的存量数据（多半是旧版本留下的）。只读，不改任何数据。
    用法（服务器上）：cd /opt/medops/deploy/tencent && bash manage.sh 体检
-   ① 签字：周签要求那一周 7 天都已日签；月签要求周一在该月的各周都已周签。
+   ① 签字：周签要求那一周 7 天都已日签；月签要求周一在该月的各周都已周签（起算日以前的周不要求）。
       发现问题后，在管理后台「周签 / 月签」里按「先作废月签、再作废周签」的顺序作废，再按正常流程补签。
    ② 设备：状态必须是 在用 / 维修中 / 已停用 / 已报废 之一。别的值（旧数据导入留下的）
       手机端巡检清单不显示、有效期不提醒；升级时常见写法（如 active）已自动改好，剩下的要人工选。
@@ -9,6 +9,7 @@
 const cfg = require('../config');
 const { initDb } = require('../db/connection');
 const P = require('../services/period.service');
+const startSvc = require('../services/start.service');
 const { devLabel } = require('../services/device-code');
 
 const db = initDb(cfg.dataDir);
@@ -29,7 +30,9 @@ for (const w of db.prepare('SELECT * FROM week_signs ORDER BY week_start, dept_i
 
 for (const m of db.prepare('SELECT * FROM month_signs ORDER BY month, dept_id').all()) {
   const signed = new Set(db.prepare('SELECT week_start FROM week_signs WHERE dept_id = ?').all(m.dept_id).map(r => r.week_start));
-  const miss = P.wksOfMonth(m.month).filter(w => !signed.has(w));
+  // 起算日（巡检起算日、科室建立日取晚的）以前的周不要求，与月签时的判定同一规则
+  const dept = db.prepare('SELECT * FROM depts WHERE id = ?').get(m.dept_id);
+  const miss = P.requiredWeeks(m.month, dept ? startSvc.deptStart(dept) : null).filter(w => !signed.has(w));
   if (!miss.length) continue;
   n++;
   console.log(`✗ 月签 · ${name(m.dept_id)} · ${m.month}（${m.sign_name}，${m.sign_at} 签）`);

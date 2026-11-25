@@ -19,6 +19,7 @@ const exportSvc = require('../services/export.service');
 const expirySvc = require('../services/expiry.service');
 const P = require('../services/period.service');
 const DC = require('../services/device-code');
+const startSvc = require('../services/start.service');
 
 const nowIso = () => new Date().toISOString();
 const ROLES = ['inspector', 'dept', 'equip', 'admin'];
@@ -416,6 +417,22 @@ module.exports = async function adminRoutes(app) {
     if (out.deleted.length) oplog.write({ req, action: 'dept_batch_delete', target: `${out.deleted.length} 个科室`,
       summary: `批量删除：${names(out.deleted)}${out.blocked.length ? `；另有 ${out.blocked.length} 个用过的没删` : ''}`, detail: `n=${out.deleted.length} names=${names(out.deleted)}` });
     return out;
+  });
+
+  /* ---------- 系统设置：巡检起算日 ----------
+     设备早就录进系统、真正开始巡检是后来某个周一：设成那天，以前的日子、周、月不再提醒、不算缺签，
+     那个月的月签也只要求起算日以后的周。护士长能看（首页显示），只有设备科能改。 */
+  app.get('/api/admin/settings', { preHandler: deptGuard }, async () => ({ inspectStart: startSvc.inspectStart() }));
+  app.put('/api/admin/settings/inspect-start', { preHandler: guard }, async req => {
+    const c = startSvc.checkInspectStart((req.body || {}).date);
+    if (!c.ok) throw E.badInput(c.message);
+    const before = startSvc.inspectStart();
+    startSvc.setSetting('inspect_start', c.value, req.user.id);
+    oplog.write({ req, action: 'setting_inspect_start', target: '巡检起算日',
+      summary: c.value ? `巡检起算日设为 ${c.value}：这天以前的日子、周、月不再提醒、不算缺签` : '清除巡检起算日：按各科室建立日（或最早的巡检记录）算',
+      changes: before === c.value ? [] : [{ f: '巡检起算日', from: before || '（不限）', to: c.value || '（不限）' }],
+      detail: `inspect_start=${c.value || ''}` });
+    return { inspectStart: c.value };
   });
 
   /* ---------- 设备台账 ---------- */

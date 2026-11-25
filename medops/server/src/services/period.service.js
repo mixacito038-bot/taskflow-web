@@ -35,6 +35,15 @@ const isMonth = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(m));
 const signMonthOf = date => moOf(wkOf(date));
 /* 月签覆盖的日期范围：归属该月的第一周周一 ～ 最后一周周日（可能从上月末开始、到下月初结束） */
 const monthSpan = m => { const w = wksOfMonth(m); return { from: w[0], to: addDay(w[w.length - 1], 6) }; };
+/* 月签要求的周：归属该月、且在起算日 start 所在周及以后的周（start 取科室起算日，见 start.service）。
+   起算日以前的周不要求（设备早就录了、从起算日才真正开始巡检）；没有 start 或整个月都在起算日以前的
+   （例如补签以前的月份），仍按原规则要求全部周。H5 requiredWeeks 同一规则。 */
+const requiredWeeks = (m, start) => {
+  const wks = wksOfMonth(m);
+  if (!start) return wks;
+  const req = wks.filter(w => addDay(w, 6) >= start);
+  return req.length ? req : wks;
+};
 
 /* ---------- 业务时钟：只按 Asia/Shanghai 计算，不依赖进程 TZ ---------- */
 const SH_FMT = new Intl.DateTimeFormat('en-CA', {
@@ -91,22 +100,25 @@ function weekState({ week, today: t, recs, ws }) {
    recs: 月签覆盖范围 monthSpan(m) 内的记录（第一周周一～最后一周周日）。
          ⚠ 旧版取自然月 [m-01, m-31]：月签的台次和组成它的各周周签加起来对不上
          （8 月：5 个周签合计 35 天的台次，月签只算了 8/1–8/31 的 31 天）。
-   openWeeks = 周日还没到的周（本月还没结束）；missDue = 已经可以签却没周签的周。 */
-function monthState({ month, today: t, weekSignWeeks, recs, ms }) {
-  const wks = wksOfMonth(month);
+   openWeeks = 周日还没到的周（本月还没结束）；missDue = 已经可以签却没周签的周。
+   start：科室起算日（含巡检起算日），只要求 requiredWeeks(month, start)；weeks = 要求的周，allWeeks = 该月全部周。 */
+function monthState({ month, today: t, weekSignWeeks, recs, ms, start = null }) {
+  const wks = requiredWeeks(month, start);
+  // 整个月都在起算日以前（看以前的月份）：照实统计，不按起算日把以前签的天数抹成 0
+  const cs = start && start <= monthSpan(month).to ? start : null;
   const signs = weekSignWeeks.filter(w => wks.includes(w));
   const miss = wks.filter(w => !signs.includes(w));
   const openWeeks = wks.filter(w => addDay(w, 6) > t);
   const missDue = miss.filter(w => addDay(w, 6) <= t);
   let checked = 0, ng = 0, dsign = 0;
   recs.forEach(r => { const v = Object.values(r.checks || {}); checked += v.length;
-    ng += v.filter(x => x === 'ng').length; if (r.sign) dsign++; });
-  return { month, weeks: wks, signedWeeks: signs.length, miss, missDue, openWeeks, checked, ng, dsign, ms,
+    ng += v.filter(x => x === 'ng').length; if (r.sign && (!cs || r.date >= cs)) dsign++; });
+  return { month, weeks: wks, allWeeks: wksOfMonth(month), signedWeeks: signs.length, miss, missDue, openWeeks, checked, ng, dsign, ms,
     started: month <= moOf(t), ended: month < moOf(t),
     ready: wks.length > 0 && miss.length === 0, locked: !!ms };
 }
 
 module.exports = {
-  pad, D, fmt, addDay, wkOf, wkDays, moOf, wksOfMonth, prevMonth, isMonth, signMonthOf, monthSpan,
+  pad, D, fmt, addDay, wkOf, wkDays, moOf, wksOfMonth, prevMonth, isMonth, signMonthOf, monthSpan, requiredWeeks,
   shNow, today, stamp, shDateOf, shDayStartIso, shDayEndIso, dayDone, weekState, monthState
 };
