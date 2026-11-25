@@ -19,6 +19,11 @@
   升级前数据备份 /root/medops-backup-20261125-123125.tar.gz，回退命令 bash /root/medops-rollback-20261125-123125.sh。
   2026-11-25 服务器体检：2 核 / 7.4G / 300G 盘用 22%，Docker 29.7.2，容器 7 天无重启，证书剩 171 天，备份正常；
   唯一问题：SSH 被暴力猜密码（/var/log/secure 里 10 万多次失败）。用户用 Mac（IP 116.234.75.147）+ FinalShell 以 root 密码登录。
+  2026-11-25 12:54 用户执行了 medops-ssh-guard.sh protect（= deploy/tencent/ssh-guard.sh，下个升级包起 manage.sh ssh-guard）：
+  sshd 加了 /etc/ssh/sshd_config.d/01-medops-guard.conf（MaxAuthTries 4、LoginGraceTime 30、MaxStartups 10:30:60）；
+  线上 OpenSSH 低于 9.8（没有内置封禁）、软件源里没有 fail2ban → 用了防火墙限速兜底（iptables INPUT 两条 recent 规则 +
+  白名单 116.234.75.147，systemd 单元 medops-ssh-ratelimit 开机恢复）。下一步待做：用户 Mac 生成密钥 → key-only 关密码登录
+  （要先确认这台机器上别的系统的维护人员是否也用密码登录）。用户的 Mac 用户名 yx，给命令时 Mac 写法放前面。
 - HTTPS 证书：2026-11-13 线上证书过期（ERR_CERT_DATE_INVALID），用户另买了证书，当天用独立脚本 medops-cert-update.sh
   （= deploy/tencent/update-cert.sh）换好并确认生效：泛域名 *.youhukang.com + youhukang.com，
   Xcc Trust DV TLS G3 R31 CA 签发、带完整链，**有效期至 2027-05-15**（到期前约两周提醒用户换）；旧证书备份在 /root/medops-cert-backup-20261113-130010；

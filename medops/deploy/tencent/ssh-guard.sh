@@ -287,7 +287,8 @@ EOF
 
   say "完成"
   echo "  你现在的登录方式不变。已经登录的窗口不受影响。"
-  echo "  自己输错密码被封了：换个网络（比如手机热点）登录后执行 bash $SELF unban，或等 1 天自动解封；"
+  if [ "$f2b" = 1 ] || [ "$PEN" = 1 ]; then echo "  自己输错密码被封了：换个网络（比如手机热点）登录后执行 bash $SELF unban，或等 1 天自动解封；"
+  else echo "  限速只在 1 分钟内连得太多时生效，停一分钟就自动恢复；白名单里的 IP 不受限。"; fi
   echo "  实在登不上：腾讯云控制台 → 实例 → 登录 →「VNC 登录」，执行 bash $SELF undo。"
   echo "  看效果：过几个小时执行 bash $SELF   （会显示封了多少个 IP）"
   echo "  要彻底杜绝被猜密码：配好密钥后执行 bash $SELF key-only"
