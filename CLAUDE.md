@@ -17,6 +17,10 @@
   安卓（华为 / 荣耀）签字时页面跟着笔画滑动的修正（待用户在荣耀真机上确认）、删除账号被挡时列出签字并就地作废、
   manage.sh cert / update-cert.sh 换证书；以及之前的操作日志（迁移 008）、各列表分页、账号批量导入 / 删除 / 改登录账号等。
   升级前数据备份 /root/medops-backup-20261117-220814.tar.gz，回退命令 bash /root/medops-rollback-20261117-220814.sh。
+  **2026-11-25 已发升级包 20261125-1223（提交 7e4ff17，含迁移 009 settings 表），等用户确认**后改上面的线上版本：
+  巡检起算日（后台首页设置，用户要设 2026-11-23；以前的周直接不显示、不提醒、不计数，月报也从这天起）、
+  manage.sh doctor / server-check.sh 服务器体检（同时单独发了 medops-server-check.sh）、后台构建降到 Chrome 64、手机端遮罩不用 inset。
+  模拟从 20261117-2206 起点跑完 44 项（含迁移 009 后崩溃回退、旧代码用迁移后的库）。
 - HTTPS 证书：2026-11-13 线上证书过期（ERR_CERT_DATE_INVALID），用户另买了证书，当天用独立脚本 medops-cert-update.sh
   （= deploy/tencent/update-cert.sh）换好并确认生效：泛域名 *.youhukang.com + youhukang.com，
   Xcc Trust DV TLS G3 R31 CA 签发、带完整链，**有效期至 2027-05-15**（到期前约两周提醒用户换）；旧证书备份在 /root/medops-cert-backup-20261113-130010；
