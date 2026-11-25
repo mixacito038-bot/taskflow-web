@@ -122,8 +122,21 @@ test('月签：没设起算日时要 M 的全部周；起算日设到倒数第�
   assert.equal(comp.weekSigned, 2);
   assert.ok(comp.dueDays <= 14 && comp.signedDays <= comp.dueDays, JSON.stringify(comp));
 
+  assert.equal(ms.span.from, start, '覆盖范围从起算日所在周算');
+  assert.equal(ms.checked, 14, '台次只算起算日以后（以前那天补录的不算）');
+  // 月报：只列起算日以后的日子
+  const res = await fetch(`${BASE}/api/export/monthly.xlsx?deptId=${dept}&month=${M}`, { headers: { authorization: `Bearer ${admin}`, 'x-device-id': 'istart-dev' } });
+  assert.equal(res.status, 200);
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(Buffer.from(await res.arrayBuffer()));
+  const head = wb.worksheets[0].getRow(2).values.slice(4).map(String);
+  const days = P.wkDays(wks[wks.length - 2]).concat(P.wkDays(wks[wks.length - 1])).filter(d => d.startsWith(M));
+  assert.deepEqual(head, days.map(d => String(+d.slice(8))), '月报的日期列从起算日开始');
+  assert.match(String(wb.worksheets[0].getRow(1).values[1]), /起）$/);
+
   const out = ok(await sign());
   assert.equal(out.stat.weeks, 2);
+  assert.equal(out.stat.checked, 14);
   // 体检脚本用同一规则：这个月签不算违规
   const chk = execFileSync('node', ['src/scripts/check-signs.js'], { cwd: ROOT, env: ENV }).toString();
   assert.ok(!chk.includes(`✗ 月签 · 急诊科 · ${M}`), chk);

@@ -111,7 +111,8 @@ function monthState({ month, today: t, weekSignWeeks, recs, ms, start = null }) 
   const openWeeks = wks.filter(w => addDay(w, 6) > t);
   const missDue = miss.filter(w => addDay(w, 6) <= t);
   let checked = 0, ng = 0, dsign = 0;
-  recs.forEach(r => { const v = Object.values(r.checks || {}); checked += v.length;
+  // 起算日以前的周当作系统还没启用：台次、异常、日签天数都只算要求的周（从 wks[0] 起）
+  recs.filter(r => r.date >= wks[0]).forEach(r => { const v = Object.values(r.checks || {}); checked += v.length;
     ng += v.filter(x => x === 'ng').length; if (r.sign && (!cs || r.date >= cs)) dsign++; });
   return { month, weeks: wks, allWeeks: wksOfMonth(month), signedWeeks: signs.length, miss, missDue, openWeeks, checked, ng, dsign, ms,
     started: month <= moOf(t), ended: month < moOf(t),

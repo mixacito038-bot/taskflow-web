@@ -1040,15 +1040,16 @@ async function main() {
       let wks = start ? allW.filter(w => P.addDay(w, 6) >= start) : allW; if (!wks.length) wks = allW;   // 起算日以前的周不要求
       const signs = okj(await api('GET', `/api/weeksigns?deptId=${deptId}`, { token: tok })).filter(x => wks.includes(x.week));
       const miss = wks.filter(w => !signs.find(x => x.week === w));
-      const recs = okj(await api('GET', `/api/records?from=${sp.from}&to=${sp.to}&deptId=${deptId}`, { token: tok }));
+      const esp = { from: wks[0], to: sp.to };
+      const recs = okj(await api('GET', `/api/records?from=${esp.from}&to=${esp.to}&deptId=${deptId}`, { token: tok }));
       let checked = 0, ng = 0, dsign = 0;
       recs.forEach(r => { const v = Object.values(r.checks || {}); checked += v.length; ng += v.filter(x => x === 'ng').length; if (r.sign && (!cs || r.date >= cs)) dsign++; });
-      const t = today, last = sp.to < t ? sp.to : t, from = cs && cs > sp.from ? cs : sp.from;
+      const t = today, last = esp.to < t ? esp.to : t, from = cs && cs > esp.from ? cs : esp.from;
       const ms = okj(await api('GET', `/api/monthsigns?deptId=${deptId}&year=${month.slice(0, 4)}`, { token: tok })).find(x => x.month === month) || null;
       return { deptId: String(deptId), month, weeks: wks, allWeeks: allW, start, signedWeeks: signs.length, miss,
         missDue: miss.filter(w => P.addDay(w, 6) <= t), openWeeks: wks.filter(w => P.addDay(w, 6) > t),
         checked, ng, dsign, dueDays: last < from ? 0 : Math.round((P.D(last) - P.D(from)) / 864e5) + 1,
-        span: sp, ms, started: month <= P.moOf(t), ended: sp.to < t, ready: wks.length > 0 && miss.length === 0, locked: !!ms };
+        span: esp, ms, started: month <= P.moOf(t), ended: sp.to < t, ready: wks.length > 0 && miss.length === 0, locked: !!ms };
     };
     const months = []; for (let m = P.moOf(today), i = 0; i < 6; i++, m = P.prevMonth(m)) months.push(m);
     const all = okj(await api('GET', `/api/stats/month-states?months=${months.join(',')}`, { token: Q }));

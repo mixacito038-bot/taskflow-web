@@ -790,15 +790,16 @@ async function monthState(deptId,month,start){
      旧版按自然月 1–31 号统计，月确认页的总台次和下面各周的数字加起来对不上 */
   const sp=monthSpan(month);
   const cs=start&&start<=sp.to?start:null;   // 整个月都在起算日以前（看以前的月份）：照实统计
-  const recs=await API.recordsRange(sp.from,sp.to,deptId);
+  /* 起算日以前的周当作系统还没启用：覆盖范围从要求的第一周算，台次、异常、日签天数、应巡天数都从这里算 */
+  const esp={from:wks[0],to:sp.to};
+  const recs=await API.recordsRange(esp.from,esp.to,deptId);
   let checked=0,ng=0,dsign=0;
   recs.forEach(r=>{const v=Object.values(r.checks||{});checked+=v.length;
     ng+=v.filter(x=>x==='ng').length;if(r.sign&&(!cs||r.date>=cs))dsign++});
-  /* 应巡天数、已日签天数都从起算日算（起算日以前的不算缺签） */
-  const last=sp.to<today()?sp.to:today(), from=cs&&cs>sp.from?cs:sp.from;
+  const last=esp.to<today()?esp.to:today(), from=cs&&cs>esp.from?cs:esp.from;
   const dueDays=last<from?0:daysBetween(from,last)+1;
   const ms=await API.monthSign(deptId,month);
-  return {month,weeks:wks,allWeeks,start,signedWeeks:signs.length,miss,missDue,openWeeks,checked,ng,dsign,dueDays,ms,span:sp,
+  return {month,weeks:wks,allWeeks,start,signedWeeks:signs.length,miss,missDue,openWeeks,checked,ng,dsign,dueDays,ms,span:esp,
     started:month<=moOf(today()), ended:sp.to<today(),
     ready:wks.length>0&&miss.length===0, locked:!!ms};
 }
@@ -1267,7 +1268,7 @@ async function viewDeptHome(){
      （它照样挡着月签）；起算日之前的、且没有数据的不列 */
   const sts=[];
   for(const st of wst){
-    if(st.week!==cur&&!st.locked&&d.startDate&&addDay(st.week,6)<d.startDate) continue;   // 起算日以前没签的周：不再列出、不提醒
+    if(st.week!==cur&&d.startDate&&addDay(st.week,6)<d.startDate) continue;   // 起算日以前的周：当作系统还没启用，不列出
     if(!st.checked&&st.week!==cur&&!(d.startDate&&addDay(st.week,6)>=d.startDate)) continue;
     sts.push(st); if(sts.length>=6) break;
   }
@@ -1629,7 +1630,7 @@ window.showSigns=(deptId,kind,key)=>busy(async()=>{
     title=moLab(key);
     const all=await API.weekSigns(deptId), req=requiredWeeks(key,d.startDate||null);
     /* 起算日以前、没签的周不列（不要求） */
-    const wks=wksOfMonth(key).filter(w=>req.includes(w)||all.some(y=>y.week===w));
+    const wks=req;   // 起算日以前的周不显示
     rows=wks.map(w=>{const x=all.find(y=>y.week===w);return {lab:wkLab(w),lv:'周签',s:x?x.sign:null}});
     const ms=await API.monthSign(deptId,key);
     rows.push({lab:'本月汇总',lv:'月签',s:ms?ms.sign:null});
@@ -1696,12 +1697,9 @@ async function viewMonth(){
   const d=await API.dept(S.deptId);
   const st=await monthState(d.id,S.month,d.startDate||null);
   const signs=await API.weekSigns(d.id);
-  const rows=(st.allWeeks||st.weeks).map(w=>{
+  /* 只列起算日及以后的周：起算日以前当作系统还没启用，不显示 */
+  const rows=st.weeks.map(w=>{
     const ws=signs.find(x=>x.week===w);
-    /* 起算日以前、没签的周：不要求周签，也不挡月签 */
-    if(!ws&&!st.weeks.includes(w)) return `<div class="card"><div class="row"><div class="grow">
-      <div class="tt" style="font-size:14.5px">${wkLab(w)}</div><div class="st">起算日 ${dShort(st.start)} 以前，不要求周签</div></div>
-      <span class="pill p-no">不要求</span></div></div>`;
     if(!ws&&w>today()) return `<div class="card"><div class="row"><div class="grow">
       <div class="tt" style="font-size:14.5px">${wkLab(w)}</div><div class="st">未开始</div></div>
       <span class="pill p-no">—</span></div></div>`;
@@ -1734,7 +1732,7 @@ async function viewMonth(){
       <button class="tap" onclick="showNg('${d.id}','${st.span.from}','${st.span.to}','${moLab(S.month)}')">
         <div class="n" style="color:${st.ng?'var(--bad)':'inherit'}">${st.ng}</div><div class="l">异常台次</div></button>
     </div>
-    <div class="hint">本月的月签覆盖 ${dShort(st.span.from)}～${dShort(st.span.to)} 这 ${(st.allWeeks||st.weeks).length} 周（周一在本月的周归本月）${st.weeks.length<(st.allWeeks||st.weeks).length?`；起算日 ${dShort(st.start)} 以前的周不要求，需要后 ${st.weeks.length} 周的周签`:''}。点上方「周签完成 / 异常台次」可查看明细</div>
+    <div class="hint">本月的月签覆盖 ${dShort(st.span.from)}～${dShort(st.span.to)} 这 ${st.weeks.length} 周（周一在本月的周归本月${st.weeks.length<(st.allWeeks||st.weeks).length?`；从起算日 ${dShort(st.start)} 起算`:''}）。点上方「周签完成 / 异常台次」可查看明细</div>
     <div class="sec">本月各周</div><div class="list">${rows||`<div class="empty">${svg('cal')}<div>本月还没有已开始的周</div></div>`}</div>
   </main>`+bar;
 }

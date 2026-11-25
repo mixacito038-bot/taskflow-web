@@ -96,8 +96,9 @@ function completion(deptIds, month, deptId) {
     const from = start > `${month}-01` ? start : `${month}-01`, to = monthEnd < t ? monthEnd : t;
     const dueDays = from > to ? 0 : Math.round((P.D(to) - P.D(from)) / 864e5) + 1;
     const wks = P.requiredWeeks(month, start);
-    const rows = db.prepare("SELECT * FROM records WHERE dept_id = ? AND date LIKE ? || '-%'").all(d.id, month);
-    const signedDays = rows.filter(r => r.sign_at && r.date >= start).length;   // 与应巡天数同一口径
+    // 起算日以前的记录当作系统还没启用，不计入（看以前的月份时 start 已换回科室自己的起算日，照实统计）
+    const rows = db.prepare("SELECT * FROM records WHERE dept_id = ? AND date LIKE ? || '-%' AND date >= ?").all(d.id, month, start);
+    const signedDays = rows.filter(r => r.sign_at).length;
     let checked = 0, ng = 0;
     if (rows.length) {
       const qs = rows.map(() => '?').join(',');
@@ -247,20 +248,21 @@ function monthStates(deptIds, months) {
       const start = starts.get(d.id);
       const wks = P.requiredWeeks(m, start);
       const cs = start <= sp.to ? start : null;   // 整个月都在起算日以前：照实统计（同手机端）
-      const from = cs && cs > sp.from ? cs : sp.from;
+      const esp = { from: wks[0], to: sp.to };   // 起算日以前的周当作系统还没启用：范围从要求的第一周算
+      const from = cs && cs > esp.from ? cs : esp.from;
       const dueDays = last < from ? 0 : Math.round((P.D(last) - P.D(from)) / 864e5) + 1;
       const openWeeks = wks.filter(w => P.addDay(w, 6) > t);
       const miss = wks.filter(w => !ws.has(`${d.id}|${w}`));
       let checked = 0, ng = 0, dsign = 0;
       for (const r of days.get(d.id) || []) {
-        if (r.date < sp.from || r.date > sp.to) continue;
+        if (r.date < esp.from || r.date > esp.to) continue;
         checked += r.checked; ng += r.ng; if (r.signed && (!cs || r.date >= cs)) dsign++;
       }
       const msj = ms.get(`${d.id}|${m}`) || null;
       out.push({
         deptId: String(d.id), month: m, weeks: wks, allWeeks: all, start, signedWeeks: wks.length - miss.length,
         miss, missDue: miss.filter(w => P.addDay(w, 6) <= t), openWeeks,
-        checked, ng, dsign, dueDays, span: sp, ms: msj,
+        checked, ng, dsign, dueDays, span: esp, ms: msj,
         started: m <= P.moOf(t), ended: sp.to < t,
         ready: wks.length > 0 && miss.length === 0, locked: !!msj
       });

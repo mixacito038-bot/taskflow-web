@@ -4,6 +4,7 @@ const ExcelJS = require('exceljs');
 const { getDb } = require('../db/connection');
 const { E } = require('../plugins/error');
 const P = require('./period.service');
+const startSvc = require('./start.service');
 const fileSvc = require('./file.service');
 const statsSvc = require('./stats.service');
 const { byCode } = require('./device-code');
@@ -54,8 +55,13 @@ async function monthlyXlsx(deptId, month) {
   if (!dept) throw E.notFound('科室不存在');
   if (!P.isMonth(month)) throw E.badInput('month 格式必须是 YYYY-MM（月份 01–12）');
 
-  const days = daysOfMonth(month);
-  const recs = db.prepare(`${REC_SELECT} WHERE r.dept_id = ? AND r.date LIKE ? || '-%'`).all(deptId, month);
+  /* 巡检起算日以后才算：以前的日子当作系统还没启用，月报不列（整个月都在起算日以前的，按科室自己的起算日照实导出） */
+  let start = startSvc.deptStart(dept);
+  if (start > P.monthSpan(month).to) start = startSvc.ownStart(dept);
+  const from = start > `${month}-01` ? start : `${month}-01`;
+  const days = daysOfMonth(month).filter(d => d >= from);
+  if (!days.length) days.push(...daysOfMonth(month).slice(-1));   // 起算日落在下个月初（月签覆盖范围内）：至少留一列
+  const recs = db.prepare(`${REC_SELECT} WHERE r.dept_id = ? AND r.date LIKE ? || '-%' AND r.date >= ?`).all(deptId, month, from);
   const recByDate = new Map(recs.map(r => [r.date, r]));
   const itemMap = new Map(); // `${date}|${deviceId}` → result
   for (const r of recs) {
@@ -69,7 +75,7 @@ async function monthlyXlsx(deptId, month) {
 
   /* Sheet1 矩阵 */
   const ws = wb.addWorksheet('巡检记录');
-  ws.addRow([`急救设备巡检月报 · ${dept.name} · ${month}`]);
+  ws.addRow([`急救设备巡检月报 · ${dept.name} · ${month}${from > `${month}-01` ? `（${from.slice(5)} 起）` : ''}`]);
   ws.mergeCells(1, 1, 1, 3 + days.length);
   ws.getRow(1).font = { bold: true, size: 14 };
   const head = ['设备编码', '设备名称', '品类', ...days.map(d => String(+d.slice(8, 10)))];
@@ -89,7 +95,7 @@ async function monthlyXlsx(deptId, month) {
   /* 「日签」列：月报随时都能导，月中导出时有些天还没签或签字被作废，异常要能看出是不是已签字确认的 */
   ws2.addRow(['日期', '设备编码', '设备名称', '品类', '异常说明', '巡检员', '日签']).font = { bold: true };
   [12, 14, 20, 12, 40, 12, 18].forEach((w, i) => { ws2.getColumn(i + 1).width = w; });
-  for (const x of statsSvc.ngList(null, { from: `${month}-01`, to: `${month}-31`, deptId })) {
+  for (const x of statsSvc.ngList(null, { from, to: `${month}-31`, deptId })) {
     ws2.addRow([x.date, x.deviceCode, x.deviceName, x.catName, x.note, x.inspectorName, statsSvc.NG_SIGN_TEXT(x)]);
   }
 
@@ -104,14 +110,15 @@ async function monthlyXlsx(deptId, month) {
     r = ws3.addRow(['日签', d, rec.sign_user_live || rec.sign_name, rec.sign_opinion || '', rec.sign_at, '']).number;
     embedSign(wb, ws3, rec.sign_file_id, r, 5);
   }
-  for (const w of db.prepare(`${WS_SELECT} WHERE w.dept_id = ? AND w.week_start LIKE ? || '-%' ORDER BY w.week_start`).all(deptId, month)) {
+  const reqW = new Set(P.requiredWeeks(month, start));
+  for (const w of db.prepare(`${WS_SELECT} WHERE w.dept_id = ? AND w.week_start LIKE ? || '-%' ORDER BY w.week_start`).all(deptId, month).filter(x => reqW.has(x.week_start))) {
     r = ws3.addRow(['周签', `${w.week_start} 起`, w.member_live != null ? w.member_live : w.sign_name, w.sign_opinion || '', w.sign_at, '']).number;
     embedSign(wb, ws3, w.sign_file_id, r, 5);
   }
   const ms = db.prepare(`${MS_SELECT} WHERE ms.dept_id = ? AND ms.month = ?`).get(deptId, month);
   if (ms) {
     // 月签覆盖的是归属本月的各周（周一在本月），首尾可能跨到上月末、下月初，写明范围免得对不上
-    const span = P.monthSpan(month);
+    const span = P.monthSpan(month); span.from = [...reqW][0] || span.from;
     r = ws3.addRow(['月签', `${month}（${span.from.slice(5)}～${span.to.slice(5)}）`, ms.signer_live || ms.sign_name,
       ms.sign_opinion || '', ms.sign_at, '']).number;
     embedSign(wb, ws3, ms.sign_file_id, r, 5);
